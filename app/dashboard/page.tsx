@@ -1,0 +1,68 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { requireActiveUser } from "@/lib/auth";
+import { SectionContainer } from "@/components/ui/section-container";
+import { Button } from "@/components/ui/button";
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { ProfileCard } from "@/components/dashboard/profile-card";
+import { DashboardCard } from "@/components/dashboard/dashboard-card";
+import { EmptyState } from "@/components/dashboard/empty-state";
+import { QuickActions } from "@/components/dashboard/quick-actions";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+  description: "Manage your ArenaX account and tournament activity.",
+};
+
+export default async function DashboardPage() {
+  const user = await requireActiveUser();
+
+  return (
+    <SectionContainer className="py-12 sm:py-16 lg:py-20">
+      <DashboardHeader name={user.name} />
+
+      <div className="mt-8 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+        <ProfileCard user={user} />
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 sm:p-7" aria-labelledby="account-overview-title">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Account overview</p>
+          <h2 id="account-overview-title" className="mt-2 text-lg font-bold text-white">Account information</h2>
+          <dl className="mt-6 space-y-4">
+            <div className="flex items-start justify-between gap-5 border-b border-white/5 pb-4">
+              <dt className="text-sm text-slate-500">Email</dt>
+              <dd className="max-w-[65%] break-all text-right text-sm font-semibold text-white">{user.email}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-5 border-b border-white/5 pb-4">
+              <dt className="text-sm text-slate-500">Status</dt>
+              <dd className="rounded-full border border-lime-300/20 bg-lime-300/10 px-2.5 py-1 text-xs font-bold text-lime-300">{user.status}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-5 border-b border-white/5 pb-4">
+              <dt className="text-sm text-slate-500">Role</dt>
+              <dd className="text-sm font-semibold text-white">{user.role === "ADMIN" ? "Administrator" : "User"}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-5">
+              <dt className="text-sm text-slate-500">Member since</dt>
+              <dd className="text-right text-sm font-semibold text-white">{new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(user.createdAt)}</dd>
+            </div>
+          </dl>
+          <Link href="/profile" className="mt-7 inline-flex text-sm font-semibold text-lime-300 hover:text-lime-200">View full profile →</Link>
+        </section>
+      </div>
+
+      <div className="mt-8 grid gap-5 lg:grid-cols-3">
+        <DashboardCard title="My Tournaments" eyebrow="Tournament activity">
+          <EmptyState title="No tournaments yet" description="Your registered tournaments will appear here when tournament registration is launched." action={<Button href="/tournaments" variant="secondary">Browse Tournaments</Button>} />
+        </DashboardCard>
+        <DashboardCard title="Payment History" eyebrow="Transactions">
+          <EmptyState title="No payment history yet" description="Payment records will appear here when entry fees and payment processing are introduced." />
+        </DashboardCard>
+        <DashboardCard title="Notifications" eyebrow="Updates">
+          <EmptyState title="No notifications yet" description="Important tournament and account updates will appear here when notifications are introduced." />
+        </DashboardCard>
+      </div>
+
+      <div className="mt-8">
+        <QuickActions />
+      </div>
+    </SectionContainer>
+  );
+}

@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum TournamentFormat {
+  SOLO
+  DUO
+  SQUAD
+  TEAM
+}
+
+enum TournamentStatus {
+  DRAFT
+  UPCOMING
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id            String          @id @default(uuid()) @db.Uuid
+  name          String?
+  email         String          @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole        @default(USER)
+  status        UserStatus      @default(ACTIVE)
+  accounts      Account[]
+  sessions      Session[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String   @db.Uuid
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Game {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String       @unique
+  code        String       @unique
+  description String?      @db.Text
+  logoUrl     String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  tournaments Tournament[]
+
+  @@index([isActive])
+}
+
+model Tournament {
+  id                    String            @id @default(uuid()) @db.Uuid
+  gameId                String            @db.Uuid
+  name                  String
+  slug                  String            @unique
+  description           String?           @db.Text
+  rules                 String?           @db.Text
+  bannerUrl             String?
+  startTime             DateTime
+  registrationStartTime DateTime?
+  registrationEndTime   DateTime?
+  entryFee              Decimal           @default(0) @db.Decimal(12, 2)
+  prizePool             Decimal           @default(0) @db.Decimal(12, 2)
+  maxParticipants       Int?
+  tournamentFormat      TournamentFormat
+  region                String
+  status                TournamentStatus  @default(DRAFT)
+  joiningWindowMinutes  Int               @default(10)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Restrict)
+
+  @@index([gameId])
+  @@index([status])
+  @@index([startTime])
+  @@index([registrationStartTime])
+  @@index([registrationEndTime])
+}
