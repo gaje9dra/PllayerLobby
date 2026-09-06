@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
 import { siteConfig } from "@/config/site";
+import { getCurrentUser } from "@/lib/auth";
 
 const steps = [
   ["01", "Create your account", "Sign in securely and keep your tournament activity in one place."],
@@ -9,7 +10,9 @@ const steps = [
   ["04", "Compete", "Get your joining details and show up ready to play."],
 ] as const;
 
-export default function HomePage() {
+export default async function HomePage() {
+  const user = await getCurrentUser();
+
   return (
     <>
       <section className="relative overflow-hidden border-b border-white/10">
@@ -28,7 +31,11 @@ export default function HomePage() {
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Button href="/tournaments">Browse Tournaments</Button>
-              <Button href="/login" variant="secondary">Get Started with Google</Button>
+              {user ? (
+                <Button href="/dashboard" variant="secondary">Go to Dashboard</Button>
+              ) : (
+                <Button href="/login" variant="secondary">Get Started with Google</Button>
+              )}
             </div>
           </div>
         </SectionContainer>
