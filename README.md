@@ -26,6 +26,7 @@ Set the following values:
 
 ```env
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+APP_TIMEZONE=Asia/Kolkata
 DATABASE_URL="postgresql://USERNAME:PASSWORD@HOST:PORT/DATABASE?schema=public"
 AUTH_SECRET="a-long-random-secret"
 GOOGLE_CLIENT_ID="your-google-client-id"
@@ -139,6 +140,24 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Application timezone
+
+Tournament scheduling uses one explicit application timezone. The default is `Asia/Kolkata` for the India-focused platform and can be changed with `APP_TIMEZONE`.
+
+Admin date/time inputs are interpreted as wall-clock times in this timezone and converted to JavaScript `Date` values before persistence. PostgreSQL stores the resulting timestamps in the timezone-aware `DateTime` representation used by Prisma. Tournament lists convert stored timestamps back to the application timezone for display.
+
+Do not treat browser-local date/time strings as UTC. Keep all tournament scheduling on this explicit conversion path.
+
+## Phase 2.1 — Tournament database architecture
+
+The database contains `Game` and `Tournament` models. Games have an `isActive` flag, while tournaments reference games through `gameId` and use the `TournamentFormat` and `TournamentStatus` enums. Tournament money uses PostgreSQL Decimal fields rather than floating-point values.
+
+## Phase 2.2 — Admin tournament creation
+
+Active administrators can create tournament records from `/admin/tournaments/create`. The server-side creation action re-checks the authenticated user's role and status, validates the selected active game, validates the slug and schedule, validates money and participant limits, and creates the tournament with `DRAFT` status.
+
+The admin list at `/admin/tournaments` reads actual tournament records from PostgreSQL and shows the game, status, schedule, entry fee, prize pool, and participant limit. Tournament editing, deletion, publishing, registration, payments, room credentials, and participant workflows remain deferred to later phases.
+
 ## Current authentication database scope
 
 Phase 1.3 adds only the database structures required by Auth.js:
@@ -149,8 +168,6 @@ Phase 1.3 adds only the database structures required by Auth.js:
 - `VerificationToken`
 - `UserRole`
 - `UserStatus`
-
-Tournament registration, tournament creation, payments, PayU, payouts, room credentials, notifications, and the complete admin system remain deferred to later phases.
 
 ## AUTHORIZATION SETUP — PHASE 1.4
 
@@ -194,10 +211,10 @@ Phase 1.5 adds the user-facing account interface while preserving the Phase 1.3 
 - Request-level caching for `getCurrentUser()` to avoid redundant user queries between the dashboard layout/page and shared layout.
 
 ### Intentionally not implemented
-Tournament registration/creation/management, PayU, payments, payment verification, registration codes, rooms, joining windows, payouts, refunds, notification persistence, and complete admin management remain future-phase work.
+Tournament registration/creation/management beyond the Phase 2.2 admin creation flow, PayU, payments, payment verification, registration codes, rooms, joining windows, payouts, refunds, notification persistence, and complete admin management remain future-phase work.
 
 ### Local setup
-The generated Prisma client is intentionally not committed. If this is a fresh extracted copy, run:
+The generated Prisma client may be generated locally with:
 
 ```bash
 npx prisma generate
