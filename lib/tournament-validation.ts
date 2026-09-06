@@ -19,7 +19,7 @@ export type TournamentFormValues = {
   joiningWindowMinutes: string;
 };
 
-export type TournamentFieldErrors = Partial<Record<keyof TournamentFormValues | "form", string>>;
+export type TournamentFieldErrors = Partial<Record<keyof TournamentFormValues | "form" | "status", string>>;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MONEY_PATTERN = /^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/;
