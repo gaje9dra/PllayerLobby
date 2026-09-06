@@ -240,5 +240,3 @@ export async function cancelTournament(
   revalidatePath(`/admin/tournaments/${tournamentId}/edit`);
   redirect(`/admin/tournaments/${tournamentId}?cancelled=1`);
 }
-
-export { ALLOWED_STATUS_TRANSITIONS };
