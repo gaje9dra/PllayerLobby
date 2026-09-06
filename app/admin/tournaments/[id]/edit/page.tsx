@@ -1,13 +1,22 @@
 import { notFound } from "next/navigation";
 import { TournamentStatus } from "@/app/generated/prisma/client";
 import { TournamentForm } from "@/app/admin/tournaments/form";
-import { ALLOWED_STATUS_TRANSITIONS } from "@/app/admin/tournaments/actions";
 import { SectionContainer } from "@/components/ui/section-container";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatAppDateTimeLocal } from "@/lib/timezone";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const ALLOWED_STATUS_TRANSITIONS: Record<TournamentStatus, readonly TournamentStatus[]> = {
+  DRAFT: [TournamentStatus.DRAFT, TournamentStatus.UPCOMING, TournamentStatus.CANCELLED],
+  UPCOMING: [TournamentStatus.UPCOMING, TournamentStatus.REGISTRATION_OPEN, TournamentStatus.CANCELLED],
+  REGISTRATION_OPEN: [TournamentStatus.REGISTRATION_OPEN, TournamentStatus.REGISTRATION_CLOSED, TournamentStatus.CANCELLED],
+  REGISTRATION_CLOSED: [TournamentStatus.REGISTRATION_CLOSED, TournamentStatus.LIVE, TournamentStatus.CANCELLED],
+  LIVE: [TournamentStatus.LIVE, TournamentStatus.COMPLETED, TournamentStatus.CANCELLED],
+  COMPLETED: [TournamentStatus.COMPLETED],
+  CANCELLED: [TournamentStatus.CANCELLED],
+};
 
 export default async function EditTournamentPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
