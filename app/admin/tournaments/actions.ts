@@ -6,15 +6,28 @@ import { TournamentFormat, TournamentStatus } from "@/app/generated/prisma/clien
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  TOURNAMENT_FORMATS,
   validateTournamentInput,
   type TournamentFieldErrors,
   type TournamentFormValues,
 } from "@/lib/tournament-validation";
 import { parseAppLocalDateTime } from "@/lib/timezone";
 
-export type CreateTournamentState = {
+export type TournamentActionState = {
   ok: boolean;
   errors: TournamentFieldErrors;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const ALLOWED_STATUS_TRANSITIONS: Record<TournamentStatus, readonly TournamentStatus[]> = {
+  DRAFT: [TournamentStatus.DRAFT, TournamentStatus.UPCOMING, TournamentStatus.CANCELLED],
+  UPCOMING: [TournamentStatus.UPCOMING, TournamentStatus.REGISTRATION_OPEN, TournamentStatus.CANCELLED],
+  REGISTRATION_OPEN: [TournamentStatus.REGISTRATION_OPEN, TournamentStatus.REGISTRATION_CLOSED, TournamentStatus.CANCELLED],
+  REGISTRATION_CLOSED: [TournamentStatus.REGISTRATION_CLOSED, TournamentStatus.LIVE, TournamentStatus.CANCELLED],
+  LIVE: [TournamentStatus.LIVE, TournamentStatus.COMPLETED, TournamentStatus.CANCELLED],
+  COMPLETED: [TournamentStatus.COMPLETED],
+  CANCELLED: [TournamentStatus.CANCELLED],
 };
 
 function getValues(formData: FormData): TournamentFormValues {
@@ -39,15 +52,7 @@ function getValues(formData: FormData): TournamentFormValues {
   };
 }
 
-export async function createTournament(
-  _previousState: CreateTournamentState,
-  formData: FormData,
-): Promise<CreateTournamentState> {
-  await requireAdmin();
-
-  const values = getValues(formData);
-  const errors = validateTournamentInput(values);
-
+function getSchedule(values: TournamentFormValues, errors: TournamentFieldErrors) {
   const startTime = parseAppLocalDateTime(values.startTime);
   const registrationStartTime = parseAppLocalDateTime(values.registrationStartTime);
   const registrationEndTime = parseAppLocalDateTime(values.registrationEndTime);
@@ -69,9 +74,31 @@ export async function createTournament(
     errors.registrationEndTime = "Registration cannot end after the tournament starts.";
   }
 
-  if (Object.keys(errors).length > 0) {
-    return { ok: false, errors };
+  return { startTime, registrationStartTime, registrationEndTime };
+}
+
+function validateStatusTransition(current: TournamentStatus, next: string) {
+  if (!Object.values(TournamentStatus).includes(next as TournamentStatus)) {
+    return "Please select a valid tournament status.";
   }
+
+  const nextStatus = next as TournamentStatus;
+  if (!ALLOWED_STATUS_TRANSITIONS[current].includes(nextStatus)) {
+    return `Cannot change status from ${current} to ${nextStatus}.`;
+  }
+
+  return null;
+}
+
+async function validateCommonUpdate(values: TournamentFormValues, tournamentId: string) {
+  const errors = validateTournamentInput(values);
+  const schedule = getSchedule(values, errors);
+
+  if (!UUID_PATTERN.test(tournamentId)) {
+    return { errors: { form: "Invalid tournament identifier." } as TournamentFieldErrors, schedule };
+  }
+
+  if (Object.keys(errors).length > 0) return { errors, schedule };
 
   const game = await prisma.game.findUnique({
     where: { id: values.gameId },
@@ -80,20 +107,47 @@ export async function createTournament(
 
   if (!game || !game.isActive) {
     return {
-      ok: false,
       errors: { gameId: "The selected game is unavailable or inactive." },
+      schedule,
     };
   }
 
-  const slug = values.slug.trim();
   const existingSlug = await prisma.tournament.findUnique({
-    where: { slug },
+    where: { slug: values.slug.trim() },
     select: { id: true },
   });
 
-  if (existingSlug) {
-    return { ok: false, errors: { slug: "This tournament slug is already in use." } };
+  if (existingSlug && existingSlug.id !== tournamentId) {
+    return { errors: { slug: "This tournament slug is already in use." }, schedule };
   }
+
+  return { errors: {}, schedule };
+}
+
+export async function createTournament(
+  _previousState: TournamentActionState,
+  formData: FormData,
+): Promise<TournamentActionState> {
+  await requireAdmin();
+
+  const values = getValues(formData);
+  const errors = validateTournamentInput(values);
+  const schedule = getSchedule(values, errors);
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+
+  const game = await prisma.game.findUnique({
+    where: { id: values.gameId },
+    select: { id: true, isActive: true },
+  });
+
+  if (!game || !game.isActive) {
+    return { ok: false, errors: { gameId: "The selected game is unavailable or inactive." } };
+  }
+
+  const slug = values.slug.trim();
+  const existingSlug = await prisma.tournament.findUnique({ where: { slug }, select: { id: true } });
+  if (existingSlug) return { ok: false, errors: { slug: "This tournament slug is already in use." } };
 
   try {
     await prisma.tournament.create({
@@ -104,9 +158,9 @@ export async function createTournament(
         description: values.description.trim() || null,
         rules: values.rules.trim() || null,
         bannerUrl: values.bannerUrl.trim() || null,
-        startTime: startTime!,
-        registrationStartTime: registrationStartTime!,
-        registrationEndTime: registrationEndTime!,
+        startTime: schedule.startTime!,
+        registrationStartTime: schedule.registrationStartTime!,
+        registrationEndTime: schedule.registrationEndTime!,
         entryFee: values.entryFee.trim(),
         prizePool: values.prizePool.trim(),
         maxParticipants: Number.parseInt(values.maxParticipants, 10),
@@ -122,12 +176,126 @@ export async function createTournament(
     }
 
     console.error("Tournament creation failed:", error);
-    return {
-      ok: false,
-      errors: { form: "Unable to create the tournament right now. Please try again." },
-    };
+    return { ok: false, errors: { form: "Unable to create the tournament right now. Please try again." } };
   }
 
   revalidatePath("/admin/tournaments");
   redirect("/admin/tournaments?created=1");
 }
+
+export async function updateTournament(
+  _previousState: TournamentActionState,
+  formData: FormData,
+): Promise<TournamentActionState> {
+  const admin = await requireAdmin();
+  void admin;
+
+  const tournamentId = String(formData.get("tournamentId") ?? "");
+  if (!UUID_PATTERN.test(tournamentId)) {
+    return { ok: false, errors: { form: "Invalid tournament identifier." } };
+  }
+
+  const existing = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { id: true, status: true },
+  });
+
+  if (!existing) return { ok: false, errors: { form: "Tournament not found." } };
+
+  const values = getValues(formData);
+  const { errors, schedule } = await validateCommonUpdate(values, tournamentId);
+  const status = String(formData.get("status") ?? "");
+  const statusError = validateStatusTransition(existing.status, status);
+  if (statusError) errors.status = statusError;
+
+  if (!Object.values(TournamentFormat).includes(values.tournamentFormat as TournamentFormat)) {
+    errors.tournamentFormat = "Please select a valid tournament format.";
+  }
+
+  if (!Object.values(TournamentStatus).includes(status as TournamentStatus)) {
+    errors.status = "Please select a valid tournament status.";
+  }
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+
+  try {
+    await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: {
+        gameId: values.gameId,
+        name: values.name.trim(),
+        slug: values.slug.trim(),
+        description: values.description.trim() || null,
+        rules: values.rules.trim() || null,
+        bannerUrl: values.bannerUrl.trim() || null,
+        startTime: schedule.startTime!,
+        registrationStartTime: schedule.registrationStartTime!,
+        registrationEndTime: schedule.registrationEndTime!,
+        entryFee: values.entryFee.trim(),
+        prizePool: values.prizePool.trim(),
+        maxParticipants: Number.parseInt(values.maxParticipants, 10),
+        tournamentFormat: values.tournamentFormat as TournamentFormat,
+        region: values.region.trim(),
+        status: status as TournamentStatus,
+        joiningWindowMinutes: Number.parseInt(values.joiningWindowMinutes, 10),
+      },
+    });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      return { ok: false, errors: { slug: "This tournament slug is already in use." } };
+    }
+
+    console.error("Tournament update failed:", error);
+    return { ok: false, errors: { form: "Unable to update the tournament right now. Please try again." } };
+  }
+
+  revalidatePath("/admin/tournaments");
+  revalidatePath(`/admin/tournaments/${tournamentId}`);
+  revalidatePath(`/admin/tournaments/${tournamentId}/edit`);
+  redirect(`/admin/tournaments/${tournamentId}?updated=1`);
+}
+
+export type CancelTournamentState = {
+  ok: boolean;
+  error?: string;
+};
+
+export async function cancelTournament(
+  _previousState: CancelTournamentState,
+  formData: FormData,
+): Promise<CancelTournamentState> {
+  await requireAdmin();
+
+  const tournamentId = String(formData.get("tournamentId") ?? "");
+  if (!UUID_PATTERN.test(tournamentId)) return { ok: false, error: "Invalid tournament identifier." };
+
+  const existing = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { id: true, status: true },
+  });
+
+  if (!existing) return { ok: false, error: "Tournament not found." };
+  if (existing.status === TournamentStatus.COMPLETED) {
+    return { ok: false, error: "Completed tournaments cannot be cancelled." };
+  }
+  if (existing.status === TournamentStatus.CANCELLED) {
+    return { ok: false, error: "Tournament is already cancelled." };
+  }
+
+  try {
+    await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: { status: TournamentStatus.CANCELLED },
+    });
+  } catch (error) {
+    console.error("Tournament cancellation failed:", error);
+    return { ok: false, error: "Unable to cancel the tournament right now. Please try again." };
+  }
+
+  revalidatePath("/admin/tournaments");
+  revalidatePath(`/admin/tournaments/${tournamentId}`);
+  revalidatePath(`/admin/tournaments/${tournamentId}/edit`);
+  redirect(`/admin/tournaments/${tournamentId}?cancelled=1`);
+}
+
+export { ALLOWED_STATUS_TRANSITIONS, TOURNAMENT_FORMATS };
