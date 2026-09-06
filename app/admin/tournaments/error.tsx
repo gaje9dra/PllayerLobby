@@ -1,6 +1,8 @@
 "use client";
 
-export default function TournamentAdminError({ reset }: { reset: () => void }) {
+export default function TournamentAdminError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  void error;
+
   return (
     <div className="mx-auto w-full max-w-3xl px-5 py-16 text-center sm:px-8">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-300">Tournament management error</p>
