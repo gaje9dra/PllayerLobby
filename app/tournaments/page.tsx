@@ -17,14 +17,13 @@ const PUBLIC_STATUSES = [
 
 const SORT_OPTIONS = {
   "starting-soon": { startTime: "asc" },
-  "newest": { createdAt: "desc" },
+  newest: { createdAt: "desc" },
   "prize-high": { prizePool: "desc" },
   "fee-low": { entryFee: "asc" },
   "fee-high": { entryFee: "desc" },
 } as const;
 
 type SearchParams = Record<string, string | string[] | undefined>;
-
 type FeeFilter = "all" | "free" | "paid";
 type SortKey = keyof typeof SORT_OPTIONS;
 
@@ -59,19 +58,11 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
   const requestedPage = Number.parseInt(one(params.page) ?? "1", 10);
   const currentPage = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
-  const [games, totalBeforePage] = await Promise.all([
-    prisma.game.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-      select: { slug: true, name: true },
-    }),
-    prisma.tournament.count({
-      where: {
-        status: { in: PUBLIC_STATUSES },
-        game: { isActive: true },
-      },
-    }),
-  ]);
+  const games = await prisma.game.findMany({
+    where: { isActive: true },
+    orderBy: { name: "asc" },
+    select: { slug: true, name: true },
+  });
 
   const activeGameSlugs = new Set(games.map((game) => game.slug));
   const game = requestedGame && activeGameSlugs.has(requestedGame) ? requestedGame : "";
@@ -84,9 +75,14 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
     game: {
       isActive: true,
       ...(game ? { slug: game } : {}),
-      ...(query ? { name: { contains: query, mode: "insensitive" as const } } : {}),
     },
-    ...(query ? { OR: [{ name: { contains: query, mode: "insensitive" as const } }, { slug: { contains: query, mode: "insensitive" as const } }] } : {}),
+    ...(query ? {
+      OR: [
+        { name: { contains: query, mode: "insensitive" as const } },
+        { slug: { contains: query, mode: "insensitive" as const } },
+        { game: { name: { contains: query, mode: "insensitive" as const } } },
+      ],
+    } : {}),
     ...(fee === "free" ? { entryFee: { equals: 0 } } : {}),
     ...(fee === "paid" ? { entryFee: { gt: 0 } } : {}),
   };
@@ -117,7 +113,6 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
   const activeFilterCount = [Boolean(query), Boolean(game), Boolean(status), fee !== "all", sort !== "starting-soon"].filter(Boolean).length;
   const baseParams = { q: query, game, status, fee: fee === "all" ? undefined : fee, sort: sort === "starting-soon" ? undefined : sort };
   const hasFilters = Boolean(query || game || status || fee !== "all" || sort !== "starting-soon");
-  const onlyPublicResults = total > 0 || totalBeforePage === 0;
 
   return (
     <SectionContainer className="py-10 sm:py-14">
@@ -173,9 +168,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
         <div className="mt-5 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center sm:p-14">
           <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-lime-300/10 text-xl font-black text-lime-300">⌕</div>
           <h2 className="mt-5 text-xl font-bold text-white">No tournaments found</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-            {onlyPublicResults ? "No public tournaments match your current filters. Try changing your search or filters." : "No tournaments are currently available."}
-          </p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">No public tournaments match your current filters. Try changing your search or filters.</p>
           {hasFilters ? <Button href="/tournaments" variant="secondary" className="mt-7">Clear filters</Button> : null}
         </div>
       ) : (
