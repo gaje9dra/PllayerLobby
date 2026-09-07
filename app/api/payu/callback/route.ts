@@ -3,8 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getPayUConfig, validatePayUResponseHash } from "@/lib/payu";
 
 function firstNameFromUser(name: string | null) {
-  const firstName = name?.trim().split(/\s+/)[0];
-  return firstName || "Player";
+  return name?.trim().split(/\s+/)[0] || "Player";
 }
 
 function responseFields(formData: FormData) {
@@ -45,8 +44,6 @@ export async function POST(request: Request) {
         status: true,
         registration: {
           select: {
-            id: true,
-            userId: true,
             tournament: { select: { name: true } },
             user: { select: { name: true, email: true } },
           },
@@ -54,9 +51,7 @@ export async function POST(request: Request) {
       },
     });
 
-    if (!payment) {
-      return new Response("Payment not found.", { status: 404 });
-    }
+    if (!payment) return new Response("Payment not found.", { status: 404 });
 
     const expectedProductInfo = `Tournament Entry - ${payment.registration.tournament.name}`.slice(0, 100);
     const expectedFirstname = firstNameFromUser(payment.registration.user.name);
@@ -85,16 +80,19 @@ export async function POST(request: Request) {
       },
     });
 
-    console.info("PayU callback reconciled safely", {
+    console.info("PayU callback validated", {
       paymentId: payment.id,
       merchantTransactionId: response.txnid,
       payuTransactionId: response.mihpayid || null,
       status: safeStatus,
     });
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+    if (!appUrl) return new Response("Application URL is not configured.", { status: 500 });
+
     const destination = new URL(
       response.status === "success" ? "/dashboard?payment=pending" : "/dashboard?payment=failed",
-      process.env.NEXT_PUBLIC_APP_URL,
+      appUrl,
     );
     return Response.redirect(destination, 303);
   } catch (error) {
