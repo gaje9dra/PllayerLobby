@@ -80,9 +80,10 @@ export function TournamentRegistration({
   }
 
   if (availability !== "REGISTER") {
+    const message = availabilityMessages[availability as Exclude<RegistrationAvailability, "LOGIN" | "REGISTER" | "PAYMENT_PENDING">];
     return (
       <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4" role="status">
-        <p className="text-sm font-bold text-white">{availabilityMessages[availability]}</p>
+        <p className="text-sm font-bold text-white">{message}</p>
         {state.message ? <p className="mt-1 text-xs leading-5 text-slate-400">{state.message}</p> : null}
       </div>
     );
