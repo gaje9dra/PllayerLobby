@@ -42,7 +42,7 @@ function makeResponseHash(status = "success") {
 
 test("PayU request hash matches the documented hosted checkout formula", () => {
   const expected = createHash("sha512")
-    .update(`${requestInput.key}|${requestInput.txnid}|${requestInput.amount}|${requestInput.productinfo}|${requestInput.firstname}|${requestInput.email}||||||||||||${requestInput.salt}`, "utf8")
+    .update(`${requestInput.key}|${requestInput.txnid}|${requestInput.amount}|${requestInput.productinfo}|${requestInput.firstname}|${requestInput.email}|||||||||||${requestInput.salt}`, "utf8")
     .digest("hex");
 
   assert.equal(generatePayURequestHash(requestInput), expected);
