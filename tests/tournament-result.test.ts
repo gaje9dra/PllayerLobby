@@ -12,9 +12,9 @@ test("rank validation accepts positive integers only", () => {
   assert.equal(parsePositiveRank("abc"), null);
 });
 
-test("score validation accepts non-negative numeric values with bounded precision", () => {
-  assert.equal(parseScore("0"), 0);
-  assert.equal(parseScore("12.345678"), 12.345678);
+test("score validation preserves decimal precision without floating-point conversion", () => {
+  assert.equal(parseScore("0"), "0");
+  assert.equal(parseScore("12.345678"), "12.345678");
   assert.equal(parseScore("12.3456789"), null);
   assert.equal(parseScore("-1"), null);
   assert.equal(parseScore("abc"), null);
