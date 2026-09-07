@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { PaymentStatus } from "@/app/generated/prisma/client";
 
 const ALLOWED_TRANSITIONS: Record<PaymentStatus, readonly PaymentStatus[]> = {
@@ -10,4 +11,8 @@ const ALLOWED_TRANSITIONS: Record<PaymentStatus, readonly PaymentStatus[]> = {
 
 export function canTransitionPaymentStatus(from: PaymentStatus, to: PaymentStatus) {
   return ALLOWED_TRANSITIONS[from].includes(to);
+}
+
+export function generateMerchantTransactionId() {
+  return `PL${randomBytes(11).toString("hex")}`;
 }
