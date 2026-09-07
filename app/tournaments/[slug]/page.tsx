@@ -83,6 +83,7 @@ async function getRegistrationAvailability(
 
   if (!user) return "LOGIN";
   if (tournament.status === TournamentStatus.COMPLETED) return "COMPLETED";
+  if (tournament.status === TournamentStatus.UPCOMING) return "REGISTRATION_NOT_STARTED";
 
   const eligibility = await canRegisterForTournament(user, tournament.id);
 
@@ -143,7 +144,7 @@ export default async function TournamentDetailPage({ params }: { params: Promise
 
   if (!tournament) notFound();
 
-  const [registrationAvailability] = await Promise.all([getRegistrationAvailability(tournament)]);
+  const registrationAvailability = await getRegistrationAvailability(tournament);
   const bannerUrl = safeImageUrl(tournament.bannerUrl);
   const logoUrl = safeImageUrl(tournament.game.logoUrl);
   const registrationStart = tournament.registrationStartTime
