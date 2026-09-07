@@ -75,7 +75,15 @@ export function evaluateRegistrationEligibility({
     return { allowed: false, reason: REGISTRATION_ELIGIBILITY_REASONS.TOURNAMENT_NOT_FOUND };
   }
 
-  if (tournament.status !== TournamentStatus.REGISTRATION_OPEN) {
+  const registrationScheduledToOpen =
+    tournament.status === TournamentStatus.UPCOMING &&
+    tournament.registrationStartTime !== null &&
+    now >= tournament.registrationStartTime;
+
+  if (
+    tournament.status !== TournamentStatus.REGISTRATION_OPEN &&
+    !registrationScheduledToOpen
+  ) {
     return { allowed: false, reason: REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_NOT_OPEN };
   }
 
