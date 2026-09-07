@@ -8,135 +8,23 @@ import { addMoney, canFinalizePrizeAllocation, compareMoney, normalizePrizeAmoun
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_PRIZE_RANK = 1000;
 
-function assertUuid(value: string, label: string) {
-  if (!UUID.test(value)) throw new Error(`Invalid ${label}.`);
-}
+function assertUuid(value: string, label: string) { if (!UUID.test(value)) throw new Error(`Invalid ${label}.`); }
+function isUniqueError(error: unknown) { return !!error && typeof error === "object" && "code" in error && error.code === "P2002"; }
+function isSerializationError(error: unknown) { return !!error && typeof error === "object" && "code" in error && error.code === "P2034"; }
+function validatePrizeInput(rankInput: string, amountInput: string) { const rank = parsePrizeRank(rankInput); const amount = normalizePrizeAmount(amountInput); if (!rank || rank > MAX_PRIZE_RANK) throw new Error(`Prize rank must be a positive integer from 1 to ${MAX_PRIZE_RANK}.`); if (!amount || compareMoney(amount, "0.00") <= 0) throw new Error("Prize amount must be a positive monetary value with at most two decimals."); return { rank, amount }; }
 
-function isUniqueError(error: unknown) {
-  return !!error && typeof error === "object" && "code" in error && error.code === "P2002";
-}
+export async function getTournamentPrizes(tournamentId: string) { await requireAdmin(); assertUuid(tournamentId, "tournament identifier"); return prisma.tournamentPrize.findMany({ where: { tournamentId }, orderBy: { rank: "asc" }, select: { id: true, tournamentId: true, rank: true, amount: true, status: true, createdAt: true, updatedAt: true } }); }
 
-function isSerializationError(error: unknown) {
-  return !!error && typeof error === "object" && "code" in error && error.code === "P2034";
-}
+export async function getPrizeSummary(tournamentId: string) { await requireAdmin(); assertUuid(tournamentId, "tournament identifier"); const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { prizePool: true } }); if (!tournament) throw new Error("Tournament not found."); const prizes = await prisma.tournamentPrize.findMany({ where: { tournamentId }, select: { amount: true, status: true } }); const prizePool = normalizePrizeAmount(tournament.prizePool.toString()) ?? "0.00"; const allocated = addMoney(prizes.map((prize) => normalizePrizeAmount(prize.amount.toString()) ?? "0.00")); return { prizePool, allocated, remaining: subtractMoney(prizePool, allocated), finalized: prizes.length > 0 && prizes.every((prize) => prize.status === TournamentPrizeStatus.FINALIZED) }; }
 
-function validatePrizeInput(rankInput: string, amountInput: string) {
-  const rank = parsePrizeRank(rankInput);
-  const amount = normalizePrizeAmount(amountInput);
-  if (!rank || rank > MAX_PRIZE_RANK) throw new Error(`Prize rank must be a positive integer from 1 to ${MAX_PRIZE_RANK}.`);
-  if (!amount || compareMoney(amount, "0.00") <= 0) throw new Error("Prize amount must be a positive monetary value with at most two decimals.");
-  return { rank, amount };
-}
+export async function createTournamentPrize(tournamentId: string, rankInput: string, amountInput: string) { await requireAdmin(); assertUuid(tournamentId, "tournament identifier"); const { rank, amount } = validatePrizeInput(rankInput, amountInput); try { return await prisma.$transaction(async (tx) => { const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { prizePool: true, status: true } }); if (!tournament || tournament.status === TournamentStatus.CANCELLED) throw new Error("Tournament is unavailable."); const existing = await tx.tournamentPrize.findMany({ where: { tournamentId }, select: { amount: true, status: true } }); if (existing.some((prize) => prize.status === TournamentPrizeStatus.FINALIZED)) throw new Error("Prize configuration is finalized and cannot be edited."); const total = addMoney([...existing.map((p) => p.amount.toString()), amount]); if (compareMoney(total, tournament.prizePool.toString()) > 0) throw new Error("Allocated prizes cannot exceed the tournament prize pool."); return tx.tournamentPrize.create({ data: { tournamentId, rank, amount, status: TournamentPrizeStatus.DRAFT } }); }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); } catch (error) { if (isUniqueError(error)) throw new Error("That prize rank already exists for this tournament."); if (isSerializationError(error)) throw new Error("Prize configuration changed concurrently. Refresh and try again."); throw error; } }
 
-export async function getTournamentPrizes(tournamentId: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
-  return prisma.tournamentPrize.findMany({ where: { tournamentId }, orderBy: { rank: "asc" }, select: { id: true, tournamentId: true, rank: true, amount: true, status: true, createdAt: true, updatedAt: true } });
-}
+export async function updateTournamentPrize(tournamentId: string, prizeId: string, rankInput: string, amountInput: string) { await requireAdmin(); assertUuid(tournamentId, "tournament identifier"); assertUuid(prizeId, "prize identifier"); const { rank, amount } = validatePrizeInput(rankInput, amountInput); try { return await prisma.$transaction(async (tx) => { const prize = await tx.tournamentPrize.findUnique({ where: { id: prizeId }, select: { id: true, tournamentId: true, status: true } }); if (!prize || prize.tournamentId !== tournamentId) throw new Error("Prize does not belong to this tournament."); if (prize.status !== TournamentPrizeStatus.DRAFT) throw new Error("Only draft prizes can be edited."); const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { prizePool: true, status: true } }); if (!tournament || tournament.status === TournamentStatus.CANCELLED) throw new Error("Tournament is unavailable."); const others = await tx.tournamentPrize.findMany({ where: { tournamentId, id: { not: prizeId } }, select: { amount: true, status: true } }); if (others.some((item) => item.status === TournamentPrizeStatus.FINALIZED)) throw new Error("Prize configuration is finalized and cannot be edited."); const total = addMoney([...others.map((p) => p.amount.toString()), amount]); if (compareMoney(total, tournament.prizePool.toString()) > 0) throw new Error("Allocated prizes cannot exceed the tournament prize pool."); return tx.tournamentPrize.update({ where: { id: prizeId }, data: { rank, amount } }); }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); } catch (error) { if (isUniqueError(error)) throw new Error("That prize rank already exists for this tournament."); if (isSerializationError(error)) throw new Error("Prize configuration changed concurrently. Refresh and try again."); throw error; } }
 
-export async function getPrizeSummary(tournamentId: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
-  const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { prizePool: true } });
-  if (!tournament) throw new Error("Tournament not found.");
-  const prizes = await prisma.tournamentPrize.findMany({ where: { tournamentId }, select: { amount: true } });
-  const prizePool = normalizePrizeAmount(tournament.prizePool.toString()) ?? "0.00";
-  const allocated = addMoney(prizes.map((prize) => normalizePrizeAmount(prize.amount.toString()) ?? "0.00"));
-  return { prizePool, allocated, remaining: subtractMoney(prizePool, allocated), finalized: prizes.length > 0 && prizes.every((prize) => prize.status === TournamentPrizeStatus.FINALIZED) };
-}
+export async function deleteTournamentPrize(tournamentId: string, prizeId: string) { await requireAdmin(); assertUuid(tournamentId, "tournament identifier"); assertUuid(prizeId, "prize identifier"); const prize = await prisma.tournamentPrize.findUnique({ where: { id: prizeId }, select: { id: true, tournamentId: true, status: true } }); if (!prize || prize.tournamentId !== tournamentId) throw new Error("Prize does not belong to this tournament."); if (prize.status !== TournamentPrizeStatus.DRAFT) throw new Error("Only draft prizes can be removed."); return prisma.tournamentPrize.delete({ where: { id: prizeId } }); }
 
-export async function createTournamentPrize(tournamentId: string, rankInput: string, amountInput: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
-  const { rank, amount } = validatePrizeInput(rankInput, amountInput);
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { prizePool: true, status: true } });
-      if (!tournament || tournament.status === TournamentStatus.CANCELLED) throw new Error("Tournament is unavailable.");
-      const existing = await tx.tournamentPrize.findMany({ where: { tournamentId }, select: { amount: true, status: true } });
-      if (existing.some((prize) => prize.status === TournamentPrizeStatus.FINALIZED)) throw new Error("Prize configuration is finalized and cannot be edited.");
-      const total = addMoney([...existing.map((p) => p.amount.toString()), amount]);
-      if (compareMoney(total, tournament.prizePool.toString()) > 0) throw new Error("Allocated prizes cannot exceed the tournament prize pool.");
-      return tx.tournamentPrize.create({ data: { tournamentId, rank, amount, status: TournamentPrizeStatus.DRAFT } });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (isUniqueError(error)) throw new Error("That prize rank already exists for this tournament.");
-    if (isSerializationError(error)) throw new Error("Prize configuration changed concurrently. Refresh and try again.");
-    throw error;
-  }
-}
+export async function finalizePrizeConfiguration(tournamentId: string) { await requireAdmin(); assertUuid(tournamentId, "tournament identifier"); try { return await prisma.$transaction(async (tx) => { const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, prizePool: true, status: true } }); if (!tournament) throw new Error("Tournament not found."); if (tournament.status === TournamentStatus.CANCELLED) throw new Error("Cancelled tournaments cannot finalize prizes."); const prizes = await tx.tournamentPrize.findMany({ where: { tournamentId }, orderBy: { rank: "asc" } }); if (prizes.length === 0) throw new Error("Add at least one prize position before finalization."); const total = addMoney(prizes.map((prize) => prize.amount.toString())); if (!canFinalizePrizeAllocation(total, tournament.prizePool.toString())) throw new Error("Finalization requires allocated prizes to equal the tournament prize pool."); if (prizes.some((prize) => prize.status !== TournamentPrizeStatus.DRAFT)) throw new Error("Prize configuration is already finalized or contains an invalid state."); return tx.tournamentPrize.updateMany({ where: { tournamentId, status: TournamentPrizeStatus.DRAFT }, data: { status: TournamentPrizeStatus.FINALIZED } }); }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); } catch (error) { if (isSerializationError(error)) throw new Error("Prize configuration changed concurrently. Refresh and try again."); throw error; } }
 
-export async function updateTournamentPrize(tournamentId: string, prizeId: string, rankInput: string, amountInput: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
-  assertUuid(prizeId, "prize identifier");
-  const { rank, amount } = validatePrizeInput(rankInput, amountInput);
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const prize = await tx.tournamentPrize.findUnique({ where: { id: prizeId }, select: { id: true, tournamentId: true, status: true } });
-      if (!prize || prize.tournamentId !== tournamentId) throw new Error("Prize does not belong to this tournament.");
-      if (prize.status !== TournamentPrizeStatus.DRAFT) throw new Error("Only draft prizes can be edited.");
-      const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { prizePool: true, status: true } });
-      if (!tournament || tournament.status === TournamentStatus.CANCELLED) throw new Error("Tournament is unavailable.");
-      const others = await tx.tournamentPrize.findMany({ where: { tournamentId, id: { not: prizeId } }, select: { amount: true, status: true } });
-      if (others.some((item) => item.status === TournamentPrizeStatus.FINALIZED)) throw new Error("Prize configuration is finalized and cannot be edited.");
-      const total = addMoney([...others.map((p) => p.amount.toString()), amount]);
-      if (compareMoney(total, tournament.prizePool.toString()) > 0) throw new Error("Allocated prizes cannot exceed the tournament prize pool.");
-      return tx.tournamentPrize.update({ where: { id: prizeId }, data: { rank, amount } });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (isUniqueError(error)) throw new Error("That prize rank already exists for this tournament.");
-    if (isSerializationError(error)) throw new Error("Prize configuration changed concurrently. Refresh and try again.");
-    throw error;
-  }
-}
+export async function calculateTournamentPrizes(tournamentId: string) { await requireAdmin(); assertUuid(tournamentId, "tournament identifier"); const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, prizePool: true, status: true } }); if (!tournament) throw new Error("Tournament not found."); const prizes = await prisma.tournamentPrize.findMany({ where: { tournamentId, status: TournamentPrizeStatus.FINALIZED }, orderBy: { rank: "asc" }, select: { rank: true, amount: true } }); const results = await prisma.tournamentResult.findMany({ where: { tournamentId, resultStatus: TournamentResultStatus.VERIFIED, registration: { status: RegistrationStatus.CONFIRMED } }, select: { rank: true, registrationId: true, registration: { select: { user: { select: { id: true, name: true, email: true } } } } }, orderBy: { rank: "asc" } }); const byRank = new Map(results.map((result) => [result.rank, result])); return prizes.map((prize) => { const result = byRank.get(prize.rank); return { rank: prize.rank, amount: prize.amount.toString(), registrationId: result?.registrationId ?? null, participant: result?.registration.user ?? null }; }); }
 
-export async function deleteTournamentPrize(tournamentId: string, prizeId: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
-  assertUuid(prizeId, "prize identifier");
-  const prize = await prisma.tournamentPrize.findUnique({ where: { id: prizeId }, select: { id: true, tournamentId: true, status: true } });
-  if (!prize || prize.tournamentId !== tournamentId) throw new Error("Prize does not belong to this tournament.");
-  if (prize.status !== TournamentPrizeStatus.DRAFT) throw new Error("Only draft prizes can be removed.");
-  return prisma.tournamentPrize.delete({ where: { id: prizeId } });
-}
-
-export async function finalizePrizeConfiguration(tournamentId: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, prizePool: true, status: true } });
-      if (!tournament) throw new Error("Tournament not found.");
-      if (tournament.status === TournamentStatus.CANCELLED) throw new Error("Cancelled tournaments cannot finalize prizes.");
-      const prizes = await tx.tournamentPrize.findMany({ where: { tournamentId }, orderBy: { rank: "asc" } });
-      if (prizes.length === 0) throw new Error("Add at least one prize position before finalization.");
-      const total = addMoney(prizes.map((prize) => prize.amount.toString()));
-      if (!canFinalizePrizeAllocation(total, tournament.prizePool.toString())) throw new Error("Finalization requires allocated prizes to equal the tournament prize pool.");
-      if (prizes.some((prize) => prize.status !== TournamentPrizeStatus.DRAFT)) throw new Error("Prize configuration is already finalized or contains an invalid state.");
-      return tx.tournamentPrize.updateMany({ where: { tournamentId, status: TournamentPrizeStatus.DRAFT }, data: { status: TournamentPrizeStatus.FINALIZED } });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (isSerializationError(error)) throw new Error("Prize configuration changed concurrently. Refresh and try again.");
-    throw error;
-  }
-}
-
-export async function calculateTournamentPrizes(tournamentId: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
-  const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, prizePool: true, status: true } });
-  if (!tournament) throw new Error("Tournament not found.");
-  const prizes = await prisma.tournamentPrize.findMany({ where: { tournamentId, status: TournamentPrizeStatus.FINALIZED }, orderBy: { rank: "asc" }, select: { rank: true, amount: true } });
-  const results = await prisma.tournamentResult.findMany({ where: { tournamentId, resultStatus: TournamentResultStatus.VERIFIED, registration: { status: RegistrationStatus.CONFIRMED } }, select: { rank: true, registrationId: true, registration: { select: { user: { select: { id: true, name: true, email: true } } } } }, orderBy: { rank: "asc" } });
-  const byRank = new Map(results.map((result) => [result.rank, result]));
-  return prizes.map((prize) => {
-    const result = byRank.get(prize.rank);
-    return { rank: prize.rank, amount: prize.amount.toString(), registrationId: result?.registrationId ?? null, participant: result?.registration.user ?? null };
-  });
-}
-
-export async function getPublicFinalizedTournamentPrizes(tournamentId: string) {
-  assertUuid(tournamentId, "tournament identifier");
-  return prisma.tournamentPrize.findMany({ where: { tournamentId, status: TournamentPrizeStatus.FINALIZED }, orderBy: { rank: "asc" }, select: { rank: true, amount: true } });
-}
+export async function getPublicFinalizedTournamentPrizes(tournamentId: string) { assertUuid(tournamentId, "tournament identifier"); return prisma.tournamentPrize.findMany({ where: { tournamentId, status: TournamentPrizeStatus.FINALIZED }, orderBy: { rank: "asc" }, select: { rank: true, amount: true } }); }
