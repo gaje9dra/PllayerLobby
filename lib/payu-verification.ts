@@ -31,7 +31,7 @@ function normalizeStatus(value: string | null) {
 }
 
 function mapPayUStatus(status: string, unmappedStatus: string): PayUVerificationState {
-  if (unmappedStatus === "captured" || unmappedStatus === "auth" || status === "success") return "SUCCESS";
+  if (status === "success" && (unmappedStatus === "captured" || unmappedStatus === "auth")) return "SUCCESS";
   if (unmappedStatus === "failed" || unmappedStatus === "bounced" || unmappedStatus === "dropped" || unmappedStatus === "usercancelled" || unmappedStatus === "autorefund" || status === "failure" || status === "failed") return "FAILED";
   if (unmappedStatus === "pending" || unmappedStatus === "initiated" || unmappedStatus === "in progress" || status === "pending") return "PENDING";
   return "UNKNOWN";
@@ -60,12 +60,7 @@ function parseTransaction(raw: unknown, merchantTransactionId: string): PayUVeri
 export async function verifyPayUTransaction(merchantTransactionId: string): Promise<PayUVerificationResult> {
   const config = getPayUConfig();
   const hash = generatePayUVerifyPaymentHash({ key: config.merchantKey, txnid: merchantTransactionId, salt: config.merchantSalt });
-  const body = new URLSearchParams({
-    key: config.merchantKey,
-    command: "verify_payment",
-    var1: merchantTransactionId,
-    hash,
-  });
+  const body = new URLSearchParams({ key: config.merchantKey, command: "verify_payment", var1: merchantTransactionId, hash });
 
   try {
     const response = await fetch(config.verifyPaymentUrl, {
@@ -77,7 +72,6 @@ export async function verifyPayUTransaction(merchantTransactionId: string): Prom
     });
 
     if (!response.ok) return { state: "UNKNOWN", transaction: null };
-
     const payload: unknown = await response.json();
     if (!payload || typeof payload !== "object") return { state: "UNKNOWN", transaction: null };
 
@@ -88,19 +82,12 @@ export async function verifyPayUTransaction(merchantTransactionId: string): Prom
     if (!transactionDetails || typeof transactionDetails !== "object") return { state: "UNKNOWN", transaction: null };
 
     const details = transactionDetails as Record<string, unknown>;
-    const rawTransaction = details[merchantTransactionId];
-    const transaction = parseTransaction(rawTransaction, merchantTransactionId);
+    const transaction = parseTransaction(details[merchantTransactionId], merchantTransactionId);
     if (!transaction) return { state: "UNKNOWN", transaction: null };
 
-    return {
-      state: mapPayUStatus(transaction.status, transaction.unmappedstatus),
-      transaction,
-    };
+    return { state: mapPayUStatus(transaction.status, transaction.unmappedstatus), transaction };
   } catch (error) {
-    console.error("PayU server verification request failed", {
-      merchantTransactionId,
-      error: error instanceof Error ? error.name : "unknown",
-    });
+    console.error("PayU server verification request failed", { merchantTransactionId, error: error instanceof Error ? error.name : "unknown" });
     return { state: "UNKNOWN", transaction: null };
   }
 }
