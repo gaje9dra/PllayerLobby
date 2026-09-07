@@ -19,12 +19,12 @@ export function normalizePrizeAmount(value: string): string | null {
 
 function toCents(value: string): bigint {
   const [whole, fraction = "00"] = value.split(".");
-  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+  return BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, "0"));
 }
 
 function fromCents(cents: bigint): string {
-  if (cents < 0n) throw new Error("Money amount cannot be negative.");
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
+  if (cents < BigInt(0)) throw new Error("Money amount cannot be negative.");
+  return `${cents / BigInt(100)}.${(cents % BigInt(100)).toString().padStart(2, "0")}`;
 }
 
 export function compareMoney(a: string, b: string): number {
@@ -34,7 +34,7 @@ export function compareMoney(a: string, b: string): number {
 }
 
 export function addMoney(values: readonly string[]): string {
-  return fromCents(values.reduce((sum, value) => sum + toCents(value), 0n));
+  return fromCents(values.reduce((sum, value) => sum + toCents(value), BigInt(0)));
 }
 
 export function subtractMoney(a: string, b: string): string {
