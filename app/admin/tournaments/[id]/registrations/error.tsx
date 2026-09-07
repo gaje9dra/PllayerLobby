@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { SectionContainer } from "@/components/ui/section-container";
 
-export default function Error({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error("Admin registration management error:", error);
   }, [error]);
