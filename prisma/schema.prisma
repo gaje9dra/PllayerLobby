@@ -7,47 +7,13 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserRole {
-  USER
-  ADMIN
-}
-
-enum UserStatus {
-  ACTIVE
-  SUSPENDED
-  BANNED
-}
-
-enum TournamentFormat {
-  SOLO
-  DUO
-  SQUAD
-  TEAM
-}
-
-enum TournamentStatus {
-  DRAFT
-  UPCOMING
-  REGISTRATION_OPEN
-  REGISTRATION_CLOSED
-  LIVE
-  COMPLETED
-  CANCELLED
-}
-
-enum RegistrationStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  INITIATED
-  PENDING
-  SUCCESS
-  FAILED
-  CANCELLED
-}
+enum UserRole { USER ADMIN }
+enum UserStatus { ACTIVE SUSPENDED BANNED }
+enum TournamentFormat { SOLO DUO SQUAD TEAM }
+enum TournamentStatus { DRAFT UPCOMING REGISTRATION_OPEN REGISTRATION_CLOSED LIVE COMPLETED CANCELLED }
+enum RegistrationStatus { PENDING CONFIRMED CANCELLED }
+enum PaymentStatus { INITIATED PENDING SUCCESS FAILED CANCELLED }
+enum TournamentResultStatus { DRAFT VERIFIED DISQUALIFIED }
 
 model User {
   id String @id @default(uuid()) @db.Uuid
@@ -89,14 +55,9 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
 }
-model VerificationToken {
-  identifier String
-  token String @unique
-  expires DateTime
-  @@unique([identifier, token])
-}
+model VerificationToken { identifier String token String @unique expires DateTime @@unique([identifier, token]) }
 model Game {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid())
   name String
   slug String @unique
   code String @unique
@@ -129,12 +90,9 @@ model Tournament {
   updatedAt DateTime @updatedAt
   game Game @relation(fields: [gameId], references: [id], onDelete: Restrict)
   registrations Registration[]
+  results TournamentResult[]
   room TournamentRoom?
-  @@index([gameId])
-  @@index([status])
-  @@index([startTime])
-  @@index([registrationStartTime])
-  @@index([registrationEndTime])
+  @@index([gameId]) @@index([status]) @@index([startTime]) @@index([registrationStartTime]) @@index([registrationEndTime])
 }
 model Registration {
   id String @id @default(uuid()) @db.Uuid
@@ -147,10 +105,8 @@ model Registration {
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   payments Payment[]
   code RegistrationCode?
-  @@unique([userId, tournamentId])
-  @@index([tournamentId])
-  @@index([userId])
-  @@index([tournamentId, status])
+  result TournamentResult?
+  @@unique([userId, tournamentId]) @@index([tournamentId]) @@index([userId]) @@index([tournamentId, status])
 }
 model RegistrationCode {
   id String @id @default(uuid()) @db.Uuid
@@ -173,8 +129,7 @@ model TournamentRoom {
   publishedAt DateTime?
   revokedAt DateTime?
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
-  @@index([publishedAt])
-  @@index([revokedAt])
+  @@index([publishedAt]) @@index([revokedAt])
 }
 model Payment {
   id String @id @default(uuid()) @db.Uuid
@@ -187,7 +142,19 @@ model Payment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   registration Registration @relation(fields: [registrationId], references: [id], onDelete: Restrict)
-  @@index([registrationId])
-  @@index([status])
-  @@index([registrationId, status])
+  @@index([registrationId]) @@index([status]) @@index([registrationId, status])
+}
+model TournamentResult {
+  id String @id @default(uuid()) @db.Uuid
+  tournamentId String @db.Uuid
+  registrationId String @unique @db.Uuid
+  rank Int
+  score Decimal @db.Decimal(20, 6)
+  resultStatus TournamentResultStatus @default(DRAFT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  @@index([tournamentId, rank])
+  @@index([tournamentId, resultStatus])
 }
