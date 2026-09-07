@@ -9,7 +9,7 @@ export {
 
 const TEST_CHECKOUT_URL = "https://test.payu.in/_payment";
 const PRODUCTION_CHECKOUT_URL = "https://secure.payu.in/_payment";
-const TEST_VERIFY_PAYMENT_URL = "https://test.payu.in/merchant/postservice?form=2";
+const TEST_VERIFY_PAYMENT_URL = "https://test.payu.in/merchant/postservice.php?form=2";
 const PRODUCTION_VERIFY_PAYMENT_URL = "https://info.payu.in/merchant/postservice.php?form=2";
 
 export type PayUEnvironment = "test" | "production";
