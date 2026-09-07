@@ -6,6 +6,7 @@ import { getPayUConfig, validatePayUResponseHash, type PayUResponseFields } from
 import { canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
 import { verifyPayUTransaction, type PayUVerificationResult } from "@/lib/payu-verification";
 import { matchesAuthoritativePaymentFields, normalizePaymentAmount } from "@/lib/payment-verification-rules";
+import { createRegistrationCodeData } from "@/lib/registration-code";
 
 export type PaymentVerificationOutcome = "SUCCESS" | "FAILED" | "PENDING" | "REJECTED";
 export type PaymentVerificationResult = { outcome: PaymentVerificationOutcome; message: string };
@@ -99,7 +100,14 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
     }
 
     if (verification.state === "SUCCESS") {
-      if (payment.status === PaymentStatus.SUCCESS && payment.registration.status === RegistrationStatus.CONFIRMED) return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
+      if (payment.status === PaymentStatus.SUCCESS && payment.registration.status === RegistrationStatus.CONFIRMED) {
+        const existingCode = await tx.registrationCode.findUnique({ where: { registrationId: payment.registration.id }, select: { id: true } });
+        if (!existingCode) {
+          const codeData = createRegistrationCodeData();
+          await tx.registrationCode.create({ data: { registrationId: payment.registration.id, codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted } });
+        }
+        return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
+      }
       if (payment.status !== PaymentStatus.PENDING) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
       if (payment.registration.status !== RegistrationStatus.PENDING) {
         console.warn("PayU verification found inconsistent registration state", { paymentId: payment.id, merchantTransactionId, registrationStatus: payment.registration.status });
@@ -109,6 +117,15 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
 
       await tx.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.SUCCESS, payuTransactionId } });
       await tx.registration.update({ where: { id: payment.registration.id }, data: { status: RegistrationStatus.CONFIRMED } });
+
+      const codeData = createRegistrationCodeData();
+      await tx.registrationCode.create({
+        data: {
+          registrationId: payment.registration.id,
+          codeHash: codeData.codeHash,
+          codeEncrypted: codeData.codeEncrypted,
+        },
+      });
 
       console.info("PayU payment verified successfully", { paymentId: payment.id, merchantTransactionId, payuTransactionId: verification.transaction.mihpayid, oldPaymentStatus: payment.status, newPaymentStatus: PaymentStatus.SUCCESS, oldRegistrationStatus: payment.registration.status, newRegistrationStatus: RegistrationStatus.CONFIRMED });
       return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
