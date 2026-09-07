@@ -5,6 +5,7 @@ import { PaymentStatus } from "@/app/generated/prisma/client";
 import { generatePayURequestHash, generatePayUVerifyPaymentHash, validatePayUResponseHash } from "@/lib/payu-hash";
 import { generateMerchantTransactionId, canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
 import { mapPayUStatus, normalizePaymentAmount } from "@/lib/payu-verification-rules";
+import { matchesAuthoritativePaymentFields } from "@/lib/payment-verification-rules";
 
 const requestInput = {
   key: "merchant-key",
@@ -17,42 +18,17 @@ const requestInput = {
 };
 
 function makeResponseHash(status = "success") {
-  const value = [
-    requestInput.salt,
-    status,
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    requestInput.email,
-    requestInput.firstname,
-    requestInput.productinfo,
-    requestInput.amount,
-    requestInput.txnid,
-    requestInput.key,
-  ].join("|");
+  const value = [requestInput.salt, status, "", "", "", "", "", "", "", "", "", "", requestInput.email, requestInput.firstname, requestInput.productinfo, requestInput.amount, requestInput.txnid, requestInput.key].join("|");
   return createHash("sha512").update(value, "utf8").digest("hex");
 }
 
 test("PayU request hash matches the documented hosted checkout formula", () => {
-  const expected = createHash("sha512")
-    .update(`${requestInput.key}|${requestInput.txnid}|${requestInput.amount}|${requestInput.productinfo}|${requestInput.firstname}|${requestInput.email}|||||||||||${requestInput.salt}`, "utf8")
-    .digest("hex");
-
+  const expected = createHash("sha512").update(`${requestInput.key}|${requestInput.txnid}|${requestInput.amount}|${requestInput.productinfo}|${requestInput.firstname}|${requestInput.email}|||||||||||${requestInput.salt}`, "utf8").digest("hex");
   assert.equal(generatePayURequestHash(requestInput), expected);
 });
 
 test("PayU verify_payment hash matches the documented command API formula", () => {
-  const expected = createHash("sha512")
-    .update(`${requestInput.key}|verify_payment|${requestInput.txnid}|${requestInput.salt}`, "utf8")
-    .digest("hex");
-
+  const expected = createHash("sha512").update(`${requestInput.key}|verify_payment|${requestInput.txnid}|${requestInput.salt}`, "utf8").digest("hex");
   assert.equal(generatePayUVerifyPaymentHash(requestInput), expected);
 });
 
@@ -97,16 +73,24 @@ test("payment amount validation rejects malformed and negative values", () => {
   assert.equal(normalizePaymentAmount("not-an-amount"), null);
 });
 
+test("authoritative PayU fields reject transaction ID, amount and user tampering", () => {
+  const expected = { txnid: requestInput.txnid, amount: requestInput.amount, productinfo: requestInput.productinfo, firstname: requestInput.firstname, email: requestInput.email, phone: "9876543210" };
+  assert.equal(matchesAuthoritativePaymentFields(expected, expected), true);
+  assert.equal(matchesAuthoritativePaymentFields({ ...expected, txnid: "other-transaction" }, expected), false);
+  assert.equal(matchesAuthoritativePaymentFields({ ...expected, amount: "1.00" }, expected), false);
+  assert.equal(matchesAuthoritativePaymentFields({ ...expected, email: "[email protected]" }, expected), false);
+  assert.equal(matchesAuthoritativePaymentFields({ ...expected, productinfo: "Another Tournament" }, expected), false);
+});
+
 test("merchant transaction IDs are unpredictable fixed-length server identifiers", () => {
   const first = generateMerchantTransactionId();
   const second = generateMerchantTransactionId();
-
   assert.match(first, /^PL[a-f0-9]{22}$/);
   assert.match(second, /^PL[a-f0-9]{22}$/);
   assert.notEqual(first, second);
 });
 
-test("payment state machine blocks SUCCESS back to PENDING", () => {
+test("payment state machine supports safe retry after FAILED and blocks SUCCESS back to PENDING", () => {
   assert.equal(canTransitionPaymentStatus(PaymentStatus.SUCCESS, PaymentStatus.PENDING), false);
   assert.equal(canTransitionPaymentStatus(PaymentStatus.PENDING, PaymentStatus.FAILED), true);
   assert.equal(canTransitionPaymentStatus(PaymentStatus.INITIATED, PaymentStatus.PENDING), true);
