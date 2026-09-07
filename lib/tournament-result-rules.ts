@@ -10,8 +10,7 @@ export function parsePositiveRank(value: string) {
 export function parseScore(value: string) {
   const normalized = value.trim();
   if (!/^(?:\d+)(?:\.\d{1,6})?$/.test(normalized)) return null;
-  const score = Number(normalized);
-  return Number.isFinite(score) && score >= 0 ? score : null;
+  return normalized;
 }
 
 export function isResultTournamentEligible(status: TournamentStatus) {
