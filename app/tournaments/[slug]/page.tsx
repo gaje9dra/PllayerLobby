@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { TournamentStatus } from "@/app/generated/prisma/client";
+import { RegistrationStatus, TournamentStatus } from "@/app/generated/prisma/client";
 import { TournamentRegistration, type RegistrationAvailability } from "@/components/tournaments/tournament-registration";
 import { TournamentStatusBadge } from "@/components/tournaments/tournament-status-badge";
 import { Button } from "@/components/ui/button";
@@ -66,24 +66,39 @@ async function getPublicTournament(slug: string) {
   });
 }
 
+type RegistrationAvailabilityResult = {
+  availability: RegistrationAvailability;
+  registrationId: string | null;
+};
+
 async function getRegistrationAvailability(
   tournament: NonNullable<Awaited<ReturnType<typeof getPublicTournament>>>,
-): Promise<RegistrationAvailability> {
+): Promise<RegistrationAvailabilityResult> {
   const user = await getCurrentUser();
-  if (!user) return "LOGIN";
-  if (tournament.status === TournamentStatus.COMPLETED) return "COMPLETED";
-  if (tournament.status === TournamentStatus.UPCOMING) return "REGISTRATION_NOT_STARTED";
+
+  if (!user) return { availability: "LOGIN", registrationId: null };
+  if (tournament.status === TournamentStatus.COMPLETED) return { availability: "COMPLETED", registrationId: null };
+  if (tournament.status === TournamentStatus.UPCOMING) return { availability: "REGISTRATION_NOT_STARTED", registrationId: null };
+
+  const existingRegistration = await prisma.registration.findUnique({
+    where: { userId_tournamentId: { userId: user.id, tournamentId: tournament.id } },
+    select: { id: true, status: true },
+  });
+
+  if (existingRegistration?.status === RegistrationStatus.PENDING && tournament.entryFee.toFixed(2) !== "0.00") {
+    return { availability: "PAYMENT_PENDING", registrationId: existingRegistration.id };
+  }
 
   const eligibility = await canRegisterForTournament(user, tournament.id);
-  if (eligibility.allowed) return "REGISTER";
+  if (eligibility.allowed) return { availability: "REGISTER", registrationId: null };
 
   switch (eligibility.reason) {
-    case REGISTRATION_ELIGIBILITY_REASONS.ALREADY_REGISTERED: return "ALREADY_REGISTERED";
-    case REGISTRATION_ELIGIBILITY_REASONS.TOURNAMENT_FULL: return "TOURNAMENT_FULL";
-    case REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_NOT_STARTED: return "REGISTRATION_NOT_STARTED";
+    case REGISTRATION_ELIGIBILITY_REASONS.ALREADY_REGISTERED: return { availability: "ALREADY_REGISTERED", registrationId: existingRegistration?.id ?? null };
+    case REGISTRATION_ELIGIBILITY_REASONS.TOURNAMENT_FULL: return { availability: "TOURNAMENT_FULL", registrationId: null };
+    case REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_NOT_STARTED: return { availability: "REGISTRATION_NOT_STARTED", registrationId: null };
     case REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_NOT_OPEN:
-    case REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_CLOSED: return "REGISTRATION_CLOSED";
-    default: return "UNAVAILABLE";
+    case REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_CLOSED: return { availability: "REGISTRATION_CLOSED", registrationId: null };
+    default: return { availability: "UNAVAILABLE", registrationId: null };
   }
 }
 
@@ -116,7 +131,7 @@ export default async function TournamentDetailPage({ params }: { params: Promise
   if (!tournament) notFound();
 
   const currentUser = await getCurrentUser();
-  const registrationAvailability = await getRegistrationAvailability(tournament);
+  const registration = await getRegistrationAvailability(tournament);
   const bannerUrl = safeImageUrl(tournament.bannerUrl);
   const logoUrl = safeImageUrl(tournament.game.logoUrl);
   const registrationStart = tournament.registrationStartTime ? formatAppDateTime(tournament.registrationStartTime) : "Not announced";
@@ -185,9 +200,10 @@ export default async function TournamentDetailPage({ params }: { params: Promise
               <div className="mt-5">
                 <TournamentRegistration
                   tournamentId={tournament.id}
-                  availability={registrationAvailability}
+                  availability={registration.availability}
                   loginHref={loginHref}
                   initialPhone={currentUser?.phone ?? null}
+                  existingRegistrationId={registration.registrationId}
                 />
               </div>
             </section>
