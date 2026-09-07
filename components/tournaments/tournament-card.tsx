@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TournamentStatusBadge } from "@/components/admin/tournament-status-badge";
+import { TournamentStatusBadge } from "@/components/tournaments/tournament-status-badge";
 import { formatAppDateTime } from "@/lib/timezone";
 import type { TournamentStatus } from "@/app/generated/prisma/client";
 
@@ -55,7 +55,7 @@ export function TournamentCard({ tournament }: { tournament: TournamentCardTourn
                 <h2 className="mt-0.5 line-clamp-2 text-lg font-black leading-tight text-white sm:text-xl">{tournament.name}</h2>
               </div>
             </div>
-            <TournamentStatusBadge status={tournament.status} />
+            <TournamentStatusBadge status={tournament.status as Exclude<TournamentStatus, "DRAFT" | "CANCELLED">} />
           </div>
         </div>
 
