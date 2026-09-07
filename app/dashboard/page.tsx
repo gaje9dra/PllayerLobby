@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { RegistrationStatus } from "@/app/generated/prisma/client";
 import { requireActiveUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { SectionContainer } from "@/components/ui/section-container";
 import { Button } from "@/components/ui/button";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
@@ -14,8 +16,38 @@ export const metadata: Metadata = {
   description: "Manage your ArenaX account and tournament activity.",
 };
 
+function registrationStatusLabel(status: RegistrationStatus) {
+  switch (status) {
+    case RegistrationStatus.CONFIRMED:
+      return "Confirmed";
+    case RegistrationStatus.PENDING:
+      return "Payment Pending";
+    case RegistrationStatus.CANCELLED:
+      return "Cancelled";
+  }
+}
+
 export default async function DashboardPage() {
   const user = await requireActiveUser();
+  const registrations = await prisma.registration.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    select: {
+      id: true,
+      status: true,
+      createdAt: true,
+      tournament: {
+        select: {
+          name: true,
+          slug: true,
+          startTime: true,
+          entryFee: true,
+          game: { select: { name: true } },
+        },
+      },
+    },
+  });
 
   return (
     <SectionContainer className="py-12 sm:py-16 lg:py-20">
@@ -50,7 +82,33 @@ export default async function DashboardPage() {
 
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
         <DashboardCard title="My Tournaments" eyebrow="Tournament activity">
-          <EmptyState title="No tournaments yet" description="Your registered tournaments will appear here when tournament registration is launched." action={<Button href="/tournaments" variant="secondary">Browse Tournaments</Button>} />
+          {registrations.length === 0 ? (
+            <EmptyState title="No tournaments yet" description="Your registered tournaments will appear here." action={<Button href="/tournaments" variant="secondary">Browse Tournaments</Button>} />
+          ) : (
+            <div className="space-y-3">
+              {registrations.map((registration) => (
+                <Link
+                  key={registration.id}
+                  href={`/tournaments/${registration.tournament.slug}`}
+                  className="block rounded-xl border border-white/10 bg-slate-950/30 p-4 transition hover:border-lime-300/20 hover:bg-white/[0.03]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-white">{registration.tournament.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">{registration.tournament.game.name}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300">
+                      {registrationStatusLabel(registration.status)}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-500">
+                    <span>Starts {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(registration.tournament.startTime)}</span>
+                    <span className="text-right">{registration.tournament.entryFee.toFixed(2) === "0.00" ? "Free" : `₹${registration.tournament.entryFee.toFixed(2)}`}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </DashboardCard>
         <DashboardCard title="Payment History" eyebrow="Transactions">
           <EmptyState title="No payment history yet" description="Payment records will appear here when entry fees and payment processing are introduced." />
