@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState, useActionState } from "react";
 import { registerForTournament, type RegistrationActionState } from "@/app/tournaments/actions";
 import { TournamentPayment } from "@/components/tournaments/tournament-payment";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,31 @@ const availabilityMessages: Record<Exclude<RegistrationAvailability, "LOGIN" | "
   UNAVAILABLE: "Your account is not currently eligible to register.",
   COMPLETED: "This tournament is completed.",
 };
+
+function RegistrationCode({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyCode() {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Registration code</p>
+          <p className="mt-1 font-mono text-sm font-bold tracking-wider text-white">{code}</p>
+        </div>
+        <button type="button" onClick={copyCode} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5 hover:text-white">
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <p className="mt-2 text-[11px] leading-5 text-slate-500">Keep this code available. It will be required for tournament joining.</p>
+    </div>
+  );
+}
 
 export function TournamentRegistration({
   tournamentId,
@@ -59,6 +84,7 @@ export function TournamentRegistration({
       <div className="rounded-2xl border border-lime-300/20 bg-lime-300/10 p-4" role="status">
         <p className="text-sm font-bold text-lime-200">Registration Confirmed</p>
         <p className="mt-1 text-xs leading-5 text-lime-100/70">You are registered for this free tournament.</p>
+        {state.registrationCode ? <RegistrationCode code={state.registrationCode} /> : null}
       </div>
     );
   }
