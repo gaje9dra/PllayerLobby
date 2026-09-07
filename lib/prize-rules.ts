@@ -17,20 +17,28 @@ export function normalizePrizeAmount(value: string): string | null {
   return `${whole}.${fraction.padEnd(PRIZE_AMOUNT_SCALE, "0")}`;
 }
 
+function toCents(value: string): bigint {
+  const [whole, fraction = "00"] = value.split(".");
+  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+}
+
+function fromCents(cents: bigint): string {
+  if (cents < 0n) throw new Error("Money amount cannot be negative.");
+  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
+}
+
 export function compareMoney(a: string, b: string): number {
-  const [aw, af] = a.split(".");
-  const [bw, bf] = b.split(".");
-  const left = BigInt(aw) * 100n + BigInt(af ?? "0");
-  const right = BigInt(bw) * 100n + BigInt(bf ?? "0");
+  const left = toCents(a);
+  const right = toCents(b);
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export function addMoney(values: readonly string[]): string {
-  const total = values.reduce((sum, value) => {
-    const [whole, fraction = "00"] = value.split(".");
-    return sum + BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
-  }, 0n);
-  return `${total / 100n}.${(total % 100n).toString().padStart(2, "0")}`;
+  return fromCents(values.reduce((sum, value) => sum + toCents(value), 0n));
+}
+
+export function subtractMoney(a: string, b: string): string {
+  return fromCents(toCents(a) - toCents(b));
 }
 
 export function isPositivePrizeAmount(value: string): boolean {
