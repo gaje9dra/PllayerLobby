@@ -16,6 +16,7 @@ function responseFields(formData: FormData) {
     productinfo: get("productinfo"),
     firstname: get("firstname"),
     email: get("email"),
+    phone: get("phone"),
     udf1: get("udf1"),
     udf2: get("udf2"),
     udf3: get("udf3"),
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
         registration: {
           select: {
             tournament: { select: { name: true } },
-            user: { select: { name: true, email: true } },
+            user: { select: { name: true, email: true, phone: true } },
           },
         },
       },
@@ -62,7 +63,8 @@ export async function POST(request: Request) {
       response.amount !== payment.amount.toFixed(2) ||
       response.productinfo !== expectedProductInfo ||
       response.firstname !== expectedFirstname ||
-      response.email !== payment.registration.user.email
+      response.email !== payment.registration.user.email ||
+      response.phone !== payment.registration.user.phone
     ) {
       return new Response("PayU response did not match the payment record.", { status: 400 });
     }
@@ -78,10 +80,7 @@ export async function POST(request: Request) {
 
     await prisma.payment.update({
       where: { id: payment.id },
-      data: {
-        status: nextStatus,
-        payuTransactionId: response.mihpayid || undefined,
-      },
+      data: { status: nextStatus, payuTransactionId: response.mihpayid || undefined },
     });
 
     console.info("PayU callback validated", {
@@ -94,11 +93,10 @@ export async function POST(request: Request) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
     if (!appUrl) return new Response("Application URL is not configured.", { status: 500 });
 
-    const destination = new URL(
-      response.status === "success" ? "/dashboard?payment=pending" : "/dashboard?payment=failed",
-      appUrl,
+    return Response.redirect(
+      new URL(response.status === "success" ? "/dashboard?payment=pending" : "/dashboard?payment=failed", appUrl),
+      303,
     );
-    return Response.redirect(destination, 303);
   } catch (error) {
     console.error("PayU callback processing failed:", error);
     return new Response("Unable to process PayU response.", { status: 500 });
