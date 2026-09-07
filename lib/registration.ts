@@ -3,9 +3,8 @@ import "server-only";
 import { RegistrationStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import {
-  createRegistrationCodeData,
-} from "@/lib/registration-code";
+import { refreshTournamentLifecycle } from "@/lib/tournament-lifecycle";
+import { createRegistrationCodeData } from "@/lib/registration-code";
 import {
   evaluateRegistrationEligibility,
   REGISTRATION_ELIGIBILITY_REASONS,
@@ -75,6 +74,8 @@ export async function createTournamentRegistration(
   }
 
   try {
+    await refreshTournamentLifecycle(tournamentId);
+
     return await prisma.$transaction(async (tx) => {
       const lockedRows = await tx.$queryRaw<{ id: string }[]>`
         SELECT "id"
