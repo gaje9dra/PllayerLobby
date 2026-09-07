@@ -8,6 +8,7 @@ export type RegistrationActionState = {
   ok: boolean;
   code?: string;
   message?: string;
+  registrationId?: string;
   registrationStatus?: RegistrationStatus;
   paymentRequired?: boolean;
 };
