@@ -32,8 +32,17 @@ export function getDueTournamentStatus(tournament: TournamentLifecycleInput, now
     return null;
   }
   if (tournament.status === TournamentStatus.REGISTRATION_CLOSED && now >= tournament.startTime) return TournamentStatus.LIVE;
-  // There is no authoritative endTime in the current schema, so LIVE remains LIVE.
   return null;
+}
+
+export function getEffectiveTournamentStatus(tournament: TournamentLifecycleInput, now = new Date()) {
+  let status = tournament.status;
+  for (let i = 0; i < 3; i += 1) {
+    const next = getDueTournamentStatus({ ...tournament, status }, now);
+    if (!next) break;
+    status = next;
+  }
+  return status;
 }
 
 export function isStatusTransitionDue(tournament: TournamentLifecycleInput, now: Date) {
