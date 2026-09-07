@@ -8,7 +8,6 @@ import {
   getRemainingSlots,
   REGISTRATION_ELIGIBILITY_REASONS,
   type RegistrationCapacity,
-  type RegistrationEligibilityReason,
   type RegistrationEligibilityResult,
 } from "@/lib/registration-eligibility-rules";
 
