@@ -25,10 +25,6 @@ type SearchParams = Record<string, string | string[] | undefined>;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function one(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
-
 function queryUrl(params: Record<string, string | number | undefined>) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -38,12 +34,8 @@ function queryUrl(params: Record<string, string | number | undefined>) {
 }
 
 function badgeClass(value: string) {
-  if (value === "CONFIRMED" || value === "SUCCESS" || value === "ACTIVE" || value === "Configured" || value === "Generated") {
-    return "border-lime-300/20 bg-lime-300/10 text-lime-200";
-  }
-  if (value === "PENDING" || value === "INITIATED" || value === "Not Generated") {
-    return "border-amber-300/20 bg-amber-300/10 text-amber-200";
-  }
+  if (value === "CONFIRMED" || value === "SUCCESS" || value === "ACTIVE" || value === "Configured" || value === "Generated") return "border-lime-300/20 bg-lime-300/10 text-lime-200";
+  if (value === "PENDING" || value === "INITIATED" || value === "Not Generated") return "border-amber-300/20 bg-amber-300/10 text-amber-200";
   return "border-rose-300/20 bg-rose-300/10 text-rose-200";
 }
 
@@ -85,6 +77,7 @@ export default async function AdminRegistrationsPage({
       id: true,
       name: true,
       status: true,
+      entryFee: true,
       maxParticipants: true,
       game: { select: { name: true } },
       room: { select: { publishedAt: true, revokedAt: true } },
@@ -135,7 +128,7 @@ export default async function AdminRegistrationsPage({
       status: true,
       createdAt: true,
       updatedAt: true,
-      user: { select: { id: true, name: true, email: true, image: true, status: true } },
+      user: { select: { id: true, name: true, email: true, status: true } },
       code: { select: { createdAt: true, revokedAt: true } },
       payments: {
         orderBy: { createdAt: "desc" },
@@ -210,7 +203,7 @@ export default async function AdminRegistrationsPage({
                       <td className="px-5 py-5"><p className="font-semibold text-white">{registration.user.name || "Unnamed participant"}</p><p className="mt-1 text-sm text-slate-500">{registration.user.email}</p><div className="mt-2"><Badge>{registration.user.status}</Badge></div></td>
                       <td className="px-5 py-5"><Badge>{registration.status}</Badge><p className="mt-2 max-w-[180px] break-all font-mono text-[11px] text-slate-600">{registration.id}</p></td>
                       <td className="px-5 py-5"><Badge>{paymentText}</Badge>{payment?.payuTransactionId ? <p className="mt-2 max-w-[180px] break-all text-xs text-slate-600">PayU: {payment.payuTransactionId}</p> : null}</td>
-                      <td className="px-5 py-5 font-semibold text-white">{payment ? `₹${payment.amount.toFixed(2)} ${payment.currency}` : "—"}</td>
+                      <td className="px-5 py-5 font-semibold text-white">₹{(payment?.amount ?? tournament.entryFee).toFixed(2)} {payment?.currency ?? "INR"}</td>
                       <td className="px-5 py-5 text-sm text-slate-400">{formatAppDateTime(registration.createdAt)}<p className="mt-1 text-xs text-slate-600">Updated {formatAppDateTime(registration.updatedAt)}</p></td>
                       <td className="px-5 py-5"><Badge>{codeText}</Badge></td>
                       <td className="px-5 py-5"><Badge>{roomText}</Badge></td>
