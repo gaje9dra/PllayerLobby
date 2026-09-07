@@ -50,6 +50,6 @@ export function getPayUConfig() {
     merchantKey,
     merchantSalt,
     environment,
-    checkoutUrl: environment === "production" ? PRODUCTION_CHECKOUT_URL : PRODUCTION_CHECKOUT_URL,
+    checkoutUrl: environment === "production" ? PRODUCTION_CHECKOUT_URL : TEST_CHECKOUT_URL,
   };
 }
