@@ -66,6 +66,8 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
 
   const activeGameSlugs = new Set(games.map((game) => game.slug));
   const game = requestedGame && activeGameSlugs.has(requestedGame) ? requestedGame : "";
+  const selectedGameId = game ? games.find((item) => item.slug === game)?.id : undefined;
+  const allowedGameIds = selectedGameId ? [selectedGameId] : games.map((item) => item.id);
   const status = isPublicStatus(statusParam) ? statusParam : undefined;
   const fee: FeeFilter = requestedFee === "free" || requestedFee === "paid" ? requestedFee : "all";
   const sort: SortKey = requestedSort in SORT_OPTIONS ? requestedSort as SortKey : "starting-soon";
@@ -73,11 +75,10 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
   const gameIdsForSearch = query
     ? games.filter((item) => item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map((item) => item.id)
     : [];
-  const selectedGameId = game ? games.find((item) => item.slug === game)?.id : undefined;
 
   const where = {
     status: status ?? { in: [...PUBLIC_STATUSES] },
-    ...(selectedGameId ? { gameId: selectedGameId } : {}),
+    gameId: { in: allowedGameIds },
     ...(query ? {
       OR: [
         { name: { contains: query, mode: "insensitive" as const } },
@@ -141,7 +142,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
           <label className="sr-only" htmlFor="tournament-fee">Entry fee</label>
           <select id="tournament-fee" name="fee" defaultValue={fee} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60"><option value="all">All Fees</option><option value="free">Free</option><option value="paid">Paid</option></select>
           <label className="sr-only" htmlFor="tournament-sort">Sort tournaments</label>
-          <select id="tournament-sort" name="sort" defaultValue={sort} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-lime-300/60"><option value="starting-soon">Starting Soon</option><option value="newest">Newly Added</option><option value="prize-high">Prize Pool: High to Low</option><option value="fee-low">Entry Fee: Low to High</option><option value="fee-high">Entry Fee: High to Low</option></select>
+          <select id="tournament-sort" name="sort" defaultValue={sort} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60"><option value="starting-soon">Starting Soon</option><option value="newest">Newly Added</option><option value="prize-high">Prize Pool: High to Low</option><option value="fee-low">Entry Fee: Low to High</option><option value="fee-high">Entry Fee: High to Low</option></select>
           <Button type="submit">Apply</Button>
         </div>
       </form>
