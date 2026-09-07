@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { registerForTournament, type RegistrationActionState } from "@/app/tournaments/actions";
+import { TournamentPayment } from "@/components/tournaments/tournament-payment";
 import { Button } from "@/components/ui/button";
 
 export type RegistrationAvailability =
@@ -37,16 +38,22 @@ export function TournamentRegistration({
   const [state, action, pending] = useActionState(registerForTournament, INITIAL_STATE);
 
   if (state.ok) {
+    if (state.paymentRequired && state.registrationId) {
+      return (
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4" role="status">
+            <p className="text-sm font-bold text-amber-200">Registration created — payment required</p>
+            <p className="mt-1 text-xs leading-5 text-amber-100/70">Your registration is pending until the payment is verified. No payment has been confirmed yet.</p>
+          </div>
+          <TournamentPayment registrationId={state.registrationId} />
+        </div>
+      );
+    }
+
     return (
       <div className="rounded-2xl border border-lime-300/20 bg-lime-300/10 p-4" role="status">
-        <p className="text-sm font-bold text-lime-200">
-          {state.paymentRequired ? "Registration created. Payment integration will be available in the next step." : "Registration Confirmed"}
-        </p>
-        <p className="mt-1 text-xs leading-5 text-lime-100/70">
-          {state.paymentRequired
-            ? "Your registration is pending payment verification. No payment has been processed yet."
-            : "You are registered for this tournament."}
-        </p>
+        <p className="text-sm font-bold text-lime-200">Registration Confirmed</p>
+        <p className="mt-1 text-xs leading-5 text-lime-100/70">You are registered for this free tournament.</p>
       </div>
     );
   }
