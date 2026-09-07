@@ -13,12 +13,31 @@ const requestInput = {
   amount: "100.00",
   productinfo: "Tournament Entry - Test Cup",
   firstname: "Gajendra",
-  email: "[email protected]",
+  email: "player@example.com",
   salt: "merchant-salt",
 };
 
 function makeResponseHash(status = "success") {
-  const value = [requestInput.salt, status, "", "", "", "", "", "", "", "", "", "", requestInput.email, requestInput.firstname, requestInput.productinfo, requestInput.amount, requestInput.txnid, requestInput.key].join("|");
+  const value = [
+    requestInput.salt,
+    status,
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    requestInput.email,
+    requestInput.firstname,
+    requestInput.productinfo,
+    requestInput.amount,
+    requestInput.txnid,
+    requestInput.key,
+  ].join("|");
   return createHash("sha512").update(value, "utf8").digest("hex");
 }
 
@@ -78,7 +97,7 @@ test("authoritative PayU fields reject transaction ID, amount and user tampering
   assert.equal(matchesAuthoritativePaymentFields(expected, expected), true);
   assert.equal(matchesAuthoritativePaymentFields({ ...expected, txnid: "other-transaction" }, expected), false);
   assert.equal(matchesAuthoritativePaymentFields({ ...expected, amount: "1.00" }, expected), false);
-  assert.equal(matchesAuthoritativePaymentFields({ ...expected, email: "[email protected]" }, expected), false);
+  assert.equal(matchesAuthoritativePaymentFields({ ...expected, email: "attacker@example.com" }, expected), false);
   assert.equal(matchesAuthoritativePaymentFields({ ...expected, productinfo: "Another Tournament" }, expected), false);
 });
 
