@@ -38,7 +38,7 @@ export type PaymentInitiationResult =
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function createMerchantTransactionId() {
+export function generateMerchantTransactionId() {
   return `PL${randomBytes(11).toString("hex")}`;
 }
 
@@ -137,7 +137,7 @@ export async function createPaymentForRegistration(registrationId: string): Prom
       }
 
       const amount = registration.tournament.entryFee.toFixed(2);
-      const merchantTransactionId = createMerchantTransactionId();
+      const merchantTransactionId = generateMerchantTransactionId();
       const productinfo = `Tournament Entry - ${registration.tournament.name}`.slice(0, 100);
       const firstname = firstNameFromUser(user.name);
       const hash = generatePayURequestHash({
