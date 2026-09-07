@@ -11,6 +11,7 @@ Create/configure a PayU merchant account and obtain the merchant key and salt fr
 Set these server-side values in `.env.local` or the deployment environment:
 
 ```env
+NEXT_PUBLIC_APP_URL=https://your-public-domain.example
 PAYU_MERCHANT_KEY=your-test-or-production-key
 PAYU_MERCHANT_SALT=your-secret-salt
 PAYU_ENVIRONMENT=test
@@ -24,6 +25,8 @@ The application uses:
 
 - Test checkout: `https://test.payu.in/_payment`
 - Production checkout: `https://secure.payu.in/_payment`
+
+For an actual PayU test transaction, the success/failure callback URL must be reachable by PayU over the public internet. A local-only `http://localhost:3000` URL is suitable for normal application development but not for PayU's external callback.
 
 ## Customer phone
 
