@@ -4,18 +4,16 @@ import { RegistrationStatus, TournamentResultStatus, TournamentStatus } from "@/
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refreshTournamentLifecycle } from "@/lib/tournament-lifecycle";
-import { canTransitionResultStatus, isRegistrationResultEligible, isResultTournamentEligible, isWinnerEligible, parsePositiveRank, parseScore } from "@/lib/tournament-result-rules";
+import { canEditTournamentResult, canTransitionResultStatus, isRegistrationResultEligible, isResultTournamentEligible, isWinnerEligible, parsePositiveRank, parseScore } from "@/lib/tournament-result-rules";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export type ResultOperation = { ok: true; resultId?: string } | { ok: false; message: string };
+function isUniqueError(error: unknown) { return error && typeof error === "object" && "code" in error && error.code === "P2002"; }
 
 async function getEligibleContext(tournamentId: string, registrationId: string) {
   if (!UUID.test(tournamentId) || !UUID.test(registrationId)) return null;
   await refreshTournamentLifecycle(tournamentId);
-  const registration = await prisma.registration.findUnique({
-    where: { id: registrationId },
-    select: { id: true, tournamentId: true, status: true, userId: true, tournament: { select: { id: true, status: true } } },
-  });
+  const registration = await prisma.registration.findUnique({ where: { id: registrationId }, select: { id: true, tournamentId: true, status: true, tournament: { select: { id: true, status: true } } } });
   if (!registration || registration.tournamentId !== tournamentId || !isRegistrationResultEligible(registration.status) || !isResultTournamentEligible(registration.tournament.status)) return null;
   return registration;
 }
@@ -26,13 +24,12 @@ export async function createTournamentResult(tournamentId: string, registrationI
   const score = parseScore(scoreInput);
   if (rank === null) return { ok: false, message: "Rank must be a positive integer." };
   if (score === null) return { ok: false, message: "Score must be a non-negative number with at most 6 decimal places." };
-  const context = await getEligibleContext(tournamentId, registrationId);
-  if (!context) return { ok: false, message: "Only confirmed registrations for LIVE or COMPLETED tournaments can receive results." };
+  if (!await getEligibleContext(tournamentId, registrationId)) return { ok: false, message: "Only confirmed registrations for LIVE or COMPLETED tournaments can receive results." };
   try {
     const result = await prisma.tournamentResult.create({ data: { tournamentId, registrationId, rank, score, resultStatus: TournamentResultStatus.DRAFT }, select: { id: true } });
     return { ok: true, resultId: result.id };
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "P2002") return { ok: false, message: "A result already exists for this registration." };
+    if (isUniqueError(error)) return { ok: false, message: "A result already exists for this registration." };
     console.error("Result creation failed:", error);
     return { ok: false, message: "Unable to create the result." };
   }
@@ -48,8 +45,13 @@ export async function updateTournamentResult(tournamentId: string, resultId: str
   const result = await prisma.tournamentResult.findUnique({ where: { id: resultId }, select: { id: true, tournamentId: true, registrationId: true, resultStatus: true } });
   if (!result || result.tournamentId !== tournamentId || !canEditTournamentResult(result.resultStatus)) return { ok: false, message: "Only DRAFT results can be edited." };
   if (!await getEligibleContext(tournamentId, result.registrationId)) return { ok: false, message: "The registration is not eligible for a result." };
-  await prisma.tournamentResult.update({ where: { id: result.id }, data: { rank, score } });
-  return { ok: true, resultId: result.id };
+  try {
+    await prisma.tournamentResult.update({ where: { id: result.id }, data: { rank, score } });
+    return { ok: true, resultId: result.id };
+  } catch (error) {
+    console.error("Result update failed:", error);
+    return { ok: false, message: "Unable to update the result." };
+  }
 }
 
 async function transitionResult(tournamentId: string, resultId: string, target: TournamentResultStatus): Promise<ResultOperation> {
@@ -64,8 +66,14 @@ async function transitionResult(tournamentId: string, resultId: string, target: 
     if (duplicateRank) return { ok: false, message: "Another verified result already uses this rank. Ties are not enabled." };
     if (result.rank <= 0 || result.score.isNegative()) return { ok: false, message: "The result contains invalid rank or score data." };
   }
-  await prisma.tournamentResult.update({ where: { id: result.id }, data: { resultStatus: target } });
-  return { ok: true, resultId: result.id };
+  try {
+    await prisma.tournamentResult.update({ where: { id: result.id }, data: { resultStatus: target } });
+    return { ok: true, resultId: result.id };
+  } catch (error) {
+    if (isUniqueError(error) && target === TournamentResultStatus.VERIFIED) return { ok: false, message: "Another verified result claimed this rank first. Refresh and review the rankings." };
+    console.error("Result status update failed:", error);
+    return { ok: false, message: "Unable to change the result status." };
+  }
 }
 
 export async function verifyTournamentResult(tournamentId: string, resultId: string) { return transitionResult(tournamentId, resultId, TournamentResultStatus.VERIFIED); }
