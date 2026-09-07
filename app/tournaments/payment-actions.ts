@@ -9,6 +9,7 @@ export async function initiateTournamentPayment(
   formData: FormData,
 ): Promise<PaymentInitiationResult> {
   const registrationId = String(formData.get("registrationId") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
 
   if (!registrationId) {
     return {
@@ -18,5 +19,5 @@ export async function initiateTournamentPayment(
     };
   }
 
-  return createPaymentForRegistration(registrationId);
+  return createPaymentForRegistration(registrationId, phone);
 }
