@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { RegistrationStatus } from "@/app/generated/prisma/client";
+import { PaymentStatus, RegistrationStatus } from "@/app/generated/prisma/client";
 import { requireActiveUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { SectionContainer } from "@/components/ui/section-container";
@@ -16,15 +16,11 @@ export const metadata: Metadata = {
   description: "Manage your ArenaX account and tournament activity.",
 };
 
-function registrationStatusLabel(status: RegistrationStatus) {
-  switch (status) {
-    case RegistrationStatus.CONFIRMED:
-      return "Confirmed";
-    case RegistrationStatus.PENDING:
-      return "Payment Pending";
-    case RegistrationStatus.CANCELLED:
-      return "Cancelled";
-  }
+function registrationStatusLabel(status: RegistrationStatus, paymentStatus: PaymentStatus | null) {
+  if (status === RegistrationStatus.CONFIRMED) return "Confirmed";
+  if (paymentStatus === PaymentStatus.FAILED) return "Payment Failed";
+  if (paymentStatus === PaymentStatus.SUCCESS) return "Payment Successful";
+  return "Payment Pending";
 }
 
 export default async function DashboardPage() {
@@ -45,6 +41,11 @@ export default async function DashboardPage() {
           entryFee: true,
           game: { select: { name: true } },
         },
+      },
+      payments: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { status: true },
       },
     },
   });
@@ -98,7 +99,7 @@ export default async function DashboardPage() {
                       <p className="mt-1 text-xs text-slate-500">{registration.tournament.game.name}</p>
                     </div>
                     <span className="shrink-0 rounded-full border border-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300">
-                      {registrationStatusLabel(registration.status)}
+                      {registrationStatusLabel(registration.status, registration.payments[0]?.status ?? null)}
                     </span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-500">
@@ -111,7 +112,7 @@ export default async function DashboardPage() {
           )}
         </DashboardCard>
         <DashboardCard title="Payment History" eyebrow="Transactions">
-          <EmptyState title="No payment history yet" description="Payment records will appear here when entry fees and payment processing are introduced." />
+          <EmptyState title="Payment history is private" description="Payment records are intentionally kept to safe status information only." />
         </DashboardCard>
         <DashboardCard title="Notifications" eyebrow="Updates">
           <EmptyState title="No notifications yet" description="Important tournament and account updates will appear here when notifications are introduced." />
