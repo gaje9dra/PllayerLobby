@@ -25,6 +25,10 @@ The application uses:
 - Test checkout: `https://test.payu.in/_payment`
 - Production checkout: `https://secure.payu.in/_payment`
 
+## Customer phone
+
+PayU Hosted Checkout currently requires a phone number. The existing Google user model did not contain a phone field, so Phase 3.1 adds an optional server-side `User.phone` field. If it is empty, the payment UI asks the authenticated user for a 10-digit Indian mobile number and stores it on that user's account before creating the payment. Existing stored phone numbers are used instead of trusting a browser override.
+
 ## Callback
 
 Configure PayU success/failure responses to POST to:
@@ -33,7 +37,7 @@ Configure PayU success/failure responses to POST to:
 https://YOUR_DOMAIN/api/payu/callback
 ```
 
-The callback is treated as untrusted input. It checks the payment record, merchant transaction ID, database amount, product information, trusted user email/name, merchant key, and PayU response hash.
+The callback is treated as untrusted input. It checks the payment record, merchant transaction ID, database amount, product information, trusted user email/name/phone, merchant key, and PayU response hash.
 
 A valid success redirect does **not** mark the payment `SUCCESS` and does **not** confirm the registration. A verified PayU success response remains `PENDING` until the next payment verification/reconciliation phase establishes the final result.
 
@@ -47,12 +51,13 @@ A verified non-success callback may move the payment to `FAILED`. No client requ
 4. The server authenticates the user and verifies registration ownership.
 5. The server loads the tournament entry fee from PostgreSQL.
 6. The server rejects free tournaments, non-pending registrations, unavailable tournaments, already-paid registrations, and duplicate pending payment attempts.
-7. The server generates a unique merchant transaction ID.
-8. The server creates a `Payment` record with `PENDING` status.
-9. The server generates the PayU SHA-512 request hash using the documented hosted web formula.
-10. The browser receives only the PayU checkout URL and required checkout fields, then submits them to PayU hosted checkout.
-11. PayU posts the response to the callback endpoint.
-12. The callback validates the response hash and database relationships but does not finalize successful payment.
+7. The server ensures a valid PayU-required phone exists for the authenticated user.
+8. The server generates a unique merchant transaction ID.
+9. The server creates a `Payment` record with `PENDING` status.
+10. The server generates the PayU SHA-512 request hash using the documented hosted web formula.
+11. The browser receives only the PayU checkout URL and required checkout fields, then submits them to PayU hosted checkout.
+12. PayU posts the response to the callback endpoint.
+13. The callback validates the response hash and database relationships but does not finalize successful payment.
 
 ## Database
 
@@ -90,7 +95,7 @@ npm run lint
 npm run build
 ```
 
-The test suite covers hashing, response tampering, and payment state transition rules. Database integration tests should use a test PostgreSQL database and test PayU credentials/mocks only.
+The test suite covers request hashing, response-hash validation, tampered amounts, transaction ID generation, payment state transitions, and missing PayU configuration. Database integration tests should use a test PostgreSQL database and test PayU credentials/mocks only.
 
 ## Phase boundary
 
