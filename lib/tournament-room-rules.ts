@@ -24,5 +24,5 @@ export function isJoiningWindowOpen(now: Date, startTime: Date, joiningWindowMin
 }
 
 export function isTournamentJoinableStatus(status: TournamentStatus) {
-  return status !== TournamentStatus.CANCELLED && status !== TournamentStatus.COMPLETED;
+  return [TournamentStatus.UPCOMING, TournamentStatus.REGISTRATION_OPEN, TournamentStatus.REGISTRATION_CLOSED, TournamentStatus.LIVE].includes(status);
 }
