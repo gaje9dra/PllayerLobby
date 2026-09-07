@@ -27,8 +27,6 @@ function makeResponseHash(status = "success") {
     "",
     "",
     "",
-    "",
-    "",
     requestInput.email,
     requestInput.firstname,
     requestInput.productinfo,
@@ -45,33 +43,17 @@ test("PayU request hash uses the documented hosted checkout ordering", () => {
 });
 
 test("PayU response hash validates a correctly signed response", () => {
-  const response = {
-    ...requestInput,
-    status: "success",
-    hash: makeResponseHash(),
-  };
-
+  const response = { ...requestInput, status: "success", hash: makeResponseHash() };
   assert.equal(validatePayUResponseHash(response, requestInput.salt), true);
 });
 
 test("PayU response hash rejects tampered amounts", () => {
-  const response = {
-    ...requestInput,
-    amount: "1.00",
-    status: "success",
-    hash: makeResponseHash(),
-  };
-
+  const response = { ...requestInput, amount: "1.00", status: "success", hash: makeResponseHash() };
   assert.equal(validatePayUResponseHash(response, requestInput.salt), false);
 });
 
 test("PayU response hash rejects invalid hash material", () => {
-  const response = {
-    ...requestInput,
-    status: "success",
-    hash: "not-a-hash",
-  };
-
+  const response = { ...requestInput, status: "success", hash: "not-a-hash" };
   assert.equal(validatePayUResponseHash(response, requestInput.salt), false);
 });
 
