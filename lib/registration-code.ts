@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { RegistrationStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireActiveUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,7 +8,6 @@ import { formatRegistrationCode, normalizeRegistrationCode } from "@/lib/registr
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const IV_LENGTH = 12;
-const AUTH_TAG_LENGTH = 16;
 
 function getEncryptionKey() {
   const secret = process.env.AUTH_SECRET;
@@ -40,9 +39,8 @@ export function hashRegistrationCode(input: string) {
 
 export function createRegistrationCodeData() {
   let compact = "";
-  const bytes = randomBytes(12);
-  for (let index = 0; index < bytes.length; index += 1) {
-    compact += CODE_ALPHABET[bytes[index] % CODE_ALPHABET.length];
+  for (let index = 0; index < 12; index += 1) {
+    compact += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   }
   const code = formatRegistrationCode(compact);
   return {
