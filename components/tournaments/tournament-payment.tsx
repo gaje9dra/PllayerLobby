@@ -6,14 +6,12 @@ import { Button } from "@/components/ui/button";
 
 const INITIAL_STATE: PaymentActionState = { ok: false };
 
-export function TournamentPayment({ registrationId }: { registrationId: string }) {
+export function TournamentPayment({ registrationId, initialPhone }: { registrationId: string; initialPhone: string | null }) {
   const [state, action, pending] = useActionState(initiateTournamentPayment, INITIAL_STATE);
   const checkoutFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
-    if (state.ok) {
-      checkoutFormRef.current?.submit();
-    }
+    if (state.ok) checkoutFormRef.current?.submit();
   }, [state]);
 
   if (state.ok) {
@@ -33,7 +31,24 @@ export function TournamentPayment({ registrationId }: { registrationId: string }
   return (
     <form action={action}>
       <input type="hidden" name="registrationId" value={registrationId} />
-      <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>
+      <label className="block text-xs font-semibold text-slate-400" htmlFor="payu-phone">
+        Mobile number
+      </label>
+      <input
+        id="payu-phone"
+        name="phone"
+        type="tel"
+        inputMode="numeric"
+        autoComplete="tel"
+        defaultValue={initialPhone ?? ""}
+        placeholder="10-digit mobile number"
+        pattern="[6-9][0-9]{9}"
+        maxLength={10}
+        required
+        className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-lime-300/40"
+      />
+      <p className="mt-2 text-[11px] leading-5 text-slate-500">Required by PayU hosted checkout. It is stored on your account for payment use.</p>
+      <Button type="submit" className="mt-4 w-full" disabled={pending} aria-busy={pending}>
         {pending ? "Preparing Payment..." : "Proceed to Payment"}
       </Button>
       {state.message ? (
