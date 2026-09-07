@@ -24,7 +24,7 @@ export default async function AdminTournamentDetailsPage({ params, searchParams 
     <SectionContainer className="py-10 sm:py-14">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0"><Link href="/admin/tournaments" className="text-sm font-semibold text-lime-300 hover:text-lime-200">← Back to tournaments</Link><div className="mt-4 flex flex-wrap items-center gap-3"><h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">{tournament.name}</h1><TournamentStatusBadge status={tournament.status} /></div><p className="mt-2 break-all text-sm text-slate-500">/{tournament.slug}</p></div>
-        <div className="flex flex-wrap gap-2"><Button href={`/admin/tournaments/${tournament.id}/edit`}>Edit Tournament</Button><Button href={`/admin/tournaments/${tournament.id}/room`} variant="secondary">Manage Room</Button></div>
+        <div className="flex flex-wrap gap-2"><Button href={`/admin/tournaments/${tournament.id}/edit`}>Edit Tournament</Button><Button href={`/admin/tournaments/${tournament.id}/registrations`} variant="secondary">Manage Registrations</Button><Button href={`/admin/tournaments/${tournament.id}/room`} variant="secondary">Manage Room</Button></div>
       </div>
       {updated === "1" ? <div role="status" className="mt-6 rounded-xl border border-lime-300/20 bg-lime-300/10 px-4 py-3 text-sm font-medium text-lime-200">Tournament updated successfully.</div> : null}
       {cancelled === "1" ? <div role="status" className="mt-6 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-medium text-amber-200">Tournament cancelled successfully. The record remains in the database.</div> : null}
