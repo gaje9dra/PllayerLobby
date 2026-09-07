@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PaymentStatus, RegistrationStatus } from "@/app/generated/prisma/client";
 import { requireActiveUser } from "@/lib/auth";
+import { getRegistrationCodeForUser } from "@/lib/registration-code";
 import { prisma } from "@/lib/prisma";
 import { SectionContainer } from "@/components/ui/section-container";
 import { Button } from "@/components/ui/button";
@@ -56,7 +57,7 @@ export default async function PaymentResultPage({ searchParams }: { searchParams
 
   const payment = await prisma.payment.findFirst({
     where: { merchantTransactionId, registration: { userId: user.id } },
-    select: { status: true, registration: { select: { status: true } } },
+    select: { status: true, registration: { select: { id: true, status: true } } },
   });
 
   if (!payment) {
@@ -72,6 +73,9 @@ export default async function PaymentResultPage({ searchParams }: { searchParams
   }
 
   const content = statusContent(payment.status, payment.registration.status);
+  const registrationCode = payment.status === PaymentStatus.SUCCESS && payment.registration.status === RegistrationStatus.CONFIRMED
+    ? await getRegistrationCodeForUser(payment.registration.id)
+    : null;
   const queryStatus = params.status?.trim().toLowerCase();
   const serverStatus = payment.status.toLowerCase();
 
@@ -83,6 +87,13 @@ export default async function PaymentResultPage({ searchParams }: { searchParams
         <div className={`mt-6 rounded-2xl border p-5 text-left ${content.className}`} role="status">
           <p className="text-sm leading-6">{content.description}</p>
         </div>
+        {registrationCode ? (
+          <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/50 p-5 text-left">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Registration code</p>
+            <p className="mt-2 font-mono text-lg font-black tracking-wider text-white">{registrationCode}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">Keep this code safe. It will be required when tournament joining opens.</p>
+          </div>
+        ) : null}
         <p className="mt-5 text-xs text-slate-600">Server status: {serverStatus}{queryStatus && queryStatus !== serverStatus ? " · Return status was not used as authority" : ""}</p>
         <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button href="/dashboard">Go to Dashboard</Button>
