@@ -33,7 +33,7 @@ function responseMatchesPayment(response: PayUResponseFields, payment: {
   registration: { tournament: { name: string }; user: { name: string | null; email: string; phone: string | null } };
 }) {
   return matchesAuthoritativePaymentFields(
-    { txnid: response.txnid ?? null, amount: response.amount ?? null, productinfo: response.productinfo ?? null, firstname: response.firstname ?? null, email: response.email ?? null, phone: response.phone ?? null },
+    { txnid: response.txnid ?? null, amount: normalizePaymentAmount(response.amount), productinfo: response.productinfo ?? null, firstname: response.firstname ?? null, email: response.email ?? null, phone: response.phone ?? null },
     { txnid: payment.merchantTransactionId, amount: payment.amount.toFixed(2), productinfo: expectedProductInfo(payment.registration.tournament.name), firstname: firstNameFromUser(payment.registration.user.name), email: payment.registration.user.email, phone: payment.registration.user.phone },
   );
 }
@@ -46,11 +46,23 @@ function verifiedDataMatchesPayment(transaction: NonNullable<PayUVerificationRes
   const expectedAmount = payment.amount.toFixed(2);
   const verifiedAmount = normalizePaymentAmount(transaction.amount);
   const verifiedTransactionAmount = transaction.transactionAmount == null ? verifiedAmount : normalizePaymentAmount(transaction.transactionAmount);
-  const fieldsMatch = matchesAuthoritativePaymentFields(
-    { txnid: transaction.txnid, amount: verifiedAmount, productinfo: transaction.productinfo, firstname: transaction.firstname, email: transaction.email, phone: transaction.phone },
-    { txnid: payment.merchantTransactionId, amount: expectedAmount, productinfo: expectedProductInfo(payment.registration.tournament.name), firstname: firstNameFromUser(payment.registration.user.name), email: payment.registration.user.email, phone: payment.registration.user.phone },
-  );
-  return fieldsMatch && verifiedTransactionAmount === expectedAmount && payment.registration.tournament.entryFee.toFixed(2) === expectedAmount;
+
+  if (transaction.txnid !== payment.merchantTransactionId) return false;
+  if (verifiedAmount !== expectedAmount) return false;
+  if (verifiedTransactionAmount !== expectedAmount) return false;
+  if (payment.registration.tournament.entryFee.toFixed(2) !== expectedAmount) return false;
+
+  // PayU's Verify Payment API does not consistently return all checkout/customer
+  // fields (for example email and phone are absent from the documented response).
+  // The original callback has already been authenticated with PayU's reverse hash
+  // and matched against our stored payment fields. Compare only fields that the
+  // server-side reconciliation response actually provides.
+  if (transaction.productinfo !== null && transaction.productinfo !== expectedProductInfo(payment.registration.tournament.name)) return false;
+  if (transaction.firstname !== null && transaction.firstname !== firstNameFromUser(payment.registration.user.name)) return false;
+  if (transaction.email !== null && transaction.email !== payment.registration.user.email) return false;
+  if (transaction.phone !== null && transaction.phone !== payment.registration.user.phone) return false;
+
+  return true;
 }
 
 async function applyVerifiedOutcome(merchantTransactionId: string, verification: PayUVerificationResult): Promise<PaymentVerificationResult> {
