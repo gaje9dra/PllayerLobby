@@ -1,6 +1,7 @@
 import { PaymentStatus } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getPayUConfig, validatePayUResponseHash } from "@/lib/payu";
+import { canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
 
 function firstNameFromUser(name: string | null) {
   return name?.trim().split(/\s+/)[0] || "Player";
@@ -70,12 +71,15 @@ export async function POST(request: Request) {
       return new Response("Invalid PayU response hash.", { status: 400 });
     }
 
-    const safeStatus = response.status === "success" ? PaymentStatus.PENDING : PaymentStatus.FAILED;
+    const nextStatus = response.status === "success" ? PaymentStatus.PENDING : PaymentStatus.FAILED;
+    if (!canTransitionPaymentStatus(payment.status, nextStatus)) {
+      return new Response("Invalid payment state transition.", { status: 409 });
+    }
 
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
-        status: payment.status === PaymentStatus.SUCCESS ? PaymentStatus.SUCCESS : safeStatus,
+        status: nextStatus,
         payuTransactionId: response.mihpayid || undefined,
       },
     });
@@ -84,7 +88,7 @@ export async function POST(request: Request) {
       paymentId: payment.id,
       merchantTransactionId: response.txnid,
       payuTransactionId: response.mihpayid || null,
-      status: safeStatus,
+      status: nextStatus,
     });
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
