@@ -2,16 +2,13 @@ import "server-only";
 
 import { PaymentStatus, RegistrationStatus } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { validatePayUResponseHash, type PayUResponseFields } from "@/lib/payu";
+import { getPayUConfig, validatePayUResponseHash, type PayUResponseFields } from "@/lib/payu";
 import { canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
 import { verifyPayUTransaction, type PayUVerificationResult } from "@/lib/payu-verification";
 
 export type PaymentVerificationOutcome = "SUCCESS" | "FAILED" | "PENDING" | "REJECTED";
 
-export type PaymentVerificationResult = {
-  outcome: PaymentVerificationOutcome;
-  message: string;
-};
+export type PaymentVerificationResult = { outcome: PaymentVerificationOutcome; message: string };
 
 function firstNameFromUser(name: string | null) {
   return name?.trim().split(/\s+/)[0] || "Player";
@@ -42,14 +39,12 @@ function responseMatchesPayment(response: PayUResponseFields, payment: {
   registration: { tournament: { name: string }; user: { name: string | null; email: string; phone: string | null } };
 }) {
   const expectedAmount = payment.amount.toFixed(2);
-  return (
-    response.txnid === payment.merchantTransactionId &&
+  return response.txnid === payment.merchantTransactionId &&
     response.amount === expectedAmount &&
     response.productinfo === expectedProductInfo(payment.registration.tournament.name) &&
     response.firstname === firstNameFromUser(payment.registration.user.name) &&
     response.email === payment.registration.user.email &&
-    response.phone === payment.registration.user.phone
-  );
+    response.phone === payment.registration.user.phone;
 }
 
 function verifiedDataMatchesPayment(transaction: NonNullable<PayUVerificationResult["transaction"]>, payment: {
@@ -60,17 +55,14 @@ function verifiedDataMatchesPayment(transaction: NonNullable<PayUVerificationRes
   const expectedAmount = payment.amount.toFixed(2);
   const verifiedAmount = normalizeAmount(transaction.amount);
   const verifiedTransactionAmount = transaction.transactionAmount == null ? verifiedAmount : normalizeAmount(transaction.transactionAmount);
-
-  return (
-    transaction.txnid === payment.merchantTransactionId &&
+  return transaction.txnid === payment.merchantTransactionId &&
     verifiedAmount === expectedAmount &&
     verifiedTransactionAmount === expectedAmount &&
     payment.registration.tournament.entryFee.toFixed(2) === expectedAmount &&
     transaction.productinfo === expectedProductInfo(payment.registration.tournament.name) &&
     transaction.firstname === firstNameFromUser(payment.registration.user.name) &&
     transaction.email === payment.registration.user.email &&
-    transaction.phone === payment.registration.user.phone
-  );
+    transaction.phone === payment.registration.user.phone;
 }
 
 async function applyVerifiedOutcome(merchantTransactionId: string, verification: PayUVerificationResult): Promise<PaymentVerificationResult> {
@@ -109,19 +101,10 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
     const payuTransactionId = verification.transaction.mihpayid || undefined;
 
     if (verification.state === "SUCCESS") {
-      if (payment.status === PaymentStatus.SUCCESS && payment.registration.status === RegistrationStatus.CONFIRMED) {
-        return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
-      }
-
-      if (payment.status !== PaymentStatus.PENDING) {
-        return { outcome: "REJECTED", message: resultMessage("REJECTED") };
-      }
-      if (payment.registration.status !== RegistrationStatus.PENDING && payment.registration.status !== RegistrationStatus.CONFIRMED) {
-        return { outcome: "REJECTED", message: resultMessage("REJECTED") };
-      }
-      if (!canTransitionPaymentStatus(payment.status, PaymentStatus.SUCCESS)) {
-        return { outcome: "REJECTED", message: resultMessage("REJECTED") };
-      }
+      if (payment.status === PaymentStatus.SUCCESS && payment.registration.status === RegistrationStatus.CONFIRMED) return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
+      if (payment.status !== PaymentStatus.PENDING) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
+      if (payment.registration.status !== RegistrationStatus.PENDING && payment.registration.status !== RegistrationStatus.CONFIRMED) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
+      if (!canTransitionPaymentStatus(payment.status, PaymentStatus.SUCCESS)) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
 
       await tx.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.SUCCESS, payuTransactionId } });
       if (payment.registration.status === RegistrationStatus.PENDING) {
@@ -137,16 +120,13 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
         oldRegistrationStatus: payment.registration.status,
         newRegistrationStatus: RegistrationStatus.CONFIRMED,
       });
-
       return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
     }
 
     if (verification.state === "FAILED") {
       if (payment.status === PaymentStatus.SUCCESS) return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
       if (payment.status === PaymentStatus.FAILED) return { outcome: "FAILED", message: resultMessage("FAILED") };
-      if (payment.status !== PaymentStatus.PENDING || !canTransitionPaymentStatus(payment.status, PaymentStatus.FAILED)) {
-        return { outcome: "REJECTED", message: resultMessage("REJECTED") };
-      }
+      if (payment.status !== PaymentStatus.PENDING || !canTransitionPaymentStatus(payment.status, PaymentStatus.FAILED)) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
 
       await tx.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.FAILED, payuTransactionId } });
       console.info("PayU payment verified as failed", { paymentId: payment.id, merchantTransactionId, payuTransactionId: verification.transaction.mihpayid, oldStatus: payment.status, newStatus: PaymentStatus.FAILED });
@@ -155,7 +135,6 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
 
     if (payment.status === PaymentStatus.SUCCESS) return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
     if (payment.status !== PaymentStatus.PENDING) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
-
     if (payuTransactionId) await tx.payment.update({ where: { id: payment.id }, data: { payuTransactionId } });
     console.info("PayU payment remains pending", { paymentId: payment.id, merchantTransactionId, payuTransactionId: verification.transaction.mihpayid });
     return { outcome: "PENDING", message: resultMessage("PENDING") };
@@ -163,24 +142,17 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
 }
 
 export async function verifyAndFinalizePayUPayment(response: PayUResponseFields): Promise<PaymentVerificationResult> {
-  if (!response.txnid || !response.key || !response.amount || !response.hash || !response.status || !response.productinfo || !response.firstname || !response.email) {
-    return { outcome: "REJECTED", message: resultMessage("REJECTED") };
-  }
+  if (!response.txnid || !response.key || !response.amount || !response.hash || !response.status || !response.productinfo || !response.firstname || !response.email) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
 
   try {
-    const config = await import("@/lib/payu").then(({ getPayUConfig }) => getPayUConfig());
+    const config = getPayUConfig();
     const payment = await prisma.payment.findUnique({
       where: { merchantTransactionId: response.txnid },
       select: {
         id: true,
         merchantTransactionId: true,
         amount: true,
-        registration: {
-          select: {
-            tournament: { select: { name: true } },
-            user: { select: { name: true, email: true, phone: true } },
-          },
-        },
+        registration: { select: { tournament: { select: { name: true } }, user: { select: { name: true, email: true, phone: true } } } },
       },
     });
 
@@ -192,6 +164,7 @@ export async function verifyAndFinalizePayUPayment(response: PayUResponseFields)
     }
 
     const verification = await verifyPayUTransaction(response.txnid);
+    if (verification.state === "UNKNOWN") return { outcome: "PENDING", message: resultMessage("PENDING") };
     return applyVerifiedOutcome(response.txnid, verification);
   } catch (error) {
     console.error("PayU payment verification failed", { merchantTransactionId: response.txnid, error: error instanceof Error ? error.name : "unknown" });
