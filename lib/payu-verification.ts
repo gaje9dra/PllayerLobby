@@ -1,8 +1,9 @@
 import "server-only";
 
 import { generatePayUVerifyPaymentHash, getPayUConfig } from "@/lib/payu";
+import { mapPayUStatus, type PayUVerificationState } from "@/lib/payu-verification-rules";
 
-export type PayUVerificationState = "SUCCESS" | "FAILED" | "PENDING" | "UNKNOWN";
+export type { PayUVerificationState } from "@/lib/payu-verification-rules";
 
 export type PayUVerificationTransaction = {
   txnid: string;
@@ -17,10 +18,7 @@ export type PayUVerificationTransaction = {
   phone: string | null;
 };
 
-export type PayUVerificationResult = {
-  state: PayUVerificationState;
-  transaction: PayUVerificationTransaction | null;
-};
+export type PayUVerificationResult = { state: PayUVerificationState; transaction: PayUVerificationTransaction | null };
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : value == null ? null : String(value);
@@ -28,13 +26,6 @@ function stringValue(value: unknown) {
 
 function normalizeStatus(value: string | null) {
   return value?.trim().toLowerCase() ?? "";
-}
-
-function mapPayUStatus(status: string, unmappedStatus: string): PayUVerificationState {
-  if (status === "success" && (unmappedStatus === "captured" || unmappedStatus === "auth")) return "SUCCESS";
-  if (unmappedStatus === "failed" || unmappedStatus === "bounced" || unmappedStatus === "dropped" || unmappedStatus === "usercancelled" || unmappedStatus === "autorefund" || status === "failure" || status === "failed") return "FAILED";
-  if (unmappedStatus === "pending" || unmappedStatus === "initiated" || unmappedStatus === "in progress" || status === "pending") return "PENDING";
-  return "UNKNOWN";
 }
 
 function parseTransaction(raw: unknown, merchantTransactionId: string): PayUVerificationTransaction | null {
