@@ -5,6 +5,7 @@ import { RegistrationStatus, TournamentStatus } from "@/app/generated/prisma/cli
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { validateRegistrationCode } from "@/lib/registration-code";
+import { refreshTournamentLifecycle } from "@/lib/tournament-lifecycle";
 import { isJoiningWindowOpen, isTournamentJoinableStatus } from "@/lib/tournament-room-rules";
 
 const IV_LENGTH = 12;
@@ -61,6 +62,7 @@ export async function getParticipantRoomAccess(input: { tournamentId: string; re
   if (!user) return { ok: false, reason: "Login to continue." };
   if (user.status !== "ACTIVE") return { ok: false, reason: "Your account is not currently eligible to join." };
   if (!UUID_PATTERN.test(input.tournamentId) || !UUID_PATTERN.test(input.registrationId)) return { ok: false, reason: "Unable to access tournament joining details." };
+  await refreshTournamentLifecycle(input.tournamentId);
   const tournament = await prisma.tournament.findUnique({ where: { id: input.tournamentId }, select: { id: true, status: true, startTime: true, joiningWindowMinutes: true } });
   if (!tournament) return { ok: false, reason: "Tournament not found." };
   if (tournament.status === TournamentStatus.CANCELLED) return { ok: false, reason: "This tournament has been cancelled." };
