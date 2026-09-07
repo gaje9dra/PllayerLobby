@@ -5,19 +5,13 @@ import { prisma } from "@/lib/prisma";
 import { getPayUConfig, validatePayUResponseHash, type PayUResponseFields } from "@/lib/payu";
 import { canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
 import { verifyPayUTransaction, type PayUVerificationResult } from "@/lib/payu-verification";
+import { normalizePaymentAmount } from "@/lib/payu-verification-rules";
 
 export type PaymentVerificationOutcome = "SUCCESS" | "FAILED" | "PENDING" | "REJECTED";
-
 export type PaymentVerificationResult = { outcome: PaymentVerificationOutcome; message: string };
 
 function firstNameFromUser(name: string | null) {
   return name?.trim().split(/\s+/)[0] || "Player";
-}
-
-function normalizeAmount(value: string | null | undefined) {
-  if (value == null || !/^\d+(?:\.\d{1,2})?$/.test(value.trim())) return null;
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number.toFixed(2) : null;
 }
 
 function expectedProductInfo(tournamentName: string) {
@@ -53,8 +47,8 @@ function verifiedDataMatchesPayment(transaction: NonNullable<PayUVerificationRes
   registration: { tournament: { name: string; entryFee: { toFixed: (digits?: number) => string } }; user: { name: string | null; email: string; phone: string | null } };
 }) {
   const expectedAmount = payment.amount.toFixed(2);
-  const verifiedAmount = normalizeAmount(transaction.amount);
-  const verifiedTransactionAmount = transaction.transactionAmount == null ? verifiedAmount : normalizeAmount(transaction.transactionAmount);
+  const verifiedAmount = normalizePaymentAmount(transaction.amount);
+  const verifiedTransactionAmount = transaction.transactionAmount == null ? verifiedAmount : normalizePaymentAmount(transaction.transactionAmount);
   return transaction.txnid === payment.merchantTransactionId &&
     verifiedAmount === expectedAmount &&
     verifiedTransactionAmount === expectedAmount &&
