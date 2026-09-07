@@ -30,10 +30,12 @@ export function TournamentRegistration({
   tournamentId,
   availability,
   loginHref,
+  initialPhone,
 }: {
   tournamentId: string;
   availability: RegistrationAvailability;
   loginHref: string;
+  initialPhone: string | null;
 }) {
   const [state, action, pending] = useActionState(registerForTournament, INITIAL_STATE);
 
@@ -45,7 +47,7 @@ export function TournamentRegistration({
             <p className="text-sm font-bold text-amber-200">Registration created — payment required</p>
             <p className="mt-1 text-xs leading-5 text-amber-100/70">Your registration is pending until the payment is verified. No payment has been confirmed yet.</p>
           </div>
-          <TournamentPayment registrationId={state.registrationId} />
+          <TournamentPayment registrationId={state.registrationId} initialPhone={initialPhone} />
         </div>
       );
     }
@@ -59,11 +61,7 @@ export function TournamentRegistration({
   }
 
   if (availability === "LOGIN") {
-    return (
-      <Button href={loginHref} className="w-full">
-        Login to Register
-      </Button>
-    );
+    return <Button href={loginHref} className="w-full">Login to Register</Button>;
   }
 
   if (availability !== "REGISTER") {
@@ -81,11 +79,7 @@ export function TournamentRegistration({
       <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>
         {pending ? "Registering..." : "Register"}
       </Button>
-      {state.message ? (
-        <p className="mt-3 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-2 text-xs leading-5 text-red-200" role="alert">
-          {state.message}
-        </p>
-      ) : null}
+      {state.message ? <p className="mt-3 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-2 text-xs leading-5 text-red-200" role="alert">{state.message}</p> : null}
     </form>
   );
 }
