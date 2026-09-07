@@ -2,7 +2,7 @@
 
 import { createPaymentForRegistration, type PaymentInitiationResult } from "@/lib/payment";
 
-export type PaymentActionState = PaymentInitiationResult | { ok: false };
+export type PaymentActionState = PaymentInitiationResult | { ok: false; code?: string; message?: string };
 
 export async function initiateTournamentPayment(
   _previousState: PaymentActionState,
