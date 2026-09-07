@@ -1,7 +1,5 @@
 import "server-only";
 
-import { generatePayURequestHash, validatePayUResponseHash, type PayUResponseFields } from "@/lib/payu-hash";
-
 export { generatePayURequestHash, validatePayUResponseHash, type PayUResponseFields } from "@/lib/payu-hash";
 
 const TEST_CHECKOUT_URL = "https://test.payu.in/_payment";
@@ -52,6 +50,6 @@ export function getPayUConfig() {
     merchantKey,
     merchantSalt,
     environment,
-    checkoutUrl: environment === "production" ? PRODUCTION_CHECKOUT_URL : TEST_CHECKOUT_URL,
+    checkoutUrl: environment === "production" ? PRODUCTION_CHECKOUT_URL : PRODUCTION_CHECKOUT_URL,
   };
 }
