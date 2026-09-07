@@ -6,7 +6,10 @@ function getText(value: FormDataEntryValue | null) {
 }
 
 function responseFields(data: Record<string, unknown>): PayUResponseFields {
-  const get = (name: string) => typeof data[name] === "string" ? String(data[name]).trim() : "";
+  const get = (name: string) => {
+    const value = data[name];
+    return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+  };
   return {
     key: get("key"),
     txnid: get("txnid"),
@@ -41,10 +44,9 @@ async function parseResponse(request: Request): Promise<PayUResponseFields> {
 function redirectForOutcome(outcome: "SUCCESS" | "FAILED" | "PENDING", txnid: string) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (!appUrl) return new Response("Application URL is not configured.", { status: 500 });
-  const result = outcome.toLowerCase();
   const url = new URL("/payment/result", appUrl);
   url.searchParams.set("txnid", txnid);
-  url.searchParams.set("status", result);
+  url.searchParams.set("status", outcome.toLowerCase());
   return Response.redirect(url, 303);
 }
 
@@ -67,10 +69,6 @@ export async function POST(request: Request) {
     return new Response("Unable to verify payment.", { status: 400 });
   }
 
-  console.info("PayU callback processed", {
-    merchantTransactionId: response.txnid,
-    outcome: result.outcome,
-  });
-
+  console.info("PayU callback processed", { merchantTransactionId: response.txnid, outcome: result.outcome });
   return redirectForOutcome(result.outcome, response.txnid);
 }
