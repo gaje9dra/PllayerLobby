@@ -33,7 +33,7 @@ Verify Payment API:
 - Test: `https://test.payu.in/merchant/postservice.php?form=2`
 - Production: `https://info.payu.in/merchant/postservice.php?form=2`
 
-PayU documents `verify_payment` as the server-side transaction verification API and requires the general command hash `sha512(key|command|var1|salt)`. citeturn7search0turn4search1
+PayU documents `verify_payment` as the server-side transaction verification API and requires the general command hash `sha512(key|command|var1|salt)`.
 
 For an actual PayU test transaction, the callback URL must be reachable by PayU over the public internet. A local-only `http://localhost:3000` URL is suitable for normal application development but not for PayU's external callback.
 
@@ -69,7 +69,7 @@ The browser callback is never the final authority. A `success` status in the cal
 12. Payment `SUCCESS` and Registration `CONFIRMED` are written in the same Prisma transaction.
 13. The browser is redirected to `/payment/result`, which reads the actual database state rather than trusting the callback query parameters.
 
-PayU's current documentation recommends reconciliation using the Verify Payment API after receiving the payment response. The verification response includes fields such as `txnid`, `mihpayid`, `amt`, `transaction_amount`, `status`, and `unmappedstatus`. citeturn1view0turn2search0
+PayU recommends reconciliation using the Verify Payment API after receiving the payment response. The verification response includes fields such as `txnid`, `mihpayid`, `amt`, `transaction_amount`, `status`, and `unmappedstatus`.
 
 ## Verification states
 
@@ -78,7 +78,7 @@ PayU's current documentation recommends reconciliation using the Verify Payment 
 - `PENDING`: PayU has not conclusively completed the transaction or the verification service is temporarily unavailable.
 - `UNKNOWN`: An unexpected or unusable PayU verification response. The application keeps an unresolved payment pending rather than assuming success.
 
-PayU documents `captured` as a successful transaction, `auth` as an authorized success state, and `pending`/`initiated`/`in progress` as non-final states. citeturn2search0
+PayU documents `captured` as a successful transaction, `auth` as an authorized success state, and `pending`/`initiated`/`in progress` as non-final states.
 
 ## Amount validation
 
@@ -116,7 +116,7 @@ Verify Payment API hash:
 key|verify_payment|txnid|salt
 ```
 
-These formulas follow PayU's current documentation. citeturn4search3turn4search1turn7search0
+These formulas follow PayU's current documentation.
 
 ## Atomic confirmation
 
@@ -139,7 +139,7 @@ The original failed payment is not overwritten or reused.
 
 If PayU verification is inconclusive or the verification service is unavailable, the Payment remains `PENDING` and the Registration remains `PENDING`. The user sees a safe verification-in-progress message.
 
-The application never treats HTTP 200, a browser redirect, or callback `status=success` by itself as proof of payment. PayU's documentation explicitly recommends server-side verification/reconciliation. citeturn1view0turn6search1
+The application never treats HTTP 200, a browser redirect, or callback `status=success` by itself as proof of payment. PayU recommends server-side verification/reconciliation after the callback.
 
 ## Payment result page
 
