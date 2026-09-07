@@ -4,6 +4,9 @@ import { RegistrationStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  createRegistrationCodeData,
+} from "@/lib/registration-code";
+import {
   evaluateRegistrationEligibility,
   REGISTRATION_ELIGIBILITY_REASONS,
   type RegistrationEligibilityReason,
@@ -24,6 +27,7 @@ export type RegistrationCreationResult =
       registrationId: string;
       registrationStatus: RegistrationStatus;
       paymentRequired: boolean;
+      registrationCode?: string;
     }
   | {
       ok: false;
@@ -134,6 +138,7 @@ export async function createTournamentRegistration(
 
       const creation = getRegistrationCreationStatus(tournament!.entryFee);
       let registrationId: string;
+      let registrationCode: string | undefined;
 
       if (registration?.status === RegistrationStatus.CANCELLED) {
         await tx.registration.update({
@@ -158,11 +163,30 @@ export async function createTournamentRegistration(
         registrationId = created.id;
       }
 
+      if (creation.status === RegistrationStatus.CONFIRMED) {
+        const codeData = createRegistrationCodeData();
+        await tx.registrationCode.upsert({
+          where: { registrationId },
+          create: {
+            registrationId,
+            codeHash: codeData.codeHash,
+            codeEncrypted: codeData.codeEncrypted,
+          },
+          update: {
+            codeHash: codeData.codeHash,
+            codeEncrypted: codeData.codeEncrypted,
+            revokedAt: null,
+          },
+        });
+        registrationCode = codeData.code;
+      }
+
       return {
         ok: true,
         registrationId,
         registrationStatus: creation.status,
         paymentRequired: creation.paymentRequired,
+        registrationCode,
       };
     });
   } catch (error) {
