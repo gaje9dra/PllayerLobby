@@ -8,6 +8,7 @@ import {
   REGISTRATION_ELIGIBILITY_REASONS,
   type RegistrationEligibilityReason,
 } from "@/lib/registration-eligibility-rules";
+import { getRegistrationCreationStatus } from "@/lib/registration-workflow-rules";
 
 export const REGISTRATION_RESULT_CODES = {
   ...REGISTRATION_ELIGIBILITY_REASONS,
@@ -43,14 +44,6 @@ const ERROR_MESSAGES: Record<RegistrationEligibilityReason, string> = {
 
 function isUniqueConstraintError(error: unknown) {
   return error && typeof error === "object" && "code" in error && error.code === "P2002";
-}
-
-export function getRegistrationCreationStatus(entryFee: { toFixed: (digits?: number) => string }) {
-  const isFree = entryFee.toFixed(2) === "0.00";
-  return {
-    status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING,
-    paymentRequired: !isFree,
-  } as const;
 }
 
 export async function createTournamentRegistration(
