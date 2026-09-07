@@ -66,7 +66,6 @@ test("ADMIN does not bypass registration restrictions", () => {
 
 for (const status of [
   TournamentStatus.DRAFT,
-  TournamentStatus.UPCOMING,
   TournamentStatus.REGISTRATION_CLOSED,
   TournamentStatus.LIVE,
   TournamentStatus.COMPLETED,
@@ -84,6 +83,36 @@ test("REGISTRATION_OPEN tournament can be eligible", () => {
   assert.deepEqual(evaluate({ tournament: { ...tournament, status: TournamentStatus.REGISTRATION_OPEN } }), {
     allowed: true,
   });
+});
+
+test("UPCOMING tournament automatically becomes eligible when registrationStartTime is reached", () => {
+  assert.deepEqual(
+    evaluate({
+      tournament: { ...tournament, status: TournamentStatus.UPCOMING },
+      now: tournament.registrationStartTime!,
+    }),
+    { allowed: true },
+  );
+});
+
+test("UPCOMING tournament remains unavailable before registrationStartTime", () => {
+  assert.deepEqual(
+    evaluate({
+      tournament: { ...tournament, status: TournamentStatus.UPCOMING },
+      now: new Date("2026-09-07T10:59:59.999Z"),
+    }),
+    { allowed: false, reason: REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_NOT_OPEN },
+  );
+});
+
+test("UPCOMING tournament is closed after registrationEndTime", () => {
+  assert.deepEqual(
+    evaluate({
+      tournament: { ...tournament, status: TournamentStatus.UPCOMING },
+      now: new Date("2026-09-07T13:00:00.001Z"),
+    }),
+    { allowed: false, reason: REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_CLOSED },
+  );
 });
 
 test("registration before registrationStartTime is rejected", () => {
