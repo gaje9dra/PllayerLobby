@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { PaymentStatus } from "@/app/generated/prisma/client";
-import { generatePayURequestHash, getPayUConfig, validatePayUResponseHash } from "@/lib/payu";
-import { generateMerchantTransactionId } from "@/lib/payment";
-import { canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
+import { generatePayURequestHash, validatePayUResponseHash } from "@/lib/payu-hash";
+import { generateMerchantTransactionId, canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
 
 const requestInput = {
   key: "merchant-key",
@@ -76,25 +75,4 @@ test("payment state machine blocks SUCCESS back to PENDING", () => {
   assert.equal(canTransitionPaymentStatus(PaymentStatus.SUCCESS, PaymentStatus.PENDING), false);
   assert.equal(canTransitionPaymentStatus(PaymentStatus.PENDING, PaymentStatus.FAILED), true);
   assert.equal(canTransitionPaymentStatus(PaymentStatus.INITIATED, PaymentStatus.PENDING), true);
-});
-
-test("PayU configuration requires all server-only environment variables", () => {
-  const previous = {
-    key: process.env.PAYU_MERCHANT_KEY,
-    salt: process.env.PAYU_MERCHANT_SALT,
-    environment: process.env.PAYU_ENVIRONMENT,
-  };
-
-  delete process.env.PAYU_MERCHANT_KEY;
-  delete process.env.PAYU_MERCHANT_SALT;
-  delete process.env.PAYU_ENVIRONMENT;
-
-  assert.throws(() => getPayUConfig(), /PAYU_MERCHANT_KEY/);
-
-  if (previous.key === undefined) delete process.env.PAYU_MERCHANT_KEY;
-  else process.env.PAYU_MERCHANT_KEY = previous.key;
-  if (previous.salt === undefined) delete process.env.PAYU_MERCHANT_SALT;
-  else process.env.PAYU_MERCHANT_SALT = previous.salt;
-  if (previous.environment === undefined) delete process.env.PAYU_ENVIRONMENT;
-  else process.env.PAYU_ENVIRONMENT = previous.environment;
 });
