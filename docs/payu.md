@@ -1,6 +1,6 @@
-# PayU — Phase 3.1
+# PayU — Phase 3.1 and 3.2
 
-Phase 3.1 adds the secure foundation for PayU hosted checkout for paid tournament registrations. Payment verification/reconciliation is intentionally deferred to the next payment phase.
+Phase 3.1 provides the PayU hosted checkout foundation. Phase 3.2 adds server-side transaction verification and makes verified PayU success the only path that changes a paid registration from `PENDING` to `CONFIRMED`.
 
 ## Merchant setup
 
@@ -21,16 +21,25 @@ PAYU_ENVIRONMENT=test
 
 `PAYU_MERCHANT_SALT` is secret. Never expose it through `NEXT_PUBLIC_*`, client components, browser JavaScript, URLs, query parameters, HTML, logs, or public API responses. Never commit real credentials.
 
-The application uses:
+## PayU endpoints
 
-- Test checkout: `https://test.payu.in/_payment`
-- Production checkout: `https://secure.payu.in/_payment`
+Hosted checkout:
 
-For an actual PayU test transaction, the success/failure callback URL must be reachable by PayU over the public internet. A local-only `http://localhost:3000` URL is suitable for normal application development but not for PayU's external callback.
+- Test: `https://test.payu.in/_payment`
+- Production: `https://secure.payu.in/_payment`
+
+Verify Payment API:
+
+- Test: `https://test.payu.in/merchant/postservice.php?form=2`
+- Production: `https://info.payu.in/merchant/postservice.php?form=2`
+
+PayU documents `verify_payment` as the server-side transaction verification API and requires the general command hash `sha512(key|command|var1|salt)`. citeturn7search0turn4search1
+
+For an actual PayU test transaction, the callback URL must be reachable by PayU over the public internet. A local-only `http://localhost:3000` URL is suitable for normal application development but not for PayU's external callback.
 
 ## Customer phone
 
-PayU Hosted Checkout currently requires a phone number. The existing Google user model did not contain a phone field, so Phase 3.1 adds an optional server-side `User.phone` field. If it is empty, the payment UI asks the authenticated user for a 10-digit Indian mobile number and stores it on that user's account before creating the payment. Existing stored phone numbers are used instead of trusting a browser override.
+PayU Hosted Checkout requires a phone number. The existing Google user model therefore contains an optional server-side `User.phone` field. If it is empty, the payment UI asks the authenticated user for a 10-digit Indian mobile number and stores it on that user's account before creating the payment. Existing stored phone numbers are used instead of trusting a browser override.
 
 ## Callback
 
@@ -40,47 +49,140 @@ Configure PayU success/failure responses to POST to:
 https://YOUR_DOMAIN/api/payu/callback
 ```
 
-The callback is treated as untrusted input. It checks the payment record, merchant transaction ID, database amount, product information, trusted user email/name/phone, merchant key, and PayU response hash.
+The callback is treated as untrusted input. It validates the merchant transaction ID against the internal Payment record, compares PayU-returned customer/payment fields with database values, validates the PayU reverse hash, then calls the server-side Verify Payment API before changing payment or registration state.
 
-A valid success redirect does **not** mark the payment `SUCCESS` and does **not** confirm the registration. A verified PayU success response remains `PENDING` until the next payment verification/reconciliation phase establishes the final result.
+The browser callback is never the final authority. A `success` status in the callback alone cannot confirm the registration.
 
-A verified non-success callback may move the payment to `FAILED`. No client request can directly set payment status.
-
-## Payment flow
+## Server-side verification flow
 
 1. User registers for a paid tournament.
 2. Registration is created as `PENDING`.
-3. User selects **Proceed to Payment**.
-4. The server authenticates the user and verifies registration ownership.
-5. The server loads the tournament entry fee from PostgreSQL.
-6. The server rejects free tournaments, non-pending registrations, unavailable tournaments, already-paid registrations, and duplicate pending payment attempts.
-7. The server ensures a valid PayU-required phone exists for the authenticated user.
-8. The server generates a unique merchant transaction ID.
-9. The server creates a `Payment` record with `PENDING` status.
-10. The server generates the PayU SHA-512 request hash using the documented hosted web formula.
-11. The browser receives only the PayU checkout URL and required checkout fields, then submits them to PayU hosted checkout.
-12. PayU posts the response to the callback endpoint.
-13. The callback validates the response hash and database relationships but does not finalize successful payment.
+3. Server creates a Payment with the authoritative database entry fee.
+4. User is redirected to PayU hosted checkout.
+5. PayU returns a signed response to the callback.
+6. Server locates Payment by `txnid`/`merchantTransactionId`.
+7. Server validates key, transaction ID, amount, product information, customer identity fields, and reverse hash.
+8. Server generates the `verify_payment` request hash on the server.
+9. Server calls PayU's Verify Payment API.
+10. Server validates the returned transaction ID, amount, tournament entry fee, customer/payment fields, and PayU status.
+11. Only a verified `success` + `captured`/`auth` result can move Payment to `SUCCESS`.
+12. Payment `SUCCESS` and Registration `CONFIRMED` are written in the same Prisma transaction.
+13. The browser is redirected to `/payment/result`, which reads the actual database state rather than trusting the callback query parameters.
 
-## Database
+PayU's current documentation recommends reconciliation using the Verify Payment API after receiving the payment response. The verification response includes fields such as `txnid`, `mihpayid`, `amt`, `transaction_amount`, `status`, and `unmappedstatus`. citeturn1view0turn2search0
 
-`Payment` belongs to `Registration` and contains only payment identifiers, amount, currency, status, and timestamps. It does not store card data or PayU salt.
+## Verification states
 
-`merchantTransactionId` is unique. `registrationId`, `status`, and the registration/status combination are indexed.
+- `SUCCESS`: PayU reports `status=success` and an approved internal state such as `captured` or `auth`; amount and transaction data also match the database.
+- `FAILED`: PayU reports a failed/cancelled internal state.
+- `PENDING`: PayU has not conclusively completed the transaction or the verification service is temporarily unavailable.
+- `UNKNOWN`: An unexpected or unusable PayU verification response. The application keeps an unresolved payment pending rather than assuming success.
 
-The Phase 3.1 service blocks a new payment while a `PENDING` or `INITIATED` payment exists. Failed/cancelled attempts can be retried by the server in a later initiation request; no timeout mechanism is implemented in this phase.
+PayU documents `captured` as a successful transaction, `auth` as an authorized success state, and `pending`/`initiated`/`in progress` as non-final states. citeturn2search0
+
+## Amount validation
+
+The authoritative amount comes from PostgreSQL. The server compares:
+
+```text
+Tournament.entryFee
+        ==
+Payment.amount
+        ==
+PayU callback amount
+        ==
+PayU verified amt
+```
+
+When PayU returns `transaction_amount`, it is also checked against the same expected amount. Malformed, negative, zero-for-paid-tournament, or mismatched amounts cannot confirm payment.
 
 ## Hashing
 
-For the standard hosted web payment request, the application uses the PayU documented SHA-512 sequence:
+Hosted payment request hash:
 
 ```text
 key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT
 ```
 
-The callback foundation validates the documented regular reverse hash sequence before accepting the callback state update.
+PayU response reverse hash:
 
-Reference: PayU's current hashing documentation: https://docs.payu.in/docs/hashing-request-and-response
+```text
+SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
+```
+
+Verify Payment API hash:
+
+```text
+key|verify_payment|txnid|salt
+```
+
+These formulas follow PayU's current documentation. citeturn4search3turn4search1turn7search0
+
+## Atomic confirmation
+
+The success path locks the Payment row and performs these updates in one Prisma transaction:
+
+```text
+Payment = SUCCESS
+Registration = CONFIRMED
+```
+
+The application does not intentionally leave a successful payment with a pending registration. If the database transaction fails, the operation is not reported as successful and can be retried/reconciled.
+
+## Idempotency and retries
+
+Repeated callbacks for an already successful payment are harmless. The application does not create another Payment or Registration. A failed payment remains in the payment history and a later retry creates a new merchant transaction ID through the existing Phase 3.1 initiation flow.
+
+The original failed payment is not overwritten or reused.
+
+## Pending and verification failures
+
+If PayU verification is inconclusive or the verification service is unavailable, the Payment remains `PENDING` and the Registration remains `PENDING`. The user sees a safe verification-in-progress message.
+
+The application never treats HTTP 200, a browser redirect, or callback `status=success` by itself as proof of payment. PayU's documentation explicitly recommends server-side verification/reconciliation. citeturn1view0turn6search1
+
+## Payment result page
+
+The browser is redirected to:
+
+```text
+/payment/result?txnid=<merchant-transaction-id>
+```
+
+The page requires the authenticated user and looks up the Payment through the server-side `Payment → Registration → User` relationship. It uses the database Payment/Registration status as the authority. The callback's `status` query parameter is not used to determine the displayed result.
+
+The page displays only safe states:
+
+- **Payment successful. Your tournament registration is confirmed.**
+- **Payment verification is still in progress.**
+- **Payment was not successful.**
+
+No salt, hashes, raw PayU response, card information, or internal database IDs are shown.
+
+## Free tournaments
+
+Free tournaments continue using the Phase 2.7 flow. They do not enter PayU and may be immediately `CONFIRMED`.
+
+## Logging
+
+Safe events may include:
+
+- internal Payment ID
+- merchant transaction ID
+- PayU reference ID
+- old/new payment status
+- verification result
+
+Never log:
+
+- merchant salt
+- request secrets
+- full hashes
+- card information
+- CVV
+- OTP
+- passwords
+- raw PayU API responses
 
 ## Testing
 
@@ -98,8 +200,24 @@ npm run lint
 npm run build
 ```
 
-The test suite covers request hashing, response-hash validation, tampered amounts, transaction ID generation, payment state transitions, and missing PayU configuration. Database integration tests should use a test PostgreSQL database and test PayU credentials/mocks only.
+The Phase 3.2 unit tests cover:
+
+- hosted request hash
+- Verify Payment API hash
+- response reverse hash
+- tampered amount rejection
+- invalid hash rejection
+- successful `captured` mapping
+- successful `auth` mapping
+- unknown success-state rejection
+- failed/cancelled mapping
+- pending mapping
+- malformed/negative amount rejection
+- payment state transitions
+- unique merchant transaction IDs
+
+End-to-end PayU verification should use PayU test credentials and a test PostgreSQL database. Do not use production credentials in automated tests.
 
 ## Phase boundary
 
-Phase 3.1 does not implement final payment verification/reconciliation, registration confirmation from payment success, payouts, refunds, rooms, registration codes, match results, leaderboards, or a payment reconciliation dashboard.
+Phase 3.2 does not implement registration codes, room credentials, tournament joining, payouts, refunds, match results, leaderboards, notifications, chat, or tournament result settlement.
