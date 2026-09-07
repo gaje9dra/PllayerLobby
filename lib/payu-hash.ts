@@ -41,6 +41,10 @@ export function generatePayURequestHash(input: {
   return sha512(hashString);
 }
 
+export function generatePayUVerifyPaymentHash(input: { key: string; txnid: string; salt: string }) {
+  return sha512([input.key, "verify_payment", input.txnid, input.salt].join("|"));
+}
+
 export type PayUResponseFields = {
   key?: string;
   txnid?: string;
@@ -65,7 +69,6 @@ export function validatePayUResponseHash(input: PayUResponseFields, salt: string
   const reverseHashString = [
     salt,
     input.status,
-    "",
     "",
     "",
     "",
