@@ -1,6 +1,9 @@
 -- CreateEnum
 CREATE TYPE "PaymentStatus" AS ENUM ('INITIATED', 'PENDING', 'SUCCESS', 'FAILED', 'CANCELLED');
 
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "phone" VARCHAR(20);
+
 -- CreateTable
 CREATE TABLE "Payment" (
     "id" UUID NOT NULL,
