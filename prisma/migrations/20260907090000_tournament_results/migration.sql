@@ -13,6 +13,7 @@ CREATE TABLE "TournamentResult" (
 );
 
 CREATE UNIQUE INDEX "TournamentResult_registrationId_key" ON "TournamentResult"("registrationId");
+CREATE UNIQUE INDEX "TournamentResult_verified_tournament_rank_key" ON "TournamentResult"("tournamentId", "rank") WHERE "resultStatus" = 'VERIFIED';
 CREATE INDEX "TournamentResult_tournamentId_rank_idx" ON "TournamentResult"("tournamentId", "rank");
 CREATE INDEX "TournamentResult_tournamentId_resultStatus_idx" ON "TournamentResult"("tournamentId", "resultStatus");
 
