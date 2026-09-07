@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { RegistrationStatus } from "@/app/generated/prisma";
 import { createTournamentRegistration } from "@/lib/registration";
 
 export type RegistrationActionState = {
   ok: boolean;
   code?: string;
   message?: string;
-  registrationStatus?: "PENDING" | "CONFIRMED";
+  registrationStatus?: RegistrationStatus;
   paymentRequired?: boolean;
 };
 
