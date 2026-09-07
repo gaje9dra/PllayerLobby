@@ -14,6 +14,7 @@ export type PayURequestFields = {
   productinfo: string;
   firstname: string;
   email: string;
+  phone: string;
   udf1: string;
   udf2: string;
   udf3: string;
@@ -31,6 +32,7 @@ export type PayUResponseFields = {
   productinfo?: string;
   firstname?: string;
   email?: string;
+  phone?: string;
   udf1?: string;
   udf2?: string;
   udf3?: string;
@@ -47,17 +49,13 @@ function sha512(value: string) {
 
 function requiredEnv(name: "PAYU_MERCHANT_KEY" | "PAYU_MERCHANT_SALT" | "PAYU_ENVIRONMENT") {
   const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`Missing required PayU environment variable: ${name}`);
-  }
+  if (!value) throw new Error(`Missing required PayU environment variable: ${name}`);
   return value;
 }
 
 export function getPayUEnvironment(): PayUEnvironment {
   const value = requiredEnv("PAYU_ENVIRONMENT").toLowerCase();
-  if (value !== "test" && value !== "production") {
-    throw new Error("PAYU_ENVIRONMENT must be either test or production.");
-  }
+  if (value !== "test" && value !== "production") throw new Error("PAYU_ENVIRONMENT must be either test or production.");
   return value;
 }
 
@@ -103,9 +101,7 @@ export function generatePayURequestHash(input: {
 }
 
 export function validatePayUResponseHash(input: PayUResponseFields, salt: string) {
-  if (!input.key || !input.txnid || !input.amount || !input.productinfo || !input.firstname || !input.email || !input.status || !input.hash) {
-    return false;
-  }
+  if (!input.key || !input.txnid || !input.amount || !input.productinfo || !input.firstname || !input.email || !input.status || !input.hash) return false;
 
   const reverseHashString = [
     salt,
@@ -130,10 +126,7 @@ export function validatePayUResponseHash(input: PayUResponseFields, salt: string
 
   const expected = sha512(reverseHashString);
   const provided = input.hash.toLowerCase();
-
-  if (!/^[a-f0-9]{128}$/.test(provided)) {
-    return false;
-  }
+  if (!/^[a-f0-9]{128}$/.test(provided)) return false;
 
   return timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(provided, "hex"));
 }
