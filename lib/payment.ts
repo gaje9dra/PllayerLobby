@@ -92,9 +92,19 @@ export async function createPaymentForRegistration(registrationId: string, phone
       if (registration.userId !== user.id) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED) };
       if (registration.status !== RegistrationStatus.PENDING) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING) };
       if (registration.tournament.entryFee.toFixed(2) === "0.00") return { ok: false, code: PAYMENT_RESULT_CODES.FREE_TOURNAMENT, message: paymentMessage(PAYMENT_RESULT_CODES.FREE_TOURNAMENT) };
-      if ([TournamentStatus.DRAFT, TournamentStatus.CANCELLED, TournamentStatus.COMPLETED, TournamentStatus.LIVE].includes(registration.tournament.status)) return { ok: false, code: PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE, message: paymentMessage(PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE) };
+
+      const tournamentStatus = registration.tournament.status;
+      if (
+        tournamentStatus === TournamentStatus.DRAFT ||
+        tournamentStatus === TournamentStatus.LIVE ||
+        tournamentStatus === TournamentStatus.COMPLETED ||
+        tournamentStatus === TournamentStatus.CANCELLED
+      ) {
+        return { ok: false, code: PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE, message: paymentMessage(PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE) };
+      }
+
       if (registration.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)) return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL) };
-      if (registration.payments.some((payment) => [PaymentStatus.PENDING, PaymentStatus.INITIATED].includes(payment.status))) return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING) };
+      if (registration.payments.some((payment) => payment.status === PaymentStatus.PENDING || payment.status === PaymentStatus.INITIATED)) return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING) };
 
       const phone = user.phone || submittedPhone;
       if (!PHONE_PATTERN.test(phone)) return { ok: false, code: PAYMENT_RESULT_CODES.INVALID_PHONE, message: paymentMessage(PAYMENT_RESULT_CODES.INVALID_PHONE) };
