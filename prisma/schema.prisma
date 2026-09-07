@@ -154,14 +154,29 @@ model Registration {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
-  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tournament Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Restrict)
   payments   Payment[]
+  code       RegistrationCode?
 
   @@unique([userId, tournamentId])
   @@index([tournamentId])
   @@index([userId])
   @@index([tournamentId, status])
+}
+
+model RegistrationCode {
+  id            String       @id @default(uuid()) @db.Uuid
+  registrationId String      @unique @db.Uuid
+  codeHash      String       @unique @db.Char(64)
+  codeEncrypted String       @db.Text
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  revokedAt     DateTime?
+
+  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+
+  @@index([revokedAt])
 }
 
 model Payment {
