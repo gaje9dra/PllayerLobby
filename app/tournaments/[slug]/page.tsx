@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TournamentStatus } from "@/app/generated/prisma/client";
+import { TournamentRegistration, type RegistrationAvailability } from "@/components/tournaments/tournament-registration";
 import { TournamentStatusBadge } from "@/components/tournaments/tournament-status-badge";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
+import { getCurrentUser } from "@/lib/auth";
+import { canRegisterForTournament } from "@/lib/registration-eligibility";
+import { REGISTRATION_ELIGIBILITY_REASONS } from "@/lib/registration-eligibility-rules";
 import { formatAppDateTime, appTimeZoneLabel } from "@/lib/timezone";
 import { prisma } from "@/lib/prisma";
 
@@ -46,6 +50,7 @@ async function getPublicTournament(slug: string) {
       game: { isActive: true },
     },
     select: {
+      id: true,
       name: true,
       slug: true,
       description: true,
@@ -69,6 +74,33 @@ async function getPublicTournament(slug: string) {
       },
     },
   });
+}
+
+async function getRegistrationAvailability(
+  tournament: NonNullable<Awaited<ReturnType<typeof getPublicTournament>>>,
+): Promise<RegistrationAvailability> {
+  const user = await getCurrentUser();
+
+  if (!user) return "LOGIN";
+  if (tournament.status === TournamentStatus.COMPLETED) return "COMPLETED";
+
+  const eligibility = await canRegisterForTournament(user, tournament.id);
+
+  if (eligibility.allowed) return "REGISTER";
+
+  switch (eligibility.reason) {
+    case REGISTRATION_ELIGIBILITY_REASONS.ALREADY_REGISTERED:
+      return "ALREADY_REGISTERED";
+    case REGISTRATION_ELIGIBILITY_REASONS.TOURNAMENT_FULL:
+      return "TOURNAMENT_FULL";
+    case REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_NOT_STARTED:
+      return "REGISTRATION_NOT_STARTED";
+    case REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_NOT_OPEN:
+    case REGISTRATION_ELIGIBILITY_REASONS.REGISTRATION_CLOSED:
+      return "REGISTRATION_CLOSED";
+    default:
+      return "UNAVAILABLE";
+  }
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -111,6 +143,7 @@ export default async function TournamentDetailPage({ params }: { params: Promise
 
   if (!tournament) notFound();
 
+  const [registrationAvailability] = await Promise.all([getRegistrationAvailability(tournament)]);
   const bannerUrl = safeImageUrl(tournament.bannerUrl);
   const logoUrl = safeImageUrl(tournament.game.logoUrl);
   const registrationStart = tournament.registrationStartTime
@@ -119,6 +152,7 @@ export default async function TournamentDetailPage({ params }: { params: Promise
   const registrationEnd = tournament.registrationEndTime
     ? formatAppDateTime(tournament.registrationEndTime)
     : "Not announced";
+  const loginHref = `/login?callbackUrl=${encodeURIComponent(`/tournaments/${slug}`)}`;
 
   return (
     <main>
@@ -202,6 +236,17 @@ export default async function TournamentDetailPage({ params }: { params: Promise
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 sm:p-7">
+              <h2 className="text-xl font-black text-white">Registration</h2>
+              <div className="mt-5">
+                <TournamentRegistration
+                  tournamentId={tournament.id}
+                  availability={registrationAvailability}
+                  loginHref={loginHref}
+                />
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 sm:p-7">
               <h2 className="text-xl font-black text-white">Registration Window</h2>
               <dl className="mt-5 space-y-4">
                 <InfoItem label="Registration Opens" value={registrationStart} />
@@ -209,7 +254,7 @@ export default async function TournamentDetailPage({ params }: { params: Promise
                 <InfoItem label="Joining Window" value={`${tournament.joiningWindowMinutes} minutes`} />
               </dl>
               <p className="mt-5 rounded-2xl border border-white/10 bg-slate-950/40 p-4 text-xs leading-5 text-slate-500">
-                Registration and tournament joining will be available in a future platform phase.
+                Tournament joining, room credentials, and other participation details are handled in later platform phases.
               </p>
             </section>
           </aside>
