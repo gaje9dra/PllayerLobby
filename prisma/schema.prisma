@@ -7,12 +7,47 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserRole { USER ADMIN }
-enum UserStatus { ACTIVE SUSPENDED BANNED }
-enum TournamentFormat { SOLO DUO SQUAD TEAM }
-enum TournamentStatus { DRAFT UPCOMING REGISTRATION_OPEN REGISTRATION_CLOSED LIVE COMPLETED CANCELLED }
-enum RegistrationStatus { PENDING CONFIRMED CANCELLED }
-enum PaymentStatus { INITIATED PENDING SUCCESS FAILED CANCELLED }
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum TournamentFormat {
+  SOLO
+  DUO
+  SQUAD
+  TEAM
+}
+
+enum TournamentStatus {
+  DRAFT
+  UPCOMING
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
 
 model User {
   id String @id @default(uuid()) @db.Uuid
