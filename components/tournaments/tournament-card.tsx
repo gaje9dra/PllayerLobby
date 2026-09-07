@@ -34,9 +34,10 @@ function formatFormat(value: string) {
 }
 
 function getDisplayStatus(tournament: TournamentCardTournament, now: Date): Exclude<TournamentStatus, "DRAFT" | "CANCELLED"> {
-  if (tournament.status === TournamentStatus.REGISTRATION_OPEN) {
+  if (tournament.status === TournamentStatus.UPCOMING || tournament.status === TournamentStatus.REGISTRATION_OPEN) {
     if (tournament.registrationStartTime && now < tournament.registrationStartTime) return TournamentStatus.UPCOMING;
     if (!tournament.registrationEndTime || now >= tournament.registrationEndTime) return TournamentStatus.REGISTRATION_CLOSED;
+    return TournamentStatus.REGISTRATION_OPEN;
   }
 
   return tournament.status as Exclude<TournamentStatus, "DRAFT" | "CANCELLED">;
