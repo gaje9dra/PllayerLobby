@@ -61,7 +61,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
   const games = await prisma.game.findMany({
     where: { isActive: true },
     orderBy: { name: "asc" },
-    select: { slug: true, name: true },
+    select: { id: true, slug: true, name: true, logoUrl: true },
   });
 
   const activeGameSlugs = new Set(games.map((game) => game.slug));
@@ -70,17 +70,19 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
   const fee: FeeFilter = requestedFee === "free" || requestedFee === "paid" ? requestedFee : "all";
   const sort: SortKey = requestedSort in SORT_OPTIONS ? requestedSort as SortKey : "starting-soon";
 
+  const gameIdsForSearch = query
+    ? games.filter((item) => item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map((item) => item.id)
+    : [];
+  const selectedGameId = game ? games.find((item) => item.slug === game)?.id : undefined;
+
   const where = {
-    status: status ?? { in: PUBLIC_STATUSES },
-    game: {
-      isActive: true,
-      ...(game ? { slug: game } : {}),
-    },
+    status: status ?? { in: [...PUBLIC_STATUSES] },
+    ...(selectedGameId ? { gameId: selectedGameId } : {}),
     ...(query ? {
       OR: [
         { name: { contains: query, mode: "insensitive" as const } },
         { slug: { contains: query, mode: "insensitive" as const } },
-        { game: { name: { contains: query, mode: "insensitive" as const } } },
+        ...(gameIdsForSearch.length > 0 ? [{ gameId: { in: gameIdsForSearch } }] : []),
       ],
     } : {}),
     ...(fee === "free" ? { entryFee: { equals: 0 } } : {}),
@@ -106,8 +108,14 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
       tournamentFormat: true,
       region: true,
       status: true,
-      game: { select: { name: true, logoUrl: true } },
+      gameId: true,
     },
+  });
+
+  const gameById = new Map(games.map((item) => [item.id, item]));
+  const publicTournaments = tournaments.flatMap((tournament) => {
+    const gameRecord = gameById.get(tournament.gameId);
+    return gameRecord ? [{ ...tournament, game: { name: gameRecord.name, logoUrl: gameRecord.logoUrl } }] : [];
   });
 
   const activeFilterCount = [Boolean(query), Boolean(game), Boolean(status), fee !== "all", sort !== "starting-soon"].filter(Boolean).length;
@@ -126,45 +134,21 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]">
           <label className="sr-only" htmlFor="tournament-search">Search tournaments</label>
           <input id="tournament-search" name="q" defaultValue={query} placeholder="Search tournament or game" className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-lime-300/60" />
-
           <label className="sr-only" htmlFor="tournament-game">Game</label>
-          <select id="tournament-game" name="game" defaultValue={game} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60">
-            <option value="">All Games</option>
-            {games.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
-          </select>
-
+          <select id="tournament-game" name="game" defaultValue={game} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60"><option value="">All Games</option>{games.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select>
           <label className="sr-only" htmlFor="tournament-status">Status</label>
-          <select id="tournament-status" name="status" defaultValue={status ?? ""} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60">
-            <option value="">All Statuses</option>
-            {PUBLIC_STATUSES.map((item) => <option key={item} value={item}>{statusLabel(item)}</option>)}
-          </select>
-
+          <select id="tournament-status" name="status" defaultValue={status ?? ""} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60"><option value="">All Statuses</option>{PUBLIC_STATUSES.map((item) => <option key={item} value={item}>{statusLabel(item)}</option>)}</select>
           <label className="sr-only" htmlFor="tournament-fee">Entry fee</label>
-          <select id="tournament-fee" name="fee" defaultValue={fee} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60">
-            <option value="all">All Fees</option>
-            <option value="free">Free</option>
-            <option value="paid">Paid</option>
-          </select>
-
+          <select id="tournament-fee" name="fee" defaultValue={fee} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60"><option value="all">All Fees</option><option value="free">Free</option><option value="paid">Paid</option></select>
           <label className="sr-only" htmlFor="tournament-sort">Sort tournaments</label>
-          <select id="tournament-sort" name="sort" defaultValue={sort} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-lime-300/60">
-            <option value="starting-soon">Starting Soon</option>
-            <option value="newest">Newly Added</option>
-            <option value="prize-high">Prize Pool: High to Low</option>
-            <option value="fee-low">Entry Fee: Low to High</option>
-            <option value="fee-high">Entry Fee: High to Low</option>
-          </select>
-
+          <select id="tournament-sort" name="sort" defaultValue={sort} className="min-h-11 rounded-xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-lime-300/60"><option value="starting-soon">Starting Soon</option><option value="newest">Newly Added</option><option value="prize-high">Prize Pool: High to Low</option><option value="fee-low">Entry Fee: Low to High</option><option value="fee-high">Entry Fee: High to Low</option></select>
           <Button type="submit">Apply</Button>
         </div>
       </form>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
-        <p>{total.toLocaleString()} tournament{total === 1 ? "" : "s"} found{activeFilterCount > 0 ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} active` : ""}</p>
-        {hasFilters ? <Link href="/tournaments" className="font-semibold text-lime-300 hover:text-lime-200">Clear filters</Link> : null}
-      </div>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500"><p>{total.toLocaleString()} tournament{total === 1 ? "" : "s"} found{activeFilterCount > 0 ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} active` : ""}</p>{hasFilters ? <Link href="/tournaments" className="font-semibold text-lime-300 hover:text-lime-200">Clear filters</Link> : null}</div>
 
-      {tournaments.length === 0 ? (
+      {publicTournaments.length === 0 ? (
         <div className="mt-5 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center sm:p-14">
           <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-lime-300/10 text-xl font-black text-lime-300">⌕</div>
           <h2 className="mt-5 text-xl font-bold text-white">No tournaments found</h2>
@@ -173,7 +157,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
         </div>
       ) : (
         <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {tournaments.map((tournament) => <TournamentCard key={tournament.slug} tournament={tournament} />)}
+          {publicTournaments.map((tournament) => <TournamentCard key={tournament.slug} tournament={tournament} />)}
         </div>
       )}
 
