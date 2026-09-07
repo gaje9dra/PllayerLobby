@@ -31,9 +31,12 @@ DATABASE_URL="postgresql://USERNAME:PASSWORD@HOST:PORT/DATABASE?schema=public"
 AUTH_SECRET="a-long-random-secret"
 GOOGLE_CLIENT_ID="your-google-client-id"
 GOOGLE_CLIENT_SECRET="your-google-client-secret"
+PAYU_MERCHANT_KEY="your-payu-merchant-key"
+PAYU_MERCHANT_SALT="your-payu-merchant-salt"
+PAYU_ENVIRONMENT="test"
 ```
 
-Never commit `.env`, `.env.local`, or real credentials.
+Never commit `.env`, `.env.local`, or real credentials. The PayU merchant salt is server-only and must never be exposed to the browser.
 
 Generate a strong Auth.js secret with:
 
@@ -211,18 +214,37 @@ Phase 1.5 adds the user-facing account interface while preserving the Phase 1.3 
 - Request-level caching for `getCurrentUser()` to avoid redundant user queries between the dashboard layout/page and shared layout.
 
 ### Intentionally not implemented
-Tournament registration/creation/management beyond the Phase 2.2 admin creation flow, PayU, payments, payment verification, registration codes, rooms, joining windows, payouts, refunds, notification persistence, and complete admin management remain future-phase work.
+Tournament registration/creation/management beyond the Phase 2.2 admin creation flow, payment verification, registration codes, rooms, joining windows, payouts, refunds, notification persistence, and complete admin management remain future-phase work.
 
-### Local setup
-The generated Prisma client may be generated locally with:
+## Phase 3.1 — PayU Payment Architecture & Secure Checkout
+
+Phase 3.1 adds a `Payment` model linked to `Registration`, server-side PayU hosted checkout initiation, SHA-512 request hashing, callback response-hash validation, duplicate payment protection, and safe dashboard payment status display.
+
+Paid tournament flow:
+
+```text
+Register
+  → Registration = PENDING
+  → Proceed to Payment
+  → server derives amount from PostgreSQL
+  → Payment = PENDING
+  → PayU hosted checkout
+  → PayU callback
+  → response/hash/transaction/amount checks
+  → success remains PENDING until the next verification phase
+```
+
+The application never collects card data directly and never sends the merchant salt to the browser. See `docs/payu.md` for merchant setup, environment configuration, callback configuration, hashing, testing, and the Phase 3.1 boundary.
+
+## Local setup
+
+After pulling the latest phase, run:
 
 ```bash
 npx prisma generate
-```
-
-Then verify with:
-
-```bash
+npm run db:validate
+npm run db:migrate:deploy
+npm test
 npx tsc --noEmit
 npm run lint
 npm run build
