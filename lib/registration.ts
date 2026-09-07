@@ -53,17 +53,6 @@ export function getRegistrationCreationStatus(entryFee: { toFixed: (digits?: num
   } as const;
 }
 
-async function lockTournament(tx: typeof prisma, tournamentId: string) {
-  const rows = await tx.$queryRaw<{ id: string }[]>`
-    SELECT "id"
-    FROM "Tournament"
-    WHERE "id" = CAST(${tournamentId} AS UUID)
-    FOR UPDATE
-  `;
-
-  return rows.length > 0;
-}
-
 export async function createTournamentRegistration(
   tournamentId: string,
 ): Promise<RegistrationCreationResult> {
@@ -79,8 +68,14 @@ export async function createTournamentRegistration(
 
   try {
     return await prisma.$transaction(async (tx) => {
-      const locked = await lockTournament(tx as typeof prisma, tournamentId);
-      if (!locked) {
+      const lockedRows = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id"
+        FROM "Tournament"
+        WHERE "id" = CAST(${tournamentId} AS UUID)
+        FOR UPDATE
+      `;
+
+      if (lockedRows.length === 0) {
         return {
           ok: false,
           code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND,
