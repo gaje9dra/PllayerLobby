@@ -36,21 +36,20 @@ export type PaymentInitiationResult =
       message: string;
     };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function createMerchantTransactionId() {
   return `PL${randomBytes(11).toString("hex")}`;
 }
 
 function getCallbackUrl(path: string) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (!appUrl) {
-    throw new Error("Missing required environment variable: NEXT_PUBLIC_APP_URL");
-  }
+  if (!appUrl) throw new Error("Missing required environment variable: NEXT_PUBLIC_APP_URL");
   return new URL(path, appUrl).toString();
 }
 
 function firstNameFromUser(name: string | null) {
-  const firstName = name?.trim().split(/\s+/)[0];
-  return firstName || "Player";
+  return name?.trim().split(/\s+/)[0] || "Player";
 }
 
 function paymentMessage(code: PaymentResultCode) {
@@ -81,19 +80,21 @@ function paymentMessage(code: PaymentResultCode) {
 }
 
 export async function createPaymentForRegistration(registrationId: string): Promise<PaymentInitiationResult> {
-  const user = await getCurrentUser();
+  if (!UUID_PATTERN.test(registrationId)) {
+    return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
+  }
 
+  const user = await getCurrentUser();
   if (!user) {
     return { ok: false, code: PAYMENT_RESULT_CODES.UNAUTHENTICATED, message: paymentMessage(PAYMENT_RESULT_CODES.UNAUTHENTICATED) };
   }
-
   if (user.status !== "ACTIVE") {
     return { ok: false, code: PAYMENT_RESULT_CODES.USER_NOT_ACTIVE, message: paymentMessage(PAYMENT_RESULT_CODES.USER_NOT_ACTIVE) };
   }
 
   try {
     const config = getPayUConfig();
-    const result = await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx) => {
       const lockedRows = await tx.$queryRaw<{ id: string }[]>`
         SELECT "id"
         FROM "Registration"
@@ -102,7 +103,7 @@ export async function createPaymentForRegistration(registrationId: string): Prom
       `;
 
       if (lockedRows.length === 0) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND } as const;
+        return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
       }
 
       const registration = await tx.registration.findUnique({
@@ -111,58 +112,34 @@ export async function createPaymentForRegistration(registrationId: string): Prom
           id: true,
           userId: true,
           status: true,
-          tournament: {
-            select: {
-              id: true,
-              name: true,
-              entryFee: true,
-              status: true,
-            },
-          },
+          tournament: { select: { name: true, entryFee: true, status: true } },
           payments: {
             where: { status: { in: [PaymentStatus.SUCCESS, PaymentStatus.PENDING, PaymentStatus.INITIATED] } },
             orderBy: { createdAt: "desc" },
-            take: 1,
-            select: {
-              id: true,
-              merchantTransactionId: true,
-              amount: true,
-              status: true,
-            },
+            select: { id: true, status: true },
           },
         },
       });
 
-      if (!registration) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND } as const;
-      }
-      if (registration.userId !== user.id) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED } as const;
-      }
-      if (registration.status !== RegistrationStatus.PENDING) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING } as const;
-      }
-      if (registration.tournament.entryFee.toFixed(2) === "0.00") {
-        return { ok: false, code: PAYMENT_RESULT_CODES.FREE_TOURNAMENT } as const;
-      }
+      if (!registration) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
+      if (registration.userId !== user.id) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED) };
+      if (registration.status !== RegistrationStatus.PENDING) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING) };
+      if (registration.tournament.entryFee.toFixed(2) === "0.00") return { ok: false, code: PAYMENT_RESULT_CODES.FREE_TOURNAMENT, message: paymentMessage(PAYMENT_RESULT_CODES.FREE_TOURNAMENT) };
       if ([TournamentStatus.DRAFT, TournamentStatus.CANCELLED, TournamentStatus.COMPLETED, TournamentStatus.LIVE].includes(registration.tournament.status)) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE } as const;
+        return { ok: false, code: PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE, message: paymentMessage(PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE) };
       }
 
-      const existingPayment = registration.payments[0];
-      if (existingPayment?.status === PaymentStatus.SUCCESS) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL } as const;
+      if (registration.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)) {
+        return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL) };
       }
-      if (existingPayment && [PaymentStatus.PENDING, PaymentStatus.INITIATED].includes(existingPayment.status)) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING } as const;
+      if (registration.payments.some((payment) => [PaymentStatus.PENDING, PaymentStatus.INITIATED].includes(payment.status))) {
+        return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING) };
       }
 
       const amount = registration.tournament.entryFee.toFixed(2);
       const merchantTransactionId = createMerchantTransactionId();
       const productinfo = `Tournament Entry - ${registration.tournament.name}`.slice(0, 100);
       const firstname = firstNameFromUser(user.name);
-      const surl = getCallbackUrl("/api/payu/callback");
-      const furl = getCallbackUrl("/api/payu/callback");
       const hash = generatePayURequestHash({
         key: config.merchantKey,
         txnid: merchantTransactionId,
@@ -179,7 +156,7 @@ export async function createPaymentForRegistration(registrationId: string): Prom
           merchantTransactionId,
           amount: registration.tournament.entryFee,
           currency: "INR",
-          status: PaymentStatus.INITIATED,
+          status: PaymentStatus.PENDING,
         },
         select: { id: true },
       });
@@ -201,32 +178,19 @@ export async function createPaymentForRegistration(registrationId: string): Prom
           udf3: "",
           udf4: "",
           udf5: "",
-          surl,
-          furl,
+          surl: getCallbackUrl("/api/payu/callback"),
+          furl: getCallbackUrl("/api/payu/callback"),
           hash,
         },
       } satisfies PaymentInitiationResult;
     });
-
-    if (!result.ok) {
-      return { ok: false, code: result.code, message: paymentMessage(result.code) };
-    }
-
-    await prisma.payment.update({
-      where: { id: result.paymentId },
-      data: { status: PaymentStatus.PENDING },
-    });
-
-    return result;
   } catch (error) {
     console.error("PayU payment initiation failed:", error);
-    const message = error instanceof Error && error.message.includes("PAYU_")
-      ? paymentMessage(PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR)
-      : paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_FAILED);
+    const configurationError = error instanceof Error && (error.message.includes("PAYU_") || error.message.includes("NEXT_PUBLIC_APP_URL"));
     return {
       ok: false,
-      code: error instanceof Error && error.message.includes("PAYU_") ? PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR : PAYMENT_RESULT_CODES.PAYMENT_FAILED,
-      message,
+      code: configurationError ? PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR : PAYMENT_RESULT_CODES.PAYMENT_FAILED,
+      message: paymentMessage(configurationError ? PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR : PAYMENT_RESULT_CODES.PAYMENT_FAILED),
     };
   }
 }
