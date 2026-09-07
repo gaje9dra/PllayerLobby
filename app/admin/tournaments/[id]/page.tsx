@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
-import { Button, SectionContainer } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { SectionContainer } from "@/components/ui/section-container";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TournamentStatus } from "@/app/generated/prisma/client";
 import { TournamentStatusBadge } from "@/components/tournaments/tournament-status-badge";
-import { CancelTournamentButton } from "@/app/admin/tournaments/[id]/cancel-tournament-button";
-import { formatAppDateTime } from "@/lib/date-time";
+import { CancelTournamentButton } from "@/app/admin/tournaments/cancel-button";
+import { formatAppDateTime } from "@/lib/timezone";
 
 export default async function AdminTournamentPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
