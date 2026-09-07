@@ -33,6 +33,19 @@ function formatStatus(status: TournamentStatus) {
   return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function getDisplayStatus(
+  tournament: { status: TournamentStatus; registrationStartTime: Date | null; registrationEndTime: Date | null },
+  now: Date,
+): Exclude<TournamentStatus, "DRAFT" | "CANCELLED"> {
+  if (tournament.status === TournamentStatus.UPCOMING || tournament.status === TournamentStatus.REGISTRATION_OPEN) {
+    if (tournament.registrationStartTime && now < tournament.registrationStartTime) return TournamentStatus.UPCOMING;
+    if (!tournament.registrationEndTime || now >= tournament.registrationEndTime) return TournamentStatus.REGISTRATION_CLOSED;
+    return TournamentStatus.REGISTRATION_OPEN;
+  }
+
+  return tournament.status as Exclude<TournamentStatus, "DRAFT" | "CANCELLED">;
+}
+
 function formatTournamentFormat(value: string) {
   return value.charAt(0) + value.slice(1).toLowerCase();
 }
@@ -78,7 +91,6 @@ async function getRegistrationAvailability(
 
   if (!user) return { availability: "LOGIN", registrationId: null };
   if (tournament.status === TournamentStatus.COMPLETED) return { availability: "COMPLETED", registrationId: null };
-  if (tournament.status === TournamentStatus.UPCOMING) return { availability: "REGISTRATION_NOT_STARTED", registrationId: null };
 
   const existingRegistration = await prisma.registration.findUnique({
     where: { userId_tournamentId: { userId: user.id, tournamentId: tournament.id } },
@@ -132,6 +144,7 @@ export default async function TournamentDetailPage({ params }: { params: Promise
 
   const currentUser = await getCurrentUser();
   const registration = await getRegistrationAvailability(tournament);
+  const displayStatus = getDisplayStatus(tournament, new Date());
   const bannerUrl = safeImageUrl(tournament.bannerUrl);
   const logoUrl = safeImageUrl(tournament.game.logoUrl);
   const registrationStart = tournament.registrationStartTime ? formatAppDateTime(tournament.registrationStartTime) : "Not announced";
@@ -157,7 +170,7 @@ export default async function TournamentDetailPage({ params }: { params: Promise
                   {logoUrl ? <div className="size-full bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${JSON.stringify(logoUrl)})` }} aria-label={`${tournament.game.name} logo`} role="img" /> : <span className="text-lg font-black text-lime-300">{tournament.game.name.slice(0, 1).toUpperCase()}</span>}
                 </div>
                 <p className="text-sm font-bold uppercase tracking-[0.14em] text-slate-300">{tournament.game.name}</p>
-                <TournamentStatusBadge status={tournament.status as Exclude<TournamentStatus, "DRAFT" | "CANCELLED">} />
+                <TournamentStatusBadge status={displayStatus} />
               </div>
               <h1 className="mt-4 max-w-4xl text-3xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">{tournament.name}</h1>
               <p className="mt-3 text-sm text-slate-300 sm:text-base">Starts {formatAppDateTime(tournament.startTime)}</p>
@@ -188,7 +201,7 @@ export default async function TournamentDetailPage({ params }: { params: Promise
             <section className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 sm:p-7">
               <h2 className="text-xl font-black text-white">Tournament Info</h2>
               <dl className="mt-5 space-y-4">
-                <InfoItem label="Status" value={formatStatus(tournament.status)} />
+                <InfoItem label="Status" value={formatStatus(displayStatus)} />
                 <InfoItem label="Region" value={tournament.region} />
                 <InfoItem label="Start" value={formatAppDateTime(tournament.startTime)} />
                 <InfoItem label="Time Zone" value={appTimeZoneLabel()} />
