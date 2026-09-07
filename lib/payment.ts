@@ -1,10 +1,10 @@
 import "server-only";
 
-import { randomBytes } from "node:crypto";
 import { PaymentStatus, RegistrationStatus, TournamentStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getPayUConfig, generatePayURequestHash, type PayURequestFields } from "@/lib/payu";
+import { generateMerchantTransactionId } from "@/lib/payment-workflow-rules";
 
 export const PAYMENT_RESULT_CODES = {
   UNAUTHENTICATED: "UNAUTHENTICATED",
@@ -25,25 +25,11 @@ export const PAYMENT_RESULT_CODES = {
 export type PaymentResultCode = (typeof PAYMENT_RESULT_CODES)[keyof typeof PAYMENT_RESULT_CODES];
 
 export type PaymentInitiationResult =
-  | {
-      ok: true;
-      paymentId: string;
-      merchantTransactionId: string;
-      checkoutUrl: string;
-      fields: PayURequestFields;
-    }
-  | {
-      ok: false;
-      code: PaymentResultCode;
-      message: string;
-    };
+  | { ok: true; paymentId: string; merchantTransactionId: string; checkoutUrl: string; fields: PayURequestFields }
+  | { ok: false; code: PaymentResultCode; message: string };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PHONE_PATTERN = /^[6-9][0-9]{9}$/;
-
-export function generateMerchantTransactionId() {
-  return `PL${randomBytes(11).toString("hex")}`;
-}
 
 function getCallbackUrl(path: string) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
@@ -74,33 +60,21 @@ function paymentMessage(code: PaymentResultCode) {
 }
 
 export async function createPaymentForRegistration(registrationId: string, phoneInput: string): Promise<PaymentInitiationResult> {
-  if (!UUID_PATTERN.test(registrationId)) {
-    return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
-  }
+  if (!UUID_PATTERN.test(registrationId)) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
 
   const user = await getCurrentUser();
-  if (!user) {
-    return { ok: false, code: PAYMENT_RESULT_CODES.UNAUTHENTICATED, message: paymentMessage(PAYMENT_RESULT_CODES.UNAUTHENTICATED) };
-  }
-  if (user.status !== "ACTIVE") {
-    return { ok: false, code: PAYMENT_RESULT_CODES.USER_NOT_ACTIVE, message: paymentMessage(PAYMENT_RESULT_CODES.USER_NOT_ACTIVE) };
-  }
+  if (!user) return { ok: false, code: PAYMENT_RESULT_CODES.UNAUTHENTICATED, message: paymentMessage(PAYMENT_RESULT_CODES.UNAUTHENTICATED) };
+  if (user.status !== "ACTIVE") return { ok: false, code: PAYMENT_RESULT_CODES.USER_NOT_ACTIVE, message: paymentMessage(PAYMENT_RESULT_CODES.USER_NOT_ACTIVE) };
 
   const submittedPhone = phoneInput.replace(/\s+/g, "");
-  if (!user.phone && !PHONE_PATTERN.test(submittedPhone)) {
-    return { ok: false, code: submittedPhone ? PAYMENT_RESULT_CODES.INVALID_PHONE : PAYMENT_RESULT_CODES.PHONE_REQUIRED, message: paymentMessage(submittedPhone ? PAYMENT_RESULT_CODES.INVALID_PHONE : PAYMENT_RESULT_CODES.PHONE_REQUIRED) };
-  }
+  if (!user.phone && !PHONE_PATTERN.test(submittedPhone)) return { ok: false, code: submittedPhone ? PAYMENT_RESULT_CODES.INVALID_PHONE : PAYMENT_RESULT_CODES.PHONE_REQUIRED, message: paymentMessage(submittedPhone ? PAYMENT_RESULT_CODES.INVALID_PHONE : PAYMENT_RESULT_CODES.PHONE_REQUIRED) };
 
   try {
     const config = getPayUConfig();
     return await prisma.$transaction(async (tx) => {
       const lockedRows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT "id"
-        FROM "Registration"
-        WHERE "id" = CAST(${registrationId} AS UUID)
-        FOR UPDATE
+        SELECT "id" FROM "Registration" WHERE "id" = CAST(${registrationId} AS UUID) FOR UPDATE
       `;
-
       if (lockedRows.length === 0) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
 
       const registration = await tx.registration.findUnique({
@@ -110,11 +84,7 @@ export async function createPaymentForRegistration(registrationId: string, phone
           userId: true,
           status: true,
           tournament: { select: { name: true, entryFee: true, status: true } },
-          payments: {
-            where: { status: { in: [PaymentStatus.SUCCESS, PaymentStatus.PENDING, PaymentStatus.INITIATED] } },
-            orderBy: { createdAt: "desc" },
-            select: { id: true, status: true },
-          },
+          payments: { where: { status: { in: [PaymentStatus.SUCCESS, PaymentStatus.PENDING, PaymentStatus.INITIATED] } }, orderBy: { createdAt: "desc" }, select: { id: true, status: true } },
         },
       });
 
@@ -122,75 +92,31 @@ export async function createPaymentForRegistration(registrationId: string, phone
       if (registration.userId !== user.id) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED) };
       if (registration.status !== RegistrationStatus.PENDING) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING) };
       if (registration.tournament.entryFee.toFixed(2) === "0.00") return { ok: false, code: PAYMENT_RESULT_CODES.FREE_TOURNAMENT, message: paymentMessage(PAYMENT_RESULT_CODES.FREE_TOURNAMENT) };
-      if ([TournamentStatus.DRAFT, TournamentStatus.CANCELLED, TournamentStatus.COMPLETED, TournamentStatus.LIVE].includes(registration.tournament.status)) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE, message: paymentMessage(PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE) };
-      }
+      if ([TournamentStatus.DRAFT, TournamentStatus.CANCELLED, TournamentStatus.COMPLETED, TournamentStatus.LIVE].includes(registration.tournament.status)) return { ok: false, code: PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE, message: paymentMessage(PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE) };
       if (registration.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)) return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL) };
       if (registration.payments.some((payment) => [PaymentStatus.PENDING, PaymentStatus.INITIATED].includes(payment.status))) return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING) };
 
       const phone = user.phone || submittedPhone;
       if (!PHONE_PATTERN.test(phone)) return { ok: false, code: PAYMENT_RESULT_CODES.INVALID_PHONE, message: paymentMessage(PAYMENT_RESULT_CODES.INVALID_PHONE) };
-
-      if (!user.phone) {
-        await tx.user.update({ where: { id: user.id }, data: { phone } });
-      }
+      if (!user.phone) await tx.user.update({ where: { id: user.id }, data: { phone } });
 
       const amount = registration.tournament.entryFee.toFixed(2);
       const merchantTransactionId = generateMerchantTransactionId();
       const productinfo = `Tournament Entry - ${registration.tournament.name}`.slice(0, 100);
       const firstname = firstNameFromUser(user.name);
-      const hash = generatePayURequestHash({
-        key: config.merchantKey,
-        txnid: merchantTransactionId,
-        amount,
-        productinfo,
-        firstname,
-        email: user.email,
-        salt: config.merchantSalt,
-      });
+      const hash = generatePayURequestHash({ key: config.merchantKey, txnid: merchantTransactionId, amount, productinfo, firstname, email: user.email, salt: config.merchantSalt });
 
       const payment = await tx.payment.create({
-        data: {
-          registrationId: registration.id,
-          merchantTransactionId,
-          amount: registration.tournament.entryFee,
-          currency: "INR",
-          status: PaymentStatus.PENDING,
-        },
+        data: { registrationId: registration.id, merchantTransactionId, amount: registration.tournament.entryFee, currency: "INR", status: PaymentStatus.PENDING },
         select: { id: true },
       });
 
-      return {
-        ok: true,
-        paymentId: payment.id,
-        merchantTransactionId,
-        checkoutUrl: config.checkoutUrl,
-        fields: {
-          key: config.merchantKey,
-          txnid: merchantTransactionId,
-          amount,
-          productinfo,
-          firstname,
-          email: user.email,
-          phone,
-          udf1: "",
-          udf2: "",
-          udf3: "",
-          udf4: "",
-          udf5: "",
-          surl: getCallbackUrl("/api/payu/callback"),
-          furl: getCallbackUrl("/api/payu/callback"),
-          hash,
-        },
-      } satisfies PaymentInitiationResult;
+      return { ok: true, paymentId: payment.id, merchantTransactionId, checkoutUrl: config.checkoutUrl, fields: { key: config.merchantKey, txnid: merchantTransactionId, amount, productinfo, firstname, email: user.email, phone, udf1: "", udf2: "", udf3: "", udf4: "", udf5: "", surl: getCallbackUrl("/api/payu/callback"), furl: getCallbackUrl("/api/payu/callback"), hash } } satisfies PaymentInitiationResult;
     });
   } catch (error) {
     console.error("PayU payment initiation failed:", error);
     const configurationError = error instanceof Error && (error.message.includes("PAYU_") || error.message.includes("NEXT_PUBLIC_APP_URL"));
-    return {
-      ok: false,
-      code: configurationError ? PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR : PAYMENT_RESULT_CODES.PAYMENT_FAILED,
-      message: paymentMessage(configurationError ? PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR : PAYMENT_RESULT_CODES.PAYMENT_FAILED),
-    };
+    const code = configurationError ? PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR : PAYMENT_RESULT_CODES.PAYMENT_FAILED;
+    return { ok: false, code, message: paymentMessage(code) };
   }
 }
