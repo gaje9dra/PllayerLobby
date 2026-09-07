@@ -4,6 +4,7 @@ import { TournamentCard } from "@/components/tournaments/tournament-card";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
 import { prisma } from "@/lib/prisma";
+import { updateDueTournamentLifecycles } from "@/lib/tournament-lifecycle";
 
 const PAGE_SIZE = 12;
 const PUBLIC_STATUSES = [TournamentStatus.UPCOMING, TournamentStatus.REGISTRATION_OPEN, TournamentStatus.REGISTRATION_CLOSED, TournamentStatus.LIVE, TournamentStatus.COMPLETED] as const;
@@ -17,6 +18,7 @@ function statusLabel(status: TournamentStatus) { return status.replaceAll("_", "
 function isPublicStatus(value: string): value is (typeof PUBLIC_STATUSES)[number] { return PUBLIC_STATUSES.includes(value as (typeof PUBLIC_STATUSES)[number]); }
 
 export default async function TournamentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  await updateDueTournamentLifecycles();
   const params = await searchParams;
   const query = one(params.q)?.trim() ?? "";
   const requestedGame = one(params.game)?.trim() ?? "";
