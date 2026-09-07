@@ -1,6 +1,6 @@
 import "server-only";
 
-import { RegistrationStatus, TournamentResultStatus, TournamentStatus } from "@/app/generated/prisma/client";
+import { RegistrationStatus, TournamentResultStatus } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refreshTournamentLifecycle } from "@/lib/tournament-lifecycle";
