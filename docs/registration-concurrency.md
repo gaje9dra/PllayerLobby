@@ -1,13 +1,15 @@
 # Registration Concurrency Notes
 
-Phase 2.6 performs eligibility checks and capacity reads only. It intentionally does not create registrations.
+Phase 2.7 performs registration creation inside a PostgreSQL transaction. The tournament row is locked with `SELECT ... FOR UPDATE` before the current confirmed-registration count is evaluated and the registration row is written.
 
-When registration creation is implemented, the eligibility check must not be treated as a reservation. Two concurrent requests can both observe the same remaining capacity between their reads.
+For free tournaments, this serializes capacity-sensitive registration attempts for the same tournament. The server re-checks the centralized Phase 2.6 eligibility rules while the tournament row is locked, then creates or reactivates the registration as `CONFIRMED`.
 
-The creation flow must therefore perform the capacity-sensitive write atomically, for example by using an appropriate database transaction/locking strategy or an equivalent atomic capacity invariant. The existing unique `userId + tournamentId` constraint protects against duplicate registrations for the same user, but it does not by itself protect tournament-wide capacity.
+The database `userId + tournamentId` unique constraint remains the final duplicate-registration protection. If a duplicate constraint error occurs, the server returns a safe `ALREADY_REGISTERED` result rather than exposing Prisma or PostgreSQL details.
 
-Capacity is authoritative from `CONFIRMED` registrations. `PENDING` registrations must not permanently consume capacity in Phase 2.6.
+If a previous registration is `CANCELLED`, Phase 2.7 reuses that row and updates its status instead of inserting a second row. Registration history therefore remains in the same database record and the unique constraint is preserved.
 
-Because `userId + tournamentId` is unique, re-registration after a `CANCELLED` record should reuse or update that existing row rather than blindly inserting a second row. This preserves the unique constraint and the registration history.
+Capacity is authoritative from `CONFIRMED` registrations. Paid registrations are created as `PENDING` and do not permanently consume participant capacity in this phase. This is intentional because no payment reservation or timeout system is implemented yet.
 
-All registration creation paths must derive the user from the trusted server-side session and call the centralized eligibility service before attempting the write.
+The payment phase must add an atomic payment-confirmation/capacity strategy before changing a paid `PENDING` registration to `CONFIRMED`. Without that later reservation/confirmation control, multiple pending paid registrations could exist for the same remaining slot, even though they do not currently consume permanent capacity.
+
+All registration creation paths derive the user from the trusted server-side session. The browser supplies only the tournament identifier needed to select the target tournament; entry fee, tournament status, registration status, user ID, and payment state are authoritative server/database values.
