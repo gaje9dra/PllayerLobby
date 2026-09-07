@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { PaymentStatus } from "@/app/generated/prisma/client";
-import { generatePayURequestHash, validatePayUResponseHash } from "@/lib/payu";
+import { generatePayURequestHash, getPayUConfig, validatePayUResponseHash } from "@/lib/payu";
 import { generateMerchantTransactionId } from "@/lib/payment";
 import { canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
 
@@ -40,9 +40,12 @@ function makeResponseHash(status = "success") {
   return createHash("sha512").update(value, "utf8").digest("hex");
 }
 
-test("PayU request hash uses the documented hosted checkout ordering", () => {
-  const hash = generatePayURequestHash(requestInput);
-  assert.match(hash, /^[a-f0-9]{128}$/);
+test("PayU request hash matches the documented hosted checkout formula", () => {
+  const expected = createHash("sha512")
+    .update(`${requestInput.key}|${requestInput.txnid}|${requestInput.amount}|${requestInput.productinfo}|${requestInput.firstname}|${requestInput.email}||||||||||||${requestInput.salt}`, "utf8")
+    .digest("hex");
+
+  assert.equal(generatePayURequestHash(requestInput), expected);
 });
 
 test("PayU response hash validates a correctly signed response", () => {
@@ -73,4 +76,25 @@ test("payment state machine blocks SUCCESS back to PENDING", () => {
   assert.equal(canTransitionPaymentStatus(PaymentStatus.SUCCESS, PaymentStatus.PENDING), false);
   assert.equal(canTransitionPaymentStatus(PaymentStatus.PENDING, PaymentStatus.FAILED), true);
   assert.equal(canTransitionPaymentStatus(PaymentStatus.INITIATED, PaymentStatus.PENDING), true);
+});
+
+test("PayU configuration requires all server-only environment variables", () => {
+  const previous = {
+    key: process.env.PAYU_MERCHANT_KEY,
+    salt: process.env.PAYU_MERCHANT_SALT,
+    environment: process.env.PAYU_ENVIRONMENT,
+  };
+
+  delete process.env.PAYU_MERCHANT_KEY;
+  delete process.env.PAYU_MERCHANT_SALT;
+  delete process.env.PAYU_ENVIRONMENT;
+
+  assert.throws(() => getPayUConfig(), /PAYU_MERCHANT_KEY/);
+
+  if (previous.key === undefined) delete process.env.PAYU_MERCHANT_KEY;
+  else process.env.PAYU_MERCHANT_KEY = previous.key;
+  if (previous.salt === undefined) delete process.env.PAYU_MERCHANT_SALT;
+  else process.env.PAYU_MERCHANT_SALT = previous.salt;
+  if (previous.environment === undefined) delete process.env.PAYU_ENVIRONMENT;
+  else process.env.PAYU_ENVIRONMENT = previous.environment;
 });
