@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { RegistrationStatus } from "@/app/generated/prisma";
+import { RegistrationStatus } from "@/app/generated/prisma/client";
 import { createTournamentRegistration } from "@/lib/registration";
 
 export type RegistrationActionState = {
