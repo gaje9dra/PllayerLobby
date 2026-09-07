@@ -54,5 +54,8 @@ export function canAdminSetTournamentStatus(current: TournamentStatus, next: Tou
   if (next === current) return true;
   if (next === TournamentStatus.CANCELLED) return true;
   if (current === TournamentStatus.DRAFT && next === TournamentStatus.UPCOMING) return true;
+  // There is no stored tournament endTime, so LIVE -> COMPLETED is an explicit
+  // admin completion decision rather than an automatic lifecycle transition.
+  if (current === TournamentStatus.LIVE && next === TournamentStatus.COMPLETED) return true;
   return getDueTournamentStatus(tournament, now) === next;
 }
