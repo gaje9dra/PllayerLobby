@@ -8,6 +8,7 @@ import { formatRegistrationCode, normalizeRegistrationCode } from "@/lib/registr
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const IV_LENGTH = 12;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function getEncryptionKey() {
   const secret = process.env.AUTH_SECRET;
@@ -51,6 +52,7 @@ export function createRegistrationCodeData() {
 }
 
 export async function getRegistrationCodeForUser(registrationId: string) {
+  if (!UUID_PATTERN.test(registrationId)) return null;
   const user = await requireActiveUser();
   const record = await prisma.registrationCode.findFirst({
     where: {
@@ -71,6 +73,7 @@ export async function validateRegistrationCode(
   tournamentId: string,
   input: string,
 ) {
+  if (!UUID_PATTERN.test(registrationId) || !UUID_PATTERN.test(tournamentId)) return false;
   const user = await getCurrentUser();
   if (!user || user.status !== "ACTIVE") return false;
 
@@ -98,6 +101,7 @@ export async function validateRegistrationCode(
 }
 
 export async function revokeRegistrationCode(registrationId: string) {
+  if (!UUID_PATTERN.test(registrationId)) return false;
   await requireAdmin();
   const record = await prisma.registrationCode.findUnique({ where: { registrationId }, select: { id: true } });
   if (!record) return false;
