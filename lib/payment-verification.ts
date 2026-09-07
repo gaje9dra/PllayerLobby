@@ -71,6 +71,7 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
       select: {
         id: true,
         merchantTransactionId: true,
+        payuTransactionId: true,
         amount: true,
         currency: true,
         status: true,
@@ -93,6 +94,10 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
     }
 
     const payuTransactionId = verification.transaction.mihpayid || undefined;
+    if (payment.payuTransactionId && payuTransactionId && payment.payuTransactionId !== payuTransactionId) {
+      console.warn("PayU reference mismatch", { paymentId: payment.id, merchantTransactionId });
+      return { outcome: "REJECTED", message: resultMessage("REJECTED") };
+    }
 
     if (verification.state === "SUCCESS") {
       if (payment.status === PaymentStatus.SUCCESS && payment.registration.status === RegistrationStatus.CONFIRMED) return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
