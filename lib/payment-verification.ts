@@ -97,13 +97,14 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
     if (verification.state === "SUCCESS") {
       if (payment.status === PaymentStatus.SUCCESS && payment.registration.status === RegistrationStatus.CONFIRMED) return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
       if (payment.status !== PaymentStatus.PENDING) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
-      if (payment.registration.status !== RegistrationStatus.PENDING && payment.registration.status !== RegistrationStatus.CONFIRMED) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
+      if (payment.registration.status !== RegistrationStatus.PENDING) {
+        console.warn("PayU verification found inconsistent registration state", { paymentId: payment.id, merchantTransactionId, registrationStatus: payment.registration.status });
+        return { outcome: "REJECTED", message: resultMessage("REJECTED") };
+      }
       if (!canTransitionPaymentStatus(payment.status, PaymentStatus.SUCCESS)) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
 
       await tx.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.SUCCESS, payuTransactionId } });
-      if (payment.registration.status === RegistrationStatus.PENDING) {
-        await tx.registration.update({ where: { id: payment.registration.id }, data: { status: RegistrationStatus.CONFIRMED } });
-      }
+      await tx.registration.update({ where: { id: payment.registration.id }, data: { status: RegistrationStatus.CONFIRMED } });
 
       console.info("PayU payment verified successfully", {
         paymentId: payment.id,
