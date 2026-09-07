@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getPayUConfig, validatePayUResponseHash, type PayUResponseFields } from "@/lib/payu";
 import { canTransitionPaymentStatus } from "@/lib/payment-workflow-rules";
 import { verifyPayUTransaction, type PayUVerificationResult } from "@/lib/payu-verification";
-import { normalizePaymentAmount } from "@/lib/payu-verification-rules";
+import { matchesAuthoritativePaymentFields, normalizePaymentAmount } from "@/lib/payment-verification-rules";
 
 export type PaymentVerificationOutcome = "SUCCESS" | "FAILED" | "PENDING" | "REJECTED";
 export type PaymentVerificationResult = { outcome: PaymentVerificationOutcome; message: string };
@@ -32,13 +32,10 @@ function responseMatchesPayment(response: PayUResponseFields, payment: {
   amount: { toFixed: (digits?: number) => string };
   registration: { tournament: { name: string }; user: { name: string | null; email: string; phone: string | null } };
 }) {
-  const expectedAmount = payment.amount.toFixed(2);
-  return response.txnid === payment.merchantTransactionId &&
-    response.amount === expectedAmount &&
-    response.productinfo === expectedProductInfo(payment.registration.tournament.name) &&
-    response.firstname === firstNameFromUser(payment.registration.user.name) &&
-    response.email === payment.registration.user.email &&
-    response.phone === payment.registration.user.phone;
+  return matchesAuthoritativePaymentFields(
+    { txnid: response.txnid ?? null, amount: response.amount ?? null, productinfo: response.productinfo ?? null, firstname: response.firstname ?? null, email: response.email ?? null, phone: response.phone ?? null },
+    { txnid: payment.merchantTransactionId, amount: payment.amount.toFixed(2), productinfo: expectedProductInfo(payment.registration.tournament.name), firstname: firstNameFromUser(payment.registration.user.name), email: payment.registration.user.email, phone: payment.registration.user.phone },
+  );
 }
 
 function verifiedDataMatchesPayment(transaction: NonNullable<PayUVerificationResult["transaction"]>, payment: {
@@ -49,14 +46,11 @@ function verifiedDataMatchesPayment(transaction: NonNullable<PayUVerificationRes
   const expectedAmount = payment.amount.toFixed(2);
   const verifiedAmount = normalizePaymentAmount(transaction.amount);
   const verifiedTransactionAmount = transaction.transactionAmount == null ? verifiedAmount : normalizePaymentAmount(transaction.transactionAmount);
-  return transaction.txnid === payment.merchantTransactionId &&
-    verifiedAmount === expectedAmount &&
-    verifiedTransactionAmount === expectedAmount &&
-    payment.registration.tournament.entryFee.toFixed(2) === expectedAmount &&
-    transaction.productinfo === expectedProductInfo(payment.registration.tournament.name) &&
-    transaction.firstname === firstNameFromUser(payment.registration.user.name) &&
-    transaction.email === payment.registration.user.email &&
-    transaction.phone === payment.registration.user.phone;
+  const fieldsMatch = matchesAuthoritativePaymentFields(
+    { txnid: transaction.txnid, amount: verifiedAmount, productinfo: transaction.productinfo, firstname: transaction.firstname, email: transaction.email, phone: transaction.phone },
+    { txnid: payment.merchantTransactionId, amount: expectedAmount, productinfo: expectedProductInfo(payment.registration.tournament.name), firstname: firstNameFromUser(payment.registration.user.name), email: payment.registration.user.email, phone: payment.registration.user.phone },
+  );
+  return fieldsMatch && verifiedTransactionAmount === expectedAmount && payment.registration.tournament.entryFee.toFixed(2) === expectedAmount;
 }
 
 async function applyVerifiedOutcome(merchantTransactionId: string, verification: PayUVerificationResult): Promise<PaymentVerificationResult> {
@@ -75,14 +69,7 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
         amount: true,
         currency: true,
         status: true,
-        registration: {
-          select: {
-            id: true,
-            status: true,
-            tournament: { select: { name: true, entryFee: true } },
-            user: { select: { name: true, email: true, phone: true } },
-          },
-        },
+        registration: { select: { id: true, status: true, tournament: { select: { name: true, entryFee: true } }, user: { select: { name: true, email: true, phone: true } } } },
       },
     });
 
@@ -111,15 +98,7 @@ async function applyVerifiedOutcome(merchantTransactionId: string, verification:
       await tx.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.SUCCESS, payuTransactionId } });
       await tx.registration.update({ where: { id: payment.registration.id }, data: { status: RegistrationStatus.CONFIRMED } });
 
-      console.info("PayU payment verified successfully", {
-        paymentId: payment.id,
-        merchantTransactionId,
-        payuTransactionId: verification.transaction.mihpayid,
-        oldPaymentStatus: payment.status,
-        newPaymentStatus: PaymentStatus.SUCCESS,
-        oldRegistrationStatus: payment.registration.status,
-        newRegistrationStatus: RegistrationStatus.CONFIRMED,
-      });
+      console.info("PayU payment verified successfully", { paymentId: payment.id, merchantTransactionId, payuTransactionId: verification.transaction.mihpayid, oldPaymentStatus: payment.status, newPaymentStatus: PaymentStatus.SUCCESS, oldRegistrationStatus: payment.registration.status, newRegistrationStatus: RegistrationStatus.CONFIRMED });
       return { outcome: "SUCCESS", message: resultMessage("SUCCESS") };
     }
 
@@ -148,12 +127,7 @@ export async function verifyAndFinalizePayUPayment(response: PayUResponseFields)
     const config = getPayUConfig();
     const payment = await prisma.payment.findUnique({
       where: { merchantTransactionId: response.txnid },
-      select: {
-        id: true,
-        merchantTransactionId: true,
-        amount: true,
-        registration: { select: { tournament: { select: { name: true } }, user: { select: { name: true, email: true, phone: true } } } },
-      },
+      select: { id: true, merchantTransactionId: true, amount: true, registration: { select: { tournament: { select: { name: true } }, user: { select: { name: true, email: true, phone: true } } } } },
     });
 
     if (!payment) return { outcome: "REJECTED", message: resultMessage("REJECTED") };
