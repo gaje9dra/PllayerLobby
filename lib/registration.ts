@@ -42,6 +42,8 @@ const ERROR_MESSAGES: Record<RegistrationEligibilityReason, string> = {
   ALREADY_REGISTERED: "You already have an active registration for this tournament.",
 };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function isUniqueConstraintError(error: unknown) {
   return error && typeof error === "object" && "code" in error && error.code === "P2002";
 }
@@ -49,6 +51,14 @@ function isUniqueConstraintError(error: unknown) {
 export async function createTournamentRegistration(
   tournamentId: string,
 ): Promise<RegistrationCreationResult> {
+  if (!UUID_PATTERN.test(tournamentId)) {
+    return {
+      ok: false,
+      code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND,
+      message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND,
+    };
+  }
+
   const user = await getCurrentUser();
 
   if (!user) {
