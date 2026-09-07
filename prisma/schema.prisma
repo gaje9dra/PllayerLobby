@@ -35,6 +35,12 @@ enum TournamentStatus {
   CANCELLED
 }
 
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
 model User {
   id            String          @id @default(uuid()) @db.Uuid
   name          String?
@@ -45,6 +51,7 @@ model User {
   status        UserStatus      @default(ACTIVE)
   accounts      Account[]
   sessions      Session[]
+  registrations Registration[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
@@ -86,6 +93,12 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
 model Game {
   id          String       @id @default(uuid()) @db.Uuid
   name        String
@@ -97,8 +110,6 @@ model Game {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   tournaments Tournament[]
-
-  @@index([isActive])
 }
 
 model Tournament {
@@ -122,11 +133,29 @@ model Tournament {
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
-  game Game @relation(fields: [gameId], references: [id], onDelete: Restrict)
+  game          Game           @relation(fields: [gameId], references: [id], onDelete: Restrict)
+  registrations Registration[]
 
   @@index([gameId])
   @@index([status])
   @@index([startTime])
   @@index([registrationStartTime])
   @@index([registrationEndTime])
+}
+
+model Registration {
+  id           String             @id @default(uuid()) @db.Uuid
+  tournamentId String             @db.Uuid
+  userId       String             @db.Uuid
+  status       RegistrationStatus @default(PENDING)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, tournamentId])
+  @@index([tournamentId])
+  @@index([userId])
+  @@index([tournamentId, status])
 }
