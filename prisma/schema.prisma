@@ -93,12 +93,6 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-enum RegistrationStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
 model Game {
   id          String       @id @default(uuid()) @db.Uuid
   name        String
