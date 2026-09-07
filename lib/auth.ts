@@ -10,6 +10,7 @@ const protectedUserSelect = {
   id: true,
   name: true,
   email: true,
+  phone: true,
   image: true,
   role: true,
   status: true,
