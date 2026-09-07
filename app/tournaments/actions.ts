@@ -32,7 +32,6 @@ export async function registerForTournament(
   }
 
   revalidatePath("/tournaments");
-  revalidatePath(`/tournaments/${tournamentId}`);
   revalidatePath("/dashboard");
 
   return result;
