@@ -11,6 +11,7 @@ export type RegistrationActionState = {
   registrationId?: string;
   registrationStatus?: RegistrationStatus;
   paymentRequired?: boolean;
+  registrationCode?: string;
 };
 
 export async function registerForTournament(
