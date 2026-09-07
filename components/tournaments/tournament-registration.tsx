@@ -11,7 +11,8 @@ export type RegistrationAvailability =
   | "TOURNAMENT_FULL"
   | "REGISTRATION_CLOSED"
   | "REGISTRATION_NOT_STARTED"
-  | "UNAVAILABLE";
+  | "UNAVAILABLE"
+  | "COMPLETED";
 
 const INITIAL_STATE: RegistrationActionState = { ok: false };
 
@@ -21,14 +22,17 @@ const availabilityMessages: Record<Exclude<RegistrationAvailability, "LOGIN" | "
   REGISTRATION_CLOSED: "Registration is currently closed.",
   REGISTRATION_NOT_STARTED: "Registration has not started yet.",
   UNAVAILABLE: "Your account is not currently eligible to register.",
+  COMPLETED: "This tournament is completed.",
 };
 
 export function TournamentRegistration({
   tournamentId,
   availability,
+  loginHref,
 }: {
   tournamentId: string;
   availability: RegistrationAvailability;
+  loginHref: string;
 }) {
   const [state, action, pending] = useActionState(registerForTournament, INITIAL_STATE);
 
@@ -49,7 +53,7 @@ export function TournamentRegistration({
 
   if (availability === "LOGIN") {
     return (
-      <Button href={`/login?callbackUrl=${encodeURIComponent(`/tournaments/${window.location.pathname.split("/").pop() ?? ""}`)}`} className="w-full">
+      <Button href={loginHref} className="w-full">
         Login to Register
       </Button>
     );
