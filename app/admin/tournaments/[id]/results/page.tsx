@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { TournamentResultStatus, TournamentStatus } from "@/app/generated/prisma/client";
+import { TournamentStatus } from "@/app/generated/prisma/client";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
 import { requireAdmin } from "@/lib/auth";
@@ -10,7 +10,6 @@ import { ResultRow } from "./result-row";
 
 const PAGE_SIZE = 20;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 type SearchParams = Record<string, string | string[] | undefined>;
 function one(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value; }
 function pageUrl(tournamentId: string, page: number) { return `/admin/tournaments/${tournamentId}/results?page=${page}`; }
