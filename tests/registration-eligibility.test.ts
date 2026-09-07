@@ -4,7 +4,7 @@ import {
   evaluateRegistrationEligibility,
   getRemainingSlots,
   REGISTRATION_ELIGIBILITY_REASONS,
-} from "@/lib/registration-eligibility";
+} from "@/lib/registration-eligibility-rules";
 import {
   RegistrationStatus,
   TournamentStatus,
