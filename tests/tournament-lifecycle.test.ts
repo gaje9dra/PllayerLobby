@@ -59,11 +59,13 @@ test("transition validator rejects impossible lifecycle jumps", () => {
   assert.equal(canTransitionTournamentStatus(TournamentStatus.COMPLETED, TournamentStatus.CANCELLED), true);
 });
 
-test("admin may publish DRAFT but cannot force future lifecycle states", () => {
+test("admin may publish DRAFT, follow due lifecycle states, and complete LIVE manually", () => {
   assert.equal(canAdminSetTournamentStatus(TournamentStatus.DRAFT, TournamentStatus.UPCOMING, tournament(TournamentStatus.DRAFT), new Date("2026-01-01T00:00:00.000Z")), true);
   assert.equal(canAdminSetTournamentStatus(TournamentStatus.DRAFT, TournamentStatus.LIVE, tournament(TournamentStatus.DRAFT), start), false);
   assert.equal(canAdminSetTournamentStatus(TournamentStatus.UPCOMING, TournamentStatus.REGISTRATION_OPEN, tournament(TournamentStatus.UPCOMING), new Date("2026-09-09T11:59:59.999Z")), false);
   assert.equal(canAdminSetTournamentStatus(TournamentStatus.UPCOMING, TournamentStatus.REGISTRATION_OPEN, tournament(TournamentStatus.UPCOMING), registrationStart), true);
+  assert.equal(canAdminSetTournamentStatus(TournamentStatus.REGISTRATION_CLOSED, TournamentStatus.LIVE, tournament(TournamentStatus.REGISTRATION_CLOSED), start), true);
+  assert.equal(canAdminSetTournamentStatus(TournamentStatus.LIVE, TournamentStatus.COMPLETED, tournament(TournamentStatus.LIVE), new Date("2026-09-10T12:00:00.000Z")), true);
   assert.equal(canAdminSetTournamentStatus(TournamentStatus.UPCOMING, TournamentStatus.CANCELLED, tournament(TournamentStatus.UPCOMING), new Date()), true);
   assert.equal(canAdminSetTournamentStatus(TournamentStatus.COMPLETED, TournamentStatus.CANCELLED, tournament(TournamentStatus.COMPLETED), new Date()), true);
 });
