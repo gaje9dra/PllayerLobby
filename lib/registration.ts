@@ -21,6 +21,7 @@ export type RegistrationResultCode =
 export type RegistrationCreationResult =
   | {
       ok: true;
+      registrationId: string;
       registrationStatus: RegistrationStatus;
       paymentRequired: boolean;
     }
@@ -105,7 +106,7 @@ export async function createTournamentRegistration(
               tournamentId,
             },
           },
-          select: { status: true },
+          select: { id: true, status: true },
         }),
         tx.registration.count({
           where: {
@@ -132,6 +133,7 @@ export async function createTournamentRegistration(
       }
 
       const creation = getRegistrationCreationStatus(tournament!.entryFee);
+      let registrationId: string;
 
       if (registration?.status === RegistrationStatus.CANCELLED) {
         await tx.registration.update({
@@ -143,18 +145,22 @@ export async function createTournamentRegistration(
           },
           data: { status: creation.status },
         });
+        registrationId = registration.id;
       } else {
-        await tx.registration.create({
+        const created = await tx.registration.create({
           data: {
             tournamentId,
             userId: user.id,
             status: creation.status,
           },
+          select: { id: true },
         });
+        registrationId = created.id;
       }
 
       return {
         ok: true,
+        registrationId,
         registrationStatus: creation.status,
         paymentRequired: creation.paymentRequired,
       };
