@@ -16,6 +16,8 @@ export const PAYMENT_RESULT_CODES = {
   TOURNAMENT_UNAVAILABLE: "TOURNAMENT_UNAVAILABLE",
   PAYMENT_ALREADY_SUCCESSFUL: "PAYMENT_ALREADY_SUCCESSFUL",
   PAYMENT_ALREADY_PENDING: "PAYMENT_ALREADY_PENDING",
+  PHONE_REQUIRED: "PHONE_REQUIRED",
+  INVALID_PHONE: "INVALID_PHONE",
   PAYU_CONFIGURATION_ERROR: "PAYU_CONFIGURATION_ERROR",
   PAYMENT_FAILED: "PAYMENT_FAILED",
 } as const;
@@ -37,6 +39,7 @@ export type PaymentInitiationResult =
     };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PHONE_PATTERN = /^[6-9][0-9]{9}$/;
 
 export function generateMerchantTransactionId() {
   return `PL${randomBytes(11).toString("hex")}`;
@@ -54,32 +57,23 @@ function firstNameFromUser(name: string | null) {
 
 function paymentMessage(code: PaymentResultCode) {
   switch (code) {
-    case PAYMENT_RESULT_CODES.UNAUTHENTICATED:
-      return "Please sign in before proceeding to payment.";
-    case PAYMENT_RESULT_CODES.USER_NOT_ACTIVE:
-      return "Your account is not currently eligible for payment.";
-    case PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND:
-      return "This registration is no longer available.";
-    case PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED:
-      return "You cannot pay for another user's registration.";
-    case PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING:
-      return "This registration is not awaiting payment.";
-    case PAYMENT_RESULT_CODES.FREE_TOURNAMENT:
-      return "Free tournaments do not require PayU payment.";
-    case PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE:
-      return "This tournament is no longer available for payment.";
-    case PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL:
-      return "This registration has already been paid successfully.";
-    case PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING:
-      return "A payment attempt is already in progress for this registration.";
-    case PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR:
-      return "Payment is temporarily unavailable. Please try again later.";
-    case PAYMENT_RESULT_CODES.PAYMENT_FAILED:
-      return "Unable to start payment right now. Please try again.";
+    case PAYMENT_RESULT_CODES.UNAUTHENTICATED: return "Please sign in before proceeding to payment.";
+    case PAYMENT_RESULT_CODES.USER_NOT_ACTIVE: return "Your account is not currently eligible for payment.";
+    case PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND: return "This registration is no longer available.";
+    case PAYMENT_RESULT_CODES.REGISTRATION_NOT_OWNED: return "You cannot pay for another user's registration.";
+    case PAYMENT_RESULT_CODES.REGISTRATION_NOT_PENDING: return "This registration is not awaiting payment.";
+    case PAYMENT_RESULT_CODES.FREE_TOURNAMENT: return "Free tournaments do not require PayU payment.";
+    case PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE: return "This tournament is no longer available for payment.";
+    case PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL: return "This registration has already been paid successfully.";
+    case PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING: return "A payment attempt is already in progress for this registration.";
+    case PAYMENT_RESULT_CODES.PHONE_REQUIRED: return "A phone number is required for PayU checkout.";
+    case PAYMENT_RESULT_CODES.INVALID_PHONE: return "Enter a valid 10-digit Indian mobile number.";
+    case PAYMENT_RESULT_CODES.PAYU_CONFIGURATION_ERROR: return "Payment is temporarily unavailable. Please try again later.";
+    case PAYMENT_RESULT_CODES.PAYMENT_FAILED: return "Unable to start payment right now. Please try again.";
   }
 }
 
-export async function createPaymentForRegistration(registrationId: string): Promise<PaymentInitiationResult> {
+export async function createPaymentForRegistration(registrationId: string, phoneInput: string): Promise<PaymentInitiationResult> {
   if (!UUID_PATTERN.test(registrationId)) {
     return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
   }
@@ -92,6 +86,11 @@ export async function createPaymentForRegistration(registrationId: string): Prom
     return { ok: false, code: PAYMENT_RESULT_CODES.USER_NOT_ACTIVE, message: paymentMessage(PAYMENT_RESULT_CODES.USER_NOT_ACTIVE) };
   }
 
+  const submittedPhone = phoneInput.replace(/\s+/g, "");
+  if (!user.phone && !PHONE_PATTERN.test(submittedPhone)) {
+    return { ok: false, code: submittedPhone ? PAYMENT_RESULT_CODES.INVALID_PHONE : PAYMENT_RESULT_CODES.PHONE_REQUIRED, message: paymentMessage(submittedPhone ? PAYMENT_RESULT_CODES.INVALID_PHONE : PAYMENT_RESULT_CODES.PHONE_REQUIRED) };
+  }
+
   try {
     const config = getPayUConfig();
     return await prisma.$transaction(async (tx) => {
@@ -102,9 +101,7 @@ export async function createPaymentForRegistration(registrationId: string): Prom
         FOR UPDATE
       `;
 
-      if (lockedRows.length === 0) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
-      }
+      if (lockedRows.length === 0) return { ok: false, code: PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND, message: paymentMessage(PAYMENT_RESULT_CODES.REGISTRATION_NOT_FOUND) };
 
       const registration = await tx.registration.findUnique({
         where: { id: registrationId },
@@ -128,12 +125,14 @@ export async function createPaymentForRegistration(registrationId: string): Prom
       if ([TournamentStatus.DRAFT, TournamentStatus.CANCELLED, TournamentStatus.COMPLETED, TournamentStatus.LIVE].includes(registration.tournament.status)) {
         return { ok: false, code: PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE, message: paymentMessage(PAYMENT_RESULT_CODES.TOURNAMENT_UNAVAILABLE) };
       }
+      if (registration.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)) return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL) };
+      if (registration.payments.some((payment) => [PaymentStatus.PENDING, PaymentStatus.INITIATED].includes(payment.status))) return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING) };
 
-      if (registration.payments.some((payment) => payment.status === PaymentStatus.SUCCESS)) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_SUCCESSFUL) };
-      }
-      if (registration.payments.some((payment) => [PaymentStatus.PENDING, PaymentStatus.INITIATED].includes(payment.status))) {
-        return { ok: false, code: PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING, message: paymentMessage(PAYMENT_RESULT_CODES.PAYMENT_ALREADY_PENDING) };
+      const phone = user.phone || submittedPhone;
+      if (!PHONE_PATTERN.test(phone)) return { ok: false, code: PAYMENT_RESULT_CODES.INVALID_PHONE, message: paymentMessage(PAYMENT_RESULT_CODES.INVALID_PHONE) };
+
+      if (!user.phone) {
+        await tx.user.update({ where: { id: user.id }, data: { phone } });
       }
 
       const amount = registration.tournament.entryFee.toFixed(2);
@@ -173,6 +172,7 @@ export async function createPaymentForRegistration(registrationId: string): Prom
           productinfo,
           firstname,
           email: user.email,
+          phone,
           udf1: "",
           udf2: "",
           udf3: "",
