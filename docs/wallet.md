@@ -30,7 +30,7 @@ The expected balance is `SUM(CREDIT amounts) - SUM(DEBIT amounts)`. The service 
 
 ## Deliberate exclusions
 
-Phase 5.1 does not implement withdrawals, UPI/bank payouts, PayU payouts, automatic prize payout, refunds, payment transfers, KYC, bank-account storage, UPI-ID storage, arbitrary balance editing, or settlement-to-wallet crediting. Prize settlements remain separate until the future financial integration phase.
+The wallet foundation does not implement withdrawals, UPI/bank payouts, PayU payouts, refunds, payment transfers, KYC, bank-account storage, UPI-ID storage, or arbitrary balance editing. Phase 5.2 adds the controlled prize-settlement → wallet-credit bridge separately.
 
 ## Routes
 
