@@ -16,8 +16,6 @@ import { addMoney, compareMoney, isPositiveMoney, isSupportedCurrency, normalize
 import { SETTLEMENT_CURRENCY } from "@/lib/tournament-prize-settlement-rules";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ZERO_CENTS = BigInt("0");
-const HUNDRED_CENTS = BigInt("100");
 
 export const PRIZE_SETTLEMENT_WALLET_ERROR_CODES = {
   UNAUTHORIZED: "UNAUTHORIZED", SETTLEMENT_NOT_FOUND: "SETTLEMENT_NOT_FOUND", SETTLEMENT_NOT_APPROVED: "SETTLEMENT_NOT_APPROVED", SETTLEMENT_ALREADY_CREDITED: "SETTLEMENT_ALREADY_CREDITED", TOURNAMENT_NOT_COMPLETED: "TOURNAMENT_NOT_COMPLETED", PRIZE_NOT_FINALIZED: "PRIZE_NOT_FINALIZED", RESULT_NOT_VERIFIED: "RESULT_NOT_VERIFIED", REGISTRATION_NOT_CONFIRMED: "REGISTRATION_NOT_CONFIRMED", WALLET_NOT_FOUND: "WALLET_NOT_FOUND", CURRENCY_MISMATCH: "CURRENCY_MISMATCH", INVALID_AMOUNT: "INVALID_AMOUNT", DUPLICATE_CREDIT: "DUPLICATE_CREDIT", FINANCIAL_RECONCILIATION_FAILED: "FINANCIAL_RECONCILIATION_FAILED", INTEGRITY_ERROR: "INTEGRITY_ERROR",
@@ -27,7 +25,6 @@ export class PrizeSettlementWalletError extends Error { readonly code: PrizeSett
 
 const assertUuid = (value: string) => { if (!UUID.test(value)) throw new PrizeSettlementWalletError(PRIZE_SETTLEMENT_WALLET_ERROR_CODES.SETTLEMENT_NOT_FOUND, "Prize settlement not found."); };
 function positiveMoney(value: string) { const normalized = normalizeMoney(value); if (!normalized || !isPositiveMoney(normalized)) throw new PrizeSettlementWalletError(PRIZE_SETTLEMENT_WALLET_ERROR_CODES.INVALID_AMOUNT, "Settlement amount is invalid."); return normalized; }
-function subtractMoneySafe(a: string, b: string) { const left = normalizeMoney(a); const right = normalizeMoney(b); if (!left || !right) throw new PrizeSettlementWalletError(PRIZE_SETTLEMENT_WALLET_ERROR_CODES.INVALID_AMOUNT, "Wallet balance is invalid."); const cents = BigInt(left.replace(".", "")) - BigInt(right.replace(".", "")); if (cents < ZERO_CENTS) throw new PrizeSettlementWalletError(PRIZE_SETTLEMENT_WALLET_ERROR_CODES.FINANCIAL_RECONCILIATION_FAILED, "Wallet balance cannot become negative."); return `${cents / HUNDRED_CENTS}.${(cents % HUNDRED_CENTS).toString().padStart(2, "0")}`; }
 async function lockSettlement(tx: Prisma.TransactionClient, settlementId: string) { const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "TournamentPrizeSettlement" WHERE "id" = ${settlementId}::uuid FOR UPDATE`); if (!rows[0]) throw new PrizeSettlementWalletError(PRIZE_SETTLEMENT_WALLET_ERROR_CODES.SETTLEMENT_NOT_FOUND, "Prize settlement not found."); }
 
 export async function creditApprovedPrizeSettlement(settlementId: string) {
