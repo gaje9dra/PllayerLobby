@@ -3,118 +3,81 @@ import "server-only";
 import { Prisma, RegistrationStatus, TournamentPrizeSettlementStatus, TournamentPrizeStatus, TournamentResultStatus, TournamentStatus } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { addMoney, compareMoney, normalizePrizeAmount } from "@/lib/prize-rules";
+import { addMoney, compareMoney } from "@/lib/prize-rules";
 import { canApproveSettlement, canCancelSettlement, isSettlementWinnerEligible, SETTLEMENT_CURRENCY } from "@/lib/tournament-prize-settlement-rules";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const assertUuid = (value: string, label: string) => { if (!UUID.test(value)) throw new Error(`Invalid ${label}.`); };
 const isCode = (error: unknown, code: string) => !!error && typeof error === "object" && "code" in error && error.code === code;
 
-export type SettlementPreviewRow = {
-  rank: number;
-  participant: { name: string | null; email: string } | null;
-  registrationId: string | null;
-  resultId: string | null;
-  amount: string;
-  currency: string;
-  eligible: boolean;
-  reason: string | null;
-};
+export type SettlementPreviewRow = { rank: number; participant: { name: string | null; email: string } | null; registrationId: string | null; resultId: string | null; amount: string; currency: string; eligible: boolean; reason: string | null };
 
 async function loadSettlementContext(tournamentId: string) {
   assertUuid(tournamentId, "tournament identifier");
-  const tournament = await prisma.tournament.findUnique({
-    where: { id: tournamentId },
-    select: { id: true, name: true, status: true, prizePool: true, prizes: { orderBy: { rank: "asc" }, select: { id: true, rank: true, amount: true, status: true } } },
-  });
+  const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, name: true, status: true, prizePool: true, prizes: { orderBy: { rank: "asc" }, select: { id: true, rank: true, amount: true, status: true } } } });
   if (!tournament) throw new Error("Tournament not found.");
   return tournament;
 }
 
 export async function previewPrizeSettlements(tournamentId: string): Promise<SettlementPreviewRow[]> {
-  await requireAdmin();
-  const tournament = await loadSettlementContext(tournamentId);
-  const results = await prisma.tournamentResult.findMany({
-    where: { tournamentId },
-    orderBy: [{ rank: "asc" }, { id: "asc" }],
-    select: { id: true, rank: true, resultStatus: true, registrationId: true, registration: { select: { status: true, tournamentId: true, user: { select: { name: true, email: true } } } } },
-  });
-  const byRank = new Map<number, typeof results[number]>();
-  for (const result of results) if (!byRank.has(result.rank)) byRank.set(result.rank, result);
+  await requireAdmin(); const tournament = await loadSettlementContext(tournamentId);
+  const results = await prisma.tournamentResult.findMany({ where: { tournamentId }, orderBy: [{ rank: "asc" }, { id: "asc" }], select: { id: true, rank: true, resultStatus: true, registrationId: true, registration: { select: { status: true, tournamentId: true, user: { select: { name: true, email: true } } } } } });
+  const byRank = new Map<number, typeof results[number]>(); for (const result of results) if (!byRank.has(result.rank)) byRank.set(result.rank, result);
   return tournament.prizes.map((prize) => {
     const result = byRank.get(prize.rank);
     const eligible = !!result && isSettlementWinnerEligible({ tournamentStatus: tournament.status, prizeStatus: prize.status, registrationStatus: result.registration.status, resultStatus: result.resultStatus, resultRank: result.rank, prizeRank: prize.rank });
     let reason: string | null = null;
-    if (!result) reason = "NO_VERIFIED_WINNER";
-    else if (tournament.status !== TournamentStatus.COMPLETED) reason = "TOURNAMENT_NOT_COMPLETED";
-    else if (prize.status !== TournamentPrizeStatus.FINALIZED) reason = "PRIZE_NOT_FINALIZED";
-    else if (result.registration.status !== RegistrationStatus.CONFIRMED) reason = "REGISTRATION_NOT_CONFIRMED";
-    else if (result.resultStatus !== TournamentResultStatus.VERIFIED) reason = "RESULT_NOT_VERIFIED";
-    else if (result.rank !== prize.rank) reason = "RANK_MISMATCH";
-    return { rank: prize.rank, participant: eligible ? result!.registration.user : result?.registration.user ?? null, registrationId: eligible ? result!.registrationId : null, resultId: eligible ? result!.id : null, amount: prize.amount.toString(), currency: SETTLEMENT_CURRENCY, eligible, reason };
+    if (!result) reason = "NO_VERIFIED_WINNER"; else if (tournament.status !== TournamentStatus.COMPLETED) reason = "TOURNAMENT_NOT_COMPLETED"; else if (prize.status !== TournamentPrizeStatus.FINALIZED) reason = "PRIZE_NOT_FINALIZED"; else if (result.registration.status !== RegistrationStatus.CONFIRMED) reason = "REGISTRATION_NOT_CONFIRMED"; else if (result.resultStatus !== TournamentResultStatus.VERIFIED) reason = "RESULT_NOT_VERIFIED"; else if (result.rank !== prize.rank) reason = "RANK_MISMATCH";
+    return { rank: prize.rank, participant: result?.registration.user ?? null, registrationId: eligible ? result!.registrationId : null, resultId: eligible ? result!.id : null, amount: prize.amount.toString(), currency: SETTLEMENT_CURRENCY, eligible, reason };
   });
 }
 
 export async function generatePrizeSettlements(tournamentId: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, name: true, status: true, prizePool: true } });
-      if (!tournament) throw new Error("Tournament not found.");
-      if (tournament.status !== TournamentStatus.COMPLETED) throw new Error("Official settlements require a completed tournament.");
-      const prizes = await tx.tournamentPrize.findMany({ where: { tournamentId }, orderBy: { rank: "asc" }, select: { id: true, rank: true, amount: true, status: true } });
-      if (!prizes.length) throw new Error("Prize configuration is missing.");
-      if (prizes.some((p) => p.status !== TournamentPrizeStatus.FINALIZED)) throw new Error("Settlement generation requires finalized prize configuration.");
-      const total = addMoney(prizes.map((p) => p.amount.toString()));
-      if (compareMoney(total, tournament.prizePool.toString()) !== 0) throw new Error("Finalized prize allocation does not equal the tournament prize pool.");
-      const results = await tx.tournamentResult.findMany({ where: { tournamentId, resultStatus: TournamentResultStatus.VERIFIED, registration: { status: RegistrationStatus.CONFIRMED, tournamentId } }, select: { id: true, rank: true, registrationId: true, resultStatus: true, registration: { select: { status: true, tournamentId: true } } } });
-      const byRank = new Map<number, typeof results[number]>();
-      for (const result of results) if (!byRank.has(result.rank)) byRank.set(result.rank, result);
-      let created = 0;
-      let existing = 0;
-      const unassigned: { rank: number; amount: string }[] = [];
-      for (const prize of prizes) {
-        const result = byRank.get(prize.rank);
-        if (!result || !isSettlementWinnerEligible({ tournamentStatus: tournament.status, prizeStatus: prize.status, registrationStatus: result.registration.status, resultStatus: result.resultStatus, resultRank: result.rank, prizeRank: prize.rank })) { unassigned.push({ rank: prize.rank, amount: prize.amount.toString() }); continue; }
-        const found = await tx.tournamentPrizeSettlement.findUnique({ where: { prizeId: prize.id }, select: { id: true } });
-        if (found) { existing++; continue; }
-        try {
-          await tx.tournamentPrizeSettlement.create({ data: { tournamentId, prizeId: prize.id, registrationId: result.registrationId, resultId: result.id, rank: prize.rank, amount: prize.amount, currency: SETTLEMENT_CURRENCY, status: TournamentPrizeSettlementStatus.PENDING } });
-          created++;
-        } catch (error) {
-          if (isCode(error, "P2002")) { existing++; continue; }
-          throw error;
-        }
-      }
-      return { tournamentId, created, existing, unassigned, totalPotential: addMoney(prizes.map((p) => p.amount.toString())) };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } catch (error) {
-    if (isCode(error, "P2034")) throw new Error("Settlement generation changed concurrently. Refresh and try again.");
-    throw error;
-  }
+  await requireAdmin(); assertUuid(tournamentId, "tournament identifier");
+  try { return await prisma.$transaction(async (tx) => {
+    const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, name: true, status: true, prizePool: true } });
+    if (!tournament) throw new Error("Tournament not found.");
+    if (tournament.status !== TournamentStatus.COMPLETED) throw new Error("Official settlements require a completed tournament.");
+    const prizes = await tx.tournamentPrize.findMany({ where: { tournamentId }, orderBy: { rank: "asc" }, select: { id: true, rank: true, amount: true, status: true } });
+    if (!prizes.length) throw new Error("Prize configuration is missing.");
+    if (prizes.some((p) => p.status !== TournamentPrizeStatus.FINALIZED)) throw new Error("Settlement generation requires finalized prize configuration.");
+    const total = addMoney(prizes.map((p) => p.amount.toString()));
+    if (compareMoney(total, tournament.prizePool.toString()) !== 0) throw new Error("Finalized prize allocation does not equal the tournament prize pool.");
+    const results = await tx.tournamentResult.findMany({ where: { tournamentId, resultStatus: TournamentResultStatus.VERIFIED, registration: { status: RegistrationStatus.CONFIRMED, tournamentId } }, select: { id: true, rank: true, registrationId: true, resultStatus: true, registration: { select: { status: true, tournamentId: true } } } });
+    const byRank = new Map<number, typeof results[number]>(); for (const result of results) if (!byRank.has(result.rank)) byRank.set(result.rank, result);
+    let created = 0; let existing = 0; const unassigned: { rank: number; amount: string }[] = [];
+    for (const prize of prizes) {
+      const result = byRank.get(prize.rank);
+      if (!result || !isSettlementWinnerEligible({ tournamentStatus: tournament.status, prizeStatus: prize.status, registrationStatus: result.registration.status, resultStatus: result.resultStatus, resultRank: result.rank, prizeRank: prize.rank })) { unassigned.push({ rank: prize.rank, amount: prize.amount.toString() }); continue; }
+      const found = await tx.tournamentPrizeSettlement.findUnique({ where: { prizeId: prize.id }, select: { id: true } });
+      if (found) { existing++; continue; }
+      try { await tx.tournamentPrizeSettlement.create({ data: { tournamentId, prizeId: prize.id, registrationId: result.registrationId, resultId: result.id, rank: prize.rank, amount: prize.amount, currency: SETTLEMENT_CURRENCY, status: TournamentPrizeSettlementStatus.PENDING } }); created++; }
+      catch (error) { if (isCode(error, "P2002")) { existing++; continue; } throw error; }
+    }
+    return { tournamentId, created, existing, unassigned, totalPotential: total };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); }
+  catch (error) { if (isCode(error, "P2034")) throw new Error("Settlement generation changed concurrently. Refresh and try again."); throw error; }
 }
 
 export async function getTournamentSettlementSummary(tournamentId: string) {
-  await requireAdmin();
-  const tournament = await loadSettlementContext(tournamentId);
-  const settlements = await prisma.tournamentPrizeSettlement.findMany({ where: { tournamentId }, select: { amount: true, status: true } });
+  await requireAdmin(); const tournament = await loadSettlementContext(tournamentId);
+  const settlements = await prisma.tournamentPrizeSettlement.findMany({ where: { tournamentId }, select: { amount: true, status: true, prizeId: true } });
   const totalGenerated = addMoney(settlements.map((s) => s.amount.toString()));
-  const potential = addMoney(tournament.prizes.map((p) => p.amount.toString()));
-  const unassigned = addMoney(tournament.prizes.filter((p) => !settlements.some((s) => s.amount.toString() === p.amount.toString())).map((p) => p.amount.toString()));
-  return { tournament, settlements, totalPotential: potential, totalGenerated, unassignedApproximation: compareMoney(potential, totalGenerated) >= 0 ? (Number(potential) - Number(totalGenerated)).toFixed(2) : "0.00" };
+  const totalPotential = addMoney(tournament.prizes.map((p) => p.amount.toString()));
+  const assignedPrizeIds = new Set(settlements.map((s) => s.prizeId));
+  const unassigned = addMoney(tournament.prizes.filter((p) => !assignedPrizeIds.has(p.id)).map((p) => p.amount.toString()));
+  return { tournament, settlements, totalPotential, totalGenerated, unassigned };
 }
 
 export async function getTournamentSettlements(tournamentId: string) {
-  await requireAdmin();
-  assertUuid(tournamentId, "tournament identifier");
+  await requireAdmin(); assertUuid(tournamentId, "tournament identifier");
   return prisma.tournamentPrizeSettlement.findMany({ where: { tournamentId }, orderBy: [{ rank: "asc" }, { createdAt: "asc" }], select: { id: true, tournamentId: true, prizeId: true, registrationId: true, resultId: true, rank: true, amount: true, currency: true, status: true, createdAt: true, updatedAt: true, registration: { select: { user: { select: { name: true, email: true } } } }, result: { select: { resultStatus: true } }, prize: { select: { status: true } } } });
 }
 
 export async function approvePrizeSettlement(tournamentId: string, settlementId: string) {
   await requireAdmin(); assertUuid(tournamentId, "tournament identifier"); assertUuid(settlementId, "settlement identifier");
   return prisma.$transaction(async (tx) => {
-    const settlement = await tx.tournamentPrizeSettlement.findUnique({ where: { id: settlementId }, select: { id: true, tournamentId: true, prizeId: true, registrationId: true, resultId: true, rank: true, amount: true, currency: true, status: true, tournament: { select: { status: true, prizePool: true } }, prize: { select: { rank: true, amount: true, status: true } }, registration: { select: { status: true, tournamentId: true } }, result: { select: { rank: true, resultStatus: true, tournamentId: true, registrationId: true } } } });
+    const settlement = await tx.tournamentPrizeSettlement.findUnique({ where: { id: settlementId }, select: { id: true, tournamentId: true, prizeId: true, registrationId: true, resultId: true, rank: true, amount: true, currency: true, status: true, tournament: { select: { status: true } }, prize: { select: { rank: true, amount: true, status: true } }, registration: { select: { status: true, tournamentId: true } }, result: { select: { rank: true, resultStatus: true, tournamentId: true, registrationId: true } } } });
     if (!settlement || settlement.tournamentId !== tournamentId) throw new Error("Settlement does not belong to this tournament.");
     if (!canApproveSettlement(settlement.status)) throw new Error("Only pending settlements can be approved.");
     if (settlement.tournament.status !== TournamentStatus.COMPLETED) throw new Error("Only completed tournaments can have approved settlements.");
@@ -136,21 +99,19 @@ export async function cancelPrizeSettlement(tournamentId: string, settlementId: 
 }
 
 export async function reconcileTournamentSettlement(tournamentId: string) {
-  await requireAdmin();
-  const tournament = await loadSettlementContext(tournamentId);
+  await requireAdmin(); const tournament = await loadSettlementContext(tournamentId);
   const settlements = await prisma.tournamentPrizeSettlement.findMany({ where: { tournamentId }, select: { id: true, prizeId: true, registrationId: true, resultId: true, rank: true, amount: true, currency: true, status: true, prize: { select: { tournamentId: true, rank: true, amount: true, status: true } }, registration: { select: { tournamentId: true, status: true } }, result: { select: { tournamentId: true, registrationId: true, rank: true, resultStatus: true } } } });
   const errors: string[] = [];
   for (const s of settlements) {
-    if (s.prize.tournamentId !== tournamentId || s.registration.tournamentId !== tournamentId || s.result.tournamentId !== tournamentId) errors.push(`${s.id}: relationship mismatch`);
+    if (s.prize.tournamentId !== tournament.id || s.registration.tournamentId !== tournament.id || s.result.tournamentId !== tournament.id) errors.push(`${s.id}: relationship mismatch`);
     if (s.prize.rank !== s.rank || s.result.rank !== s.rank) errors.push(`${s.id}: rank mismatch`);
     if (compareMoney(s.amount.toString(), s.prize.amount.toString()) !== 0) errors.push(`${s.id}: amount snapshot mismatch`);
     if (s.currency !== SETTLEMENT_CURRENCY) errors.push(`${s.id}: unsupported currency`);
-    if (s.status !== TournamentPrizeSettlementStatus.CANCELLED && (s.prize.status !== TournamentPrizeStatus.FINALIZED || s.result.resultStatus !== TournamentResultStatus.VERIFIED || s.registration.status !== RegistrationStatus.CONFIRMED)) errors.push(`${s.id}: current winner/prize state is no longer eligible`);
     if (s.result.registrationId !== s.registrationId) errors.push(`${s.id}: result registration mismatch`);
+    if (s.status !== TournamentPrizeSettlementStatus.CANCELLED && (s.prize.status !== TournamentPrizeStatus.FINALIZED || s.result.resultStatus !== TournamentResultStatus.VERIFIED || s.registration.status !== RegistrationStatus.CONFIRMED)) errors.push(`${s.id}: current winner/prize state is no longer eligible`);
   }
   const active = settlements.filter((s) => s.status !== TournamentPrizeSettlementStatus.CANCELLED);
-  const total = addMoney(active.map((s) => s.amount.toString()));
-  const potential = addMoney(tournament.prizes.map((p) => p.amount.toString()));
+  const total = addMoney(active.map((s) => s.amount.toString())); const potential = addMoney(tournament.prizes.map((p) => p.amount.toString()));
   if (compareMoney(total, potential) > 0) errors.push("Generated settlement total exceeds finalized prize allocation.");
   return { ok: errors.length === 0, errors, warnings: tournament.status !== TournamentStatus.COMPLETED ? ["Tournament is not completed; official settlements cannot be generated."] : [], totalSettlementAmount: total, totalPotentialPrizes: potential, settlementCount: settlements.length };
 }
