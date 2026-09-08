@@ -12,6 +12,9 @@ export type WalletTransactionType = (typeof WALLET_TRANSACTION_TYPES)[number];
 export type WalletTransactionCategory = (typeof WALLET_TRANSACTION_CATEGORIES)[number];
 export type WalletReferenceType = (typeof WALLET_REFERENCE_TYPES)[number];
 
+const ZERO_CENTS = BigInt("0");
+const HUNDRED_CENTS = BigInt("100");
+
 export function normalizeMoney(value: string): string | null {
   const normalized = value.trim();
   if (!MONEY_PATTERN.test(normalized)) return null;
@@ -21,7 +24,7 @@ export function normalizeMoney(value: string): string | null {
 
 export function isPositiveMoney(value: string): boolean {
   const normalized = normalizeMoney(value);
-  return normalized !== null && BigInt(normalized.replace(".", "")) > 0n;
+  return normalized !== null && BigInt(normalized.replace(".", "")) > ZERO_CENTS;
 }
 
 export function addMoney(a: string, b: string): string {
@@ -29,7 +32,7 @@ export function addMoney(a: string, b: string): string {
   const right = normalizeMoney(b);
   if (!left || !right) throw new Error("Invalid monetary amount.");
   const cents = BigInt(left.replace(".", "")) + BigInt(right.replace(".", ""));
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
+  return `${cents / HUNDRED_CENTS}.${(cents % HUNDRED_CENTS).toString().padStart(2, "0")}`;
 }
 
 export function subtractMoney(a: string, b: string): string {
@@ -37,15 +40,17 @@ export function subtractMoney(a: string, b: string): string {
   const right = normalizeMoney(b);
   if (!left || !right) throw new Error("Invalid monetary amount.");
   const cents = BigInt(left.replace(".", "")) - BigInt(right.replace(".", ""));
-  if (cents < 0n) throw new Error("Money amount cannot be negative.");
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
+  if (cents < ZERO_CENTS) throw new Error("Money amount cannot be negative.");
+  return `${cents / HUNDRED_CENTS}.${(cents % HUNDRED_CENTS).toString().padStart(2, "0")}`;
 }
 
 export function compareMoney(a: string, b: string): number {
   const left = normalizeMoney(a);
   const right = normalizeMoney(b);
   if (!left || !right) throw new Error("Invalid monetary amount.");
-  return BigInt(left.replace(".", "")) < BigInt(right.replace(".", "")) ? -1 : BigInt(left.replace(".", "")) > BigInt(right.replace(".", "")) ? 1 : 0;
+  const leftCents = BigInt(left.replace(".", ""));
+  const rightCents = BigInt(right.replace(".", ""));
+  return leftCents < rightCents ? -1 : leftCents > rightCents ? 1 : 0;
 }
 
 export function isSupportedCurrency(currency: string): currency is typeof WALLET_CURRENCY {
