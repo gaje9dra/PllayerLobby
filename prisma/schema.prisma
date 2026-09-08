@@ -11,20 +11,17 @@ enum UserRole {
   USER
   ADMIN
 }
-
 enum UserStatus {
   ACTIVE
   SUSPENDED
   BANNED
 }
-
 enum TournamentFormat {
   SOLO
   DUO
   SQUAD
   TEAM
 }
-
 enum TournamentStatus {
   DRAFT
   UPCOMING
@@ -34,13 +31,11 @@ enum TournamentStatus {
   COMPLETED
   CANCELLED
 }
-
 enum RegistrationStatus {
   PENDING
   CONFIRMED
   CANCELLED
 }
-
 enum PaymentStatus {
   INITIATED
   PENDING
@@ -48,22 +43,37 @@ enum PaymentStatus {
   FAILED
   CANCELLED
 }
-
 enum TournamentResultStatus {
   DRAFT
   VERIFIED
   DISQUALIFIED
 }
-
 enum TournamentPrizeStatus {
   DRAFT
   FINALIZED
 }
-
 enum TournamentPrizeSettlementStatus {
   PENDING
   APPROVED
   CANCELLED
+}
+enum WalletTransactionType {
+  CREDIT
+  DEBIT
+}
+enum WalletTransactionCategory {
+  PRIZE
+  REFUND
+  WITHDRAWAL
+  ENTRY_FEE
+  ADJUSTMENT
+}
+enum WalletReferenceType {
+  PRIZE_SETTLEMENT
+  REFUND
+  WITHDRAWAL
+  ENTRY_PAYMENT
+  ADJUSTMENT
 }
 
 model User {
@@ -78,10 +88,10 @@ model User {
   accounts Account[]
   sessions Session[]
   registrations Registration[]
+  wallet Wallet?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
 model Account {
   id String @id @default(cuid())
   userId String @db.Uuid
@@ -99,7 +109,6 @@ model Account {
   @@unique([provider, providerAccountId])
   @@index([userId])
 }
-
 model Session {
   id String @id @default(cuid())
   sessionToken String @unique
@@ -108,14 +117,12 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
 }
-
 model VerificationToken {
   identifier String
   token String @unique
   expires DateTime
   @@unique([identifier, token])
 }
-
 model Game {
   id String @id @default(uuid()) @db.Uuid
   name String
@@ -128,7 +135,6 @@ model Game {
   updatedAt DateTime @updatedAt
   tournaments Tournament[]
 }
-
 model Tournament {
   id String @id @default(uuid()) @db.Uuid
   gameId String @db.Uuid
@@ -161,7 +167,6 @@ model Tournament {
   @@index([registrationStartTime])
   @@index([registrationEndTime])
 }
-
 model Registration {
   id String @id @default(uuid()) @db.Uuid
   tournamentId String @db.Uuid
@@ -180,7 +185,6 @@ model Registration {
   @@index([userId])
   @@index([tournamentId, status])
 }
-
 model RegistrationCode {
   id String @id @default(uuid()) @db.Uuid
   registrationId String @unique @db.Uuid
@@ -192,7 +196,6 @@ model RegistrationCode {
   registration Registration @relation(fields: [registrationId], references: [id], onDelete: Restrict)
   @@index([revokedAt])
 }
-
 model TournamentRoom {
   id String @id @default(uuid()) @db.Uuid
   tournamentId String @unique @db.Uuid
@@ -206,7 +209,6 @@ model TournamentRoom {
   @@index([publishedAt])
   @@index([revokedAt])
 }
-
 model Payment {
   id String @id @default(uuid()) @db.Uuid
   registrationId String @db.Uuid
@@ -222,7 +224,6 @@ model Payment {
   @@index([status])
   @@index([registrationId, status])
 }
-
 model TournamentResult {
   id String @id @default(uuid()) @db.Uuid
   tournamentId String @db.Uuid
@@ -238,7 +239,6 @@ model TournamentResult {
   @@index([tournamentId, rank])
   @@index([tournamentId, resultStatus])
 }
-
 model TournamentPrize {
   id String @id @default(uuid()) @db.Uuid
   tournamentId String @db.Uuid
@@ -252,7 +252,6 @@ model TournamentPrize {
   @@unique([tournamentId, rank])
   @@index([tournamentId])
 }
-
 model TournamentPrizeSettlement {
   id String @id @default(uuid()) @db.Uuid
   tournamentId String @db.Uuid
@@ -271,4 +270,32 @@ model TournamentPrizeSettlement {
   result TournamentResult @relation(fields: [resultId], references: [id], onDelete: Restrict)
   @@index([tournamentId, status])
   @@index([registrationId])
+}
+model Wallet {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @unique @db.Uuid
+  currency String @default("INR") @db.VarChar(3)
+  balance Decimal @default(0) @db.Decimal(20, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transactions WalletTransaction[]
+  @@index([createdAt])
+}
+model WalletTransaction {
+  id String @id @default(uuid()) @db.Uuid
+  walletId String @db.Uuid
+  type WalletTransactionType
+  category WalletTransactionCategory
+  amount Decimal @db.Decimal(20, 2)
+  currency String @db.VarChar(3)
+  referenceType WalletReferenceType
+  referenceId String @db.Uuid
+  description String? @db.Text
+  createdAt DateTime @default(now())
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  @@unique([walletId, referenceType, referenceId, type, category])
+  @@index([walletId])
+  @@index([createdAt])
+  @@index([referenceType, referenceId])
 }
