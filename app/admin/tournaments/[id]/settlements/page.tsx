@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
 import { requireAdmin } from "@/lib/auth";
+import { addMoney } from "@/lib/prize-rules";
 import { previewPrizeSettlements, getTournamentSettlementSummary, getTournamentSettlements, reconcileTournamentSettlement } from "@/lib/tournament-prize-settlement";
 import { reconcilePrizeSettlementWallets } from "@/lib/prize-settlement-wallet-reconciliation";
 import { GenerateSettlementsForm, SettlementRowActions } from "./settlement-actions";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const sumAmounts = (values: readonly { amount: { toString(): string } }[]) => addMoney(values.map((value) => value.amount.toString()));
 
 export default async function AdminTournamentSettlementsPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin(); const { id } = await params; if (!UUID.test(id)) notFound();
@@ -15,21 +17,17 @@ export default async function AdminTournamentSettlementsPage({ params }: { param
   const { tournament } = summary;
   const finalized = tournament.prizes.length > 0 && tournament.prizes.every((p) => p.status === "FINALIZED");
   const unassigned = preview.filter((p) => !p.eligible);
-  const pending = settlements.filter((s) => s.status === "PENDING").length;
-  const approved = settlements.filter((s) => s.status === "APPROVED").length;
-  const credited = settlements.filter((s) => s.status === "CREDITED").length;
-  const cancelled = settlements.filter((s) => s.status === "CANCELLED").length;
-  const totalApproved = settlements.filter((s) => s.status === "APPROVED").reduce((sum, s) => sum + Number(s.amount), 0).toFixed(2);
-  const totalCredited = settlements.filter((s) => s.status === "CREDITED").reduce((sum, s) => sum + Number(s.amount), 0).toFixed(2);
-  const totalPending = settlements.filter((s) => s.status === "PENDING").reduce((sum, s) => sum + Number(s.amount), 0).toFixed(2);
-  const totalCancelled = settlements.filter((s) => s.status === "CANCELLED").reduce((sum, s) => sum + Number(s.amount), 0).toFixed(2);
+  const pendingRows = settlements.filter((s) => s.status === "PENDING");
+  const approvedRows = settlements.filter((s) => s.status === "APPROVED");
+  const creditedRows = settlements.filter((s) => s.status === "CREDITED");
+  const cancelledRows = settlements.filter((s) => s.status === "CANCELLED");
   const canGenerate = tournament.status === "COMPLETED" && finalized && reconciliation.errors.length === 0;
 
   return <SectionContainer className="py-10 sm:py-14">
     <Link href={`/admin/tournaments/${id}`} className="text-sm font-semibold text-lime-300 hover:text-lime-200">← Tournament</Link>
     <div className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Settlements · {tournament.name}</h1><p className="mt-2 text-sm leading-6 text-slate-400">Prepare, approve, and credit prize entitlements to PlayerLobby wallets. Wallet credit is not an external payout.</p></div><div className="flex flex-wrap gap-2"><Button href={`/admin/tournaments/${id}/prizes`} variant="secondary">Prizes</Button><Button href={`/admin/tournaments/${id}/results`} variant="secondary">Results</Button></div></div>
     <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Tournament" value={tournament.status} /><Metric label="Prize Config" value={finalized ? "FINALIZED" : "DRAFT"} /><Metric label="Potential Prizes" value={`₹${summary.totalPotential}`} /><Metric label="Generated" value={`₹${summary.totalGenerated}`} /></section>
-    <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Pending" value={`${pending} · ₹${totalPending}`} /><Metric label="Approved" value={`${approved} · ₹${totalApproved}`} /><Metric label="Credited" value={`${credited} · ₹${totalCredited}`} /><Metric label="Cancelled" value={`${cancelled} · ₹${totalCancelled}`} /></section>
+    <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Pending" value={`${pendingRows.length} · ₹${sumAmounts(pendingRows)}`} /><Metric label="Approved" value={`${approvedRows.length} · ₹${sumAmounts(approvedRows)}`} /><Metric label="Credited" value={`${creditedRows.length} · ₹${sumAmounts(creditedRows)}`} /><Metric label="Cancelled" value={`${cancelledRows.length} · ₹${sumAmounts(cancelledRows)}`} /></section>
     <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-7"><h2 className="text-lg font-bold text-white">Settlement preview</h2><p className="mt-1 text-sm text-slate-500">Read-only preview. No settlement records are created here.</p><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-2">Rank</th><th className="px-3 py-2">Participant</th><th className="px-3 py-2">Registration</th><th className="px-3 py-2">Prize</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Reason</th></tr></thead><tbody>{preview.map((row) => <tr key={row.rank} className="border-t border-white/5"><td className="px-3 py-3 font-bold text-white">{row.rank}</td><td className="px-3 py-3 text-slate-300">{row.participant ? `${row.participant.name || "Unnamed"} · ${row.participant.email}` : "—"}</td><td className="px-3 py-3 font-mono text-xs text-slate-500">{row.registrationId || "—"}</td><td className="px-3 py-3 text-white">₹{row.amount}</td><td className={`px-3 py-3 font-bold ${row.eligible ? "text-lime-200" : "text-amber-200"}`}>{row.eligible ? "ELIGIBLE" : "NOT ELIGIBLE"}</td><td className="px-3 py-3 text-xs text-slate-500">{row.reason || "—"}</td></tr>)}</tbody></table></div></section>
     <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-7"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-bold text-white">Generate settlements</h2><p className="mt-1 text-sm text-slate-500">Only completed tournaments with finalized, pool-matching prizes can generate official PENDING entitlements.</p></div><GenerateSettlementsForm tournamentId={id} disabled={!canGenerate} /></div>{unassigned.length ? <p className="mt-4 text-sm text-amber-200">Unassigned prize positions: {unassigned.map((p) => `${p.rank} — ₹${p.amount}`).join(", ")}</p> : null}</section>
     <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-7"><h2 className="text-lg font-bold text-white">Settlement records</h2>{settlements.length ? <div className="mt-5 space-y-3">{settlements.map((s) => <div key={s.id} className="rounded-xl border border-white/10 p-4"><div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center"><div><p className="font-bold text-white">Rank {s.rank} · {s.registration.user.name || "Unnamed"}</p><p className="mt-1 text-sm text-slate-400">{s.registration.user.email} · ₹{s.amount.toString()} {s.currency} · Result {s.result.resultStatus}</p><p className="mt-1 text-xs text-slate-500">{s.status === "CREDITED" ? "Prize credited to PlayerLobby wallet." : s.status === "APPROVED" ? "Approved entitlement; wallet credit pending." : s.status === "CANCELLED" ? "Cancelled; no wallet credit." : "Pending approval."}</p><p className="mt-1 font-mono text-xs text-slate-600">Settlement {s.id}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-bold ${s.status === "APPROVED" || s.status === "CREDITED" ? "bg-lime-300/10 text-lime-200" : s.status === "CANCELLED" ? "bg-rose-300/10 text-rose-200" : "bg-amber-300/10 text-amber-200"}`}>{s.status}</span><SettlementRowActions tournamentId={id} settlementId={s.id} status={s.status} participant={s.registration.user.name || s.registration.user.email} amount={s.amount.toString()} currency={s.currency} /></div></div></div>)}</div> : <p className="mt-4 text-sm text-slate-500">No settlement records generated.</p>}</section>
