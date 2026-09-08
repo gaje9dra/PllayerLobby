@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
 import { requireAdmin } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { TournamentStatus } from "@/app/generated/prisma/client";
 import { TournamentStatusBadge } from "@/components/tournaments/tournament-status-badge";
 import { CancelTournamentButton } from "@/app/admin/tournaments/cancel-button";
@@ -16,7 +15,7 @@ export default async function AdminTournamentPage({ params }: { params: Promise<
   const canCancel = tournament.status !== TournamentStatus.COMPLETED && tournament.status !== TournamentStatus.CANCELLED;
   return (
     <SectionContainer>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold text-lime-300">Admin tournament</p><h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">{tournament.name}</h1></div><div className="flex flex-wrap gap-2"><Button href="/admin/tournaments" variant="secondary">Back to Tournaments</Button><Button href={`/admin/tournaments/${tournament.id}/edit`} variant="secondary">Edit Tournament</Button><Button href={`/admin/tournaments/${tournament.id}/participants`} variant="secondary">Participants</Button><Button href={`/admin/tournaments/${tournament.id}/results`} variant="secondary">Manage Results</Button></div></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold text-lime-300">Admin tournament</p><h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">{tournament.name}</h1></div><div className="flex flex-wrap gap-2"><Button href="/admin/tournaments" variant="secondary">Back to Tournaments</Button><Button href={`/admin/tournaments/${tournament.id}/edit`} variant="secondary">Edit Tournament</Button><Button href={`/admin/tournaments/${tournament.id}/participants`} variant="secondary">Participants</Button><Button href={`/admin/tournaments/${tournament.id}/results`} variant="secondary">Manage Results</Button><Button href={`/admin/tournaments/${tournament.id}/prizes`} variant="secondary">Manage Prizes</Button><Button href={`/admin/tournaments/${tournament.id}/settlements`} variant="secondary">Settlements</Button></div></div>
       <section className="mt-8 rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-7">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-bold text-white">Configuration</h2><p className="mt-1 text-sm text-slate-500">Stored tournament values from PostgreSQL.</p></div><p className="text-sm font-semibold text-slate-300">{tournament.game.name}</p></div>
         <dl className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -24,6 +23,7 @@ export default async function AdminTournamentPage({ params }: { params: Promise<
         </dl>
       </section>
       <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-7"><h2 className="text-lg font-bold text-white">Prize configuration</h2><p className="mt-1 text-sm leading-6 text-slate-500">Configure and finalize the tournament&apos;s official prize allocation without making payouts.</p><div className="mt-5"><Button href={`/admin/tournaments/${tournament.id}/prizes`} variant="secondary">Open Prize Management</Button></div></section>
+      <section className="mt-6 rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.03] p-5 sm:p-7"><h2 className="text-lg font-bold text-white">Prize settlement</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">Prepare and approve winner prize entitlements after results and prize configuration are finalized. Approval is not a payout.</p><div className="mt-5"><Button href={`/admin/tournaments/${tournament.id}/settlements`} variant="secondary">Open Settlement Management</Button></div></section>
       <section className="mt-6 rounded-2xl border border-rose-400/15 bg-rose-400/[0.03] p-5 sm:p-7"><h2 className="text-lg font-bold text-white">Danger zone</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">Cancellation preserves the tournament record and its configuration for future registration, payment, refund, and payout history.</p><div className="mt-5 max-w-sm"><CancelTournamentButton tournamentId={tournament.id} disabled={!canCancel} /></div>{!canCancel ? <p className="mt-3 text-xs text-slate-600">{tournament.status === TournamentStatus.COMPLETED ? "Completed tournaments cannot be cancelled." : "This tournament is already cancelled."}</p> : null}</section>
     </SectionContainer>
   );
