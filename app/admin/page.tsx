@@ -29,8 +29,8 @@ export default async function AdminPage() {
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-6">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Finance</p>
-          <p className="mt-3 text-sm leading-6 text-slate-400">Inspect wallet balances and reconcile them against the financial ledger.</p>
-          <Button href="/admin/finance/wallets" variant="secondary" className="mt-5">Wallet Reconciliation</Button>
+          <p className="mt-3 text-sm leading-6 text-slate-400">Inspect wallets, reconcile the ledger, and review withdrawal requests.</p>
+          <div className="mt-5 flex flex-wrap gap-3"><Button href="/admin/finance/wallets" variant="secondary">Wallet Reconciliation</Button><Button href="/admin/finance/withdrawals" variant="secondary">Withdrawals</Button></div>
         </div>
       </div>
     </SectionContainer>
