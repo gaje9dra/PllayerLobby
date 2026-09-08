@@ -28,7 +28,7 @@ export async function creditSettlementToWalletAction(formData: FormData) {
     const result = await creditApprovedPrizeSettlement(settlementId);
     revalidatePath(`/admin/tournaments/${tournamentId}/settlements`);
     revalidatePath("/dashboard/wallet");
-    return { ok: true, message: "Prize settlement credited successfully.", code: "CREDITED", balance: result.wallet.balance };
+    return { ok: true, message: result.idempotent ? "Prize settlement was already credited; no duplicate credit was created." : "Prize settlement credited successfully.", code: "CREDITED", balance: result.wallet.balance, participant: result.participant.name || result.participant.email, amount: result.settlement.amount.toString(), currency: result.settlement.currency, creditedAt: result.creditedAt.toISOString() };
   } catch (error) {
     if (error instanceof PrizeSettlementWalletError) return { ok: false, message: error.message, code: error.code };
     return { ok: false, message: "Unable to credit prize settlement. No financial changes were committed.", code: "FINANCIAL_RECONCILIATION_FAILED" };
