@@ -2,7 +2,7 @@ import Link from "next/link";
 
 const actions = [
   { title: "Browse Tournaments", description: "Find upcoming competitions and explore available events.", href: "/tournaments", label: "Explore tournaments" },
-  { title: "My Tournaments", description: "Your registered tournaments will appear here in a future phase.", href: "#my-tournaments", label: "View section" },
+  { title: "Wallet", description: "View your current wallet balance and financial transaction history.", href: "/dashboard/wallet", label: "View wallet" },
 ] as const;
 
 export function QuickActions() {
