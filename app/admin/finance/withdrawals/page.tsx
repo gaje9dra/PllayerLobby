@@ -1,0 +1,46 @@
+import Link from "next/link";
+import { WithdrawalRequestStatus } from "@/app/generated/prisma/client";
+import { SectionContainer } from "@/components/ui/section-container";
+import { prisma } from "@/lib/prisma";
+import { compareMoney, subtractMoney } from "@/lib/wallet-rules";
+import { getAdminWithdrawals } from "@/lib/withdrawal";
+import { WithdrawalActions } from "@/app/admin/finance/withdrawals/withdrawal-actions";
+
+const statuses = Object.values(WithdrawalRequestStatus);
+
+function parseStatus(value: string | undefined) {
+  return value && statuses.includes(value as WithdrawalRequestStatus) ? value as WithdrawalRequestStatus : undefined;
+}
+
+function label(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+export default async function AdminWithdrawalsPage({ searchParams }: { searchParams: Promise<{ page?: string; status?: string }> }) {
+  const params = await searchParams;
+  const page = Number(params.page ?? "1");
+  const status = parseStatus(params.status);
+  const data = await getAdminWithdrawals({ page, status });
+  const snapshots = await Promise.all(data.items.map(async (item) => {
+    const reserved = await prisma.withdrawalRequest.aggregate({ where: { walletId: item.wallet.id, status: { in: [WithdrawalRequestStatus.PENDING, WithdrawalRequestStatus.APPROVED] } }, _sum: { amount: true } });
+    const reservedWithoutCurrent = subtractMoney(reserved._sum.amount?.toString() ?? "0.00", item.status === WithdrawalRequestStatus.PENDING ? item.amount.toString() : "0.00");
+    const available = subtractMoney(item.wallet.balance.toString(), reservedWithoutCurrent);
+    const eligible = item.user.status === "ACTIVE" && item.wallet.currency === item.currency && compareMoney(item.amount.toString(), available) <= 0;
+    return { ...item, eligibility: eligible ? "ELIGIBLE" : item.user.status !== "ACTIVE" ? "USER NOT ACTIVE" : "NOT ELIGIBLE" };
+  }));
+
+  return <SectionContainer className="py-10 sm:py-14">
+    <Link href="/admin" className="text-sm font-semibold text-lime-300 hover:text-lime-200">← Admin</Link>
+    <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-lime-300">Finance</p><h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Withdrawal requests</h1><p className="mt-2 text-sm text-slate-400">Review requests without initiating external payouts.</p></div>
+      <div className="flex flex-wrap gap-2">{[undefined, ...statuses].map((value) => <Link key={value ?? "ALL"} href={value ? `/admin/finance/withdrawals?status=${value}` : "/admin/finance/withdrawals"} className={`rounded-full border px-3 py-1.5 text-xs font-bold ${status === value || (!status && !value) ? "border-lime-300/30 bg-lime-300/10 text-lime-200" : "border-white/10 text-slate-400 hover:text-white"}`}>{value ? label(value) : "All"}</Link>)}</div>
+    </div>
+
+    <section className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025]">
+      <div className="border-b border-white/5 px-5 py-4 text-sm text-slate-400">{data.total} request{data.total === 1 ? "" : "s"} · page {data.page} of {data.totalPages}</div>
+      {snapshots.length === 0 ? <div className="p-10 text-center text-sm text-slate-500">No withdrawal requests match this filter.</div> : <div className="divide-y divide-white/5">{snapshots.map((item) => <div key={item.id} className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)_minmax(180px,0.8fr)] lg:items-center"><div><div className="flex flex-wrap items-center gap-2"><span className="font-bold text-white">₹{item.amount.toFixed(2)} {item.currency}</span><span className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-bold uppercase text-slate-400">{label(item.status)}</span></div><p className="mt-2 text-sm text-slate-300">{item.user.name || "Unnamed player"} · {item.user.email}</p><p className="mt-1 break-all text-[11px] text-slate-600">ID: {item.id}</p><p className="mt-1 text-xs text-slate-500">Created {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(item.createdAt)}{item.reviewedAt ? ` · Reviewed ${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(item.reviewedAt)}` : ""}{item.reviewedBy ? ` · ${item.reviewedBy.name || item.reviewedBy.email}` : ""}</p>{item.rejectionReason ? <p className="mt-2 text-xs text-rose-200">Reason: {item.rejectionReason}</p> : null}</div><div className="rounded-xl border border-white/5 p-4"><p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Eligibility</p><p className={`mt-1 text-sm font-black ${item.eligibility === "ELIGIBLE" ? "text-lime-200" : "text-rose-200"}`}>{item.eligibility}</p><p className="mt-1 text-xs text-slate-500">Wallet: ₹{item.wallet.balance.toFixed(2)} · {item.wallet.currency}</p><p className="mt-1 text-xs text-slate-500">User: {label(item.user.status)}</p></div><WithdrawalActions withdrawalId={item.id} status={item.status} /></div>)}</div>}
+      {data.totalPages > 1 ? <nav className="flex items-center justify-between border-t border-white/5 px-5 py-4"><Link className={data.page <= 1 ? "pointer-events-none text-slate-700" : "text-sm font-semibold text-lime-300"} href={`/admin/finance/withdrawals?page=${data.page - 1}${status ? `&status=${status}` : ""}`}>← Previous</Link><span className="text-xs text-slate-500">Page {data.page} of {data.totalPages}</span><Link className={data.page >= data.totalPages ? "pointer-events-none text-slate-700" : "text-sm font-semibold text-lime-300"} href={`/admin/finance/withdrawals?page=${data.page + 1}${status ? `&status=${status}` : ""}`}>Next →</Link></nav> : null}
+    </section>
+    <p className="mt-5 text-xs leading-5 text-slate-600">Approval is not payment. This phase does not store bank/UPI details or call payout providers. Pending and approved requests reserve funds logically; rejected/cancelled requests release that reservation without changing wallet balance.</p>
+  </SectionContainer>;
+}
