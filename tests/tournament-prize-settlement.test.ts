@@ -22,7 +22,9 @@ test("winner requires finalized prize, confirmed registration and verified match
 test("settlement approval and cancellation only allow pending", () => {
   assert.equal(canApproveSettlement(TournamentPrizeSettlementStatus.PENDING), true);
   assert.equal(canApproveSettlement(TournamentPrizeSettlementStatus.APPROVED), false);
+  assert.equal(canApproveSettlement(TournamentPrizeSettlementStatus.CREDITED), false);
   assert.equal(canCancelSettlement(TournamentPrizeSettlementStatus.PENDING), true);
   assert.equal(canCancelSettlement(TournamentPrizeSettlementStatus.APPROVED), false);
+  assert.equal(canCancelSettlement(TournamentPrizeSettlementStatus.CREDITED), false);
   assert.equal(canCancelSettlement(TournamentPrizeSettlementStatus.CANCELLED), false);
 });
