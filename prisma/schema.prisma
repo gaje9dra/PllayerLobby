@@ -55,6 +55,7 @@ enum TournamentPrizeStatus {
 enum TournamentPrizeSettlementStatus {
   PENDING
   APPROVED
+  CREDITED
   CANCELLED
 }
 enum WalletTransactionType {
