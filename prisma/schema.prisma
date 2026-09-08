@@ -7,58 +7,15 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserRole {
-  USER
-  ADMIN
-}
-
-enum UserStatus {
-  ACTIVE
-  SUSPENDED
-  BANNED
-}
-
-enum TournamentFormat {
-  SOLO
-  DUO
-  SQUAD
-  TEAM
-}
-
-enum TournamentStatus {
-  DRAFT
-  UPCOMING
-  REGISTRATION_OPEN
-  REGISTRATION_CLOSED
-  LIVE
-  COMPLETED
-  CANCELLED
-}
-
-enum RegistrationStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  INITIATED
-  PENDING
-  SUCCESS
-  FAILED
-  CANCELLED
-}
-
-enum TournamentResultStatus {
-  DRAFT
-  VERIFIED
-  DISQUALIFIED
-}
-
-enum TournamentPrizeStatus {
-  DRAFT
-  FINALIZED
-}
+enum UserRole { USER ADMIN }
+enum UserStatus { ACTIVE SUSPENDED BANNED }
+enum TournamentFormat { SOLO DUO SQUAD TEAM }
+enum TournamentStatus { DRAFT UPCOMING REGISTRATION_OPEN REGISTRATION_CLOSED LIVE COMPLETED CANCELLED }
+enum RegistrationStatus { PENDING CONFIRMED CANCELLED }
+enum PaymentStatus { INITIATED PENDING SUCCESS FAILED CANCELLED }
+enum TournamentResultStatus { DRAFT VERIFIED DISQUALIFIED }
+enum TournamentPrizeStatus { DRAFT FINALIZED }
+enum TournamentPrizeSettlementStatus { PENDING APPROVED CANCELLED }
 
 model User {
   id String @id @default(uuid()) @db.Uuid
@@ -148,6 +105,7 @@ model Tournament {
   results TournamentResult[]
   room TournamentRoom?
   prizes TournamentPrize[]
+  settlements TournamentPrizeSettlement[]
   @@index([gameId])
   @@index([status])
   @@index([startTime])
@@ -167,6 +125,7 @@ model Registration {
   payments Payment[]
   code RegistrationCode?
   result TournamentResult?
+  settlements TournamentPrizeSettlement[]
   @@unique([userId, tournamentId])
   @@index([tournamentId])
   @@index([userId])
@@ -226,6 +185,7 @@ model TournamentResult {
   updatedAt DateTime @updatedAt
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
   registration Registration @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  settlement TournamentPrizeSettlement?
   @@index([tournamentId, rank])
   @@index([tournamentId, resultStatus])
 }
@@ -239,6 +199,27 @@ model TournamentPrize {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  settlement TournamentPrizeSettlement?
   @@unique([tournamentId, rank])
   @@index([tournamentId])
+}
+
+model TournamentPrizeSettlement {
+  id String @id @default(uuid()) @db.Uuid
+  tournamentId String @db.Uuid
+  prizeId String @unique @db.Uuid
+  registrationId String @db.Uuid
+  resultId String @unique @db.Uuid
+  rank Int
+  amount Decimal @db.Decimal(12, 2)
+  currency String @default("INR") @db.VarChar(3)
+  status TournamentPrizeSettlementStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  prize TournamentPrize @relation(fields: [prizeId], references: [id], onDelete: Restrict)
+  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  result TournamentResult @relation(fields: [resultId], references: [id], onDelete: Restrict)
+  @@index([tournamentId, status])
+  @@index([registrationId])
 }
