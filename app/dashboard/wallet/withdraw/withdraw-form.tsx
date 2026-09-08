@@ -1,16 +1,16 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useId } from "react";
 import { createWithdrawalAction, type WithdrawalActionState } from "@/app/dashboard/wallet/withdraw/actions";
 
 const initialState: WithdrawalActionState = { ok: false };
 
 export function WithdrawForm({ availableBalance, currency, minimumAmount, maximumAmount }: { availableBalance: string; currency: string; minimumAmount: string; maximumAmount: string | null }) {
   const [state, action, pending] = useActionState(createWithdrawalAction, initialState);
-  const idempotencyKey = useRef(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+  const idempotencyKey = `withdrawal-${useId().replace(/:/g, "")}-request`;
 
   return <form action={action} className="mt-6 space-y-5">
-    <input type="hidden" name="idempotencyKey" value={idempotencyKey.current} />
+    <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
     <div>
       <label htmlFor="withdrawal-amount" className="text-sm font-semibold text-slate-200">Withdrawal amount</label>
       <div className="mt-2 flex overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] focus-within:border-lime-300/50">
