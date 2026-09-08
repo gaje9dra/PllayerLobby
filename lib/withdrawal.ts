@@ -3,7 +3,7 @@ import "server-only";
 import { Prisma, WithdrawalRequestStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireActiveUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { addMoney, compareMoney, isValidUuid, subtractMoney } from "@/lib/wallet-rules";
+import { addMoney, compareMoney, isValidUuid } from "@/lib/wallet-rules";
 import {
   DAILY_WITHDRAWAL_LIMIT,
   MAX_WITHDRAWAL_AMOUNT,
