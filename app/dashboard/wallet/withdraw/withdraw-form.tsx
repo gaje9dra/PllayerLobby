@@ -1,9 +1,9 @@
 "use client";
 
 import { useActionState, useRef } from "react";
-import { createWithdrawalAction } from "@/app/dashboard/wallet/withdraw/actions";
+import { createWithdrawalAction, type WithdrawalActionState } from "@/app/dashboard/wallet/withdraw/actions";
 
-const initialState = { ok: false };
+const initialState: WithdrawalActionState = { ok: false };
 
 export function WithdrawForm({ availableBalance, currency, minimumAmount, maximumAmount }: { availableBalance: string; currency: string; minimumAmount: string; maximumAmount: string | null }) {
   const [state, action, pending] = useActionState(createWithdrawalAction, initialState);
