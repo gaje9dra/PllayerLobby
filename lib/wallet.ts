@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Prisma, WalletTransactionCategory, WalletTransactionType } from "@/app/generated/prisma/client";
+import { Prisma, WalletTransactionType } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireActiveUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { addMoney, compareMoney, isPositiveMoney, isSupportedCurrency, isValidReferenceType, isValidTransactionCategory, isValidTransactionType, isValidUuid, normalizeMoney, WALLET_CURRENCY, WALLET_PAGE_SIZE, type WalletReferenceType, type WalletTransactionCategory as Category, type WalletTransactionType as Direction } from "@/lib/wallet-rules";
