@@ -44,8 +44,8 @@ async function transitionResult(tournamentId: string, resultId: string, target: 
   if (!canTransitionResultStatus(result.resultStatus, target)) return { ok: false, message: "That result status transition is not allowed." };
   if (!await getEligibleContext(tournamentId, result.registrationId)) return { ok: false, message: "The registration is not eligible for a result." };
   if (target === TournamentResultStatus.DISQUALIFIED) {
-    const activeSettlement = await prisma.tournamentPrizeSettlement.findFirst({ where: { resultId: result.id, status: { in: [TournamentPrizeSettlementStatus.PENDING, TournamentPrizeSettlementStatus.APPROVED] } }, select: { id: true } });
-    if (activeSettlement) return { ok: false, message: "This verified result has an active settlement. Cancel the pending settlement before making a correction." };
+    const activeSettlement = await prisma.tournamentPrizeSettlement.findFirst({ where: { resultId: result.id, status: { in: [TournamentPrizeSettlementStatus.PENDING, TournamentPrizeSettlementStatus.APPROVED, TournamentPrizeSettlementStatus.CREDITED] } }, select: { id: true, status: true } });
+    if (activeSettlement) return { ok: false, message: activeSettlement.status === TournamentPrizeSettlementStatus.CREDITED ? "This result has already been credited to a wallet and cannot be corrected." : "This result has an active settlement. Cancel the pending settlement before making a correction." };
   }
   if (target === TournamentResultStatus.VERIFIED) {
     const duplicateRank = await prisma.tournamentResult.findFirst({ where: { tournamentId, rank: result.rank, resultStatus: TournamentResultStatus.VERIFIED, NOT: { id: result.id } }, select: { id: true } });
@@ -59,7 +59,7 @@ async function transitionResult(tournamentId: string, resultId: string, target: 
 export async function verifyTournamentResult(tournamentId: string, resultId: string) { return transitionResult(tournamentId, resultId, TournamentResultStatus.VERIFIED); }
 export async function disqualifyTournamentResult(tournamentId: string, resultId: string) { return transitionResult(tournamentId, resultId, TournamentResultStatus.DISQUALIFIED); }
 
-export async function getOfficialTournamentResults(tournamentId: string) { if (!UUID.test(tournamentId)) return []; return prisma.tournamentResult.findMany({ where: { tournamentId, resultStatus: TournamentResultStatus.VERIFIED }, orderBy: [{ rank: "asc" }, { id: "asc" }], select: { id: true, rank: true, score: true, resultStatus: true, registration: { select: { user: { select: { name: true } } } } } }); }
+export async function getOfficialTournamentResults(tournamentId: string) { if (!UUID.test(tournamentId)) return []; return prisma.tournamentResult.findMany({ where: { tournamentId, resultStatus: TournamentResultStatus.VERIFIED }, orderBy: [{ rank: "asc" }, { id: "asc" }], select: { id: true, rank: true, score: true, resultStatus: true, registration: { select: { user: { select: { name: true } } } } }); }
 
 export async function getTournamentResultSummary(tournamentId: string) {
   const [confirmed, entered, verified, disqualified] = await prisma.$transaction([prisma.registration.count({ where: { tournamentId, status: RegistrationStatus.CONFIRMED } }), prisma.tournamentResult.count({ where: { tournamentId } }), prisma.tournamentResult.count({ where: { tournamentId, resultStatus: TournamentResultStatus.VERIFIED } }), prisma.tournamentResult.count({ where: { tournamentId, resultStatus: TournamentResultStatus.DISQUALIFIED } })]);
