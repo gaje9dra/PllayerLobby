@@ -7,6 +7,8 @@ import { addMoney, compareMoney, isPositiveMoney, isSupportedCurrency, isValidRe
 
 const MAX_REFERENCE_LENGTH = 128;
 const MAX_DESCRIPTION_LENGTH = 500;
+const ZERO_CENTS = BigInt("0");
+const HUNDRED_CENTS = BigInt("100");
 
 function validateMoney(amount: string) {
   const normalized = normalizeMoney(amount);
@@ -98,8 +100,8 @@ function subtractMoneySafe(a: string, b: string) {
   const left = normalizeMoney(a)!;
   const right = normalizeMoney(b)!;
   const cents = BigInt(left.replace(".", "")) - BigInt(right.replace(".", ""));
-  if (cents < 0n) throw new Error("Insufficient wallet balance.");
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
+  if (cents < ZERO_CENTS) throw new Error("Insufficient wallet balance.");
+  return `${cents / HUNDRED_CENTS}.${(cents % HUNDRED_CENTS).toString().padStart(2, "0")}`;
 }
 
 export async function creditWallet(input: { walletId: string; amount: string; currency: string; referenceType: WalletReferenceType; referenceId: string; category: Category; description?: string }) {
@@ -129,9 +131,9 @@ function subtractSigned(a: string, b: string) {
   const aa = BigInt(normalizeMoney(a)!.replace(".", ""));
   const bb = BigInt(normalizeMoney(b)!.replace(".", ""));
   const diff = aa - bb;
-  const sign = diff < 0n ? "-" : "";
-  const absolute = diff < 0n ? -diff : diff;
-  return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
+  const sign = diff < ZERO_CENTS ? "-" : "";
+  const absolute = diff < ZERO_CENTS ? -diff : diff;
+  return `${sign}${absolute / HUNDRED_CENTS}.${(absolute % HUNDRED_CENTS).toString().padStart(2, "0")}`;
 }
 
 export async function getAdminWallets(page = 1) {
