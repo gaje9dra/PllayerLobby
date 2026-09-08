@@ -4,7 +4,6 @@ import { TournamentPrizeSettlementStatus, WalletTransactionCategory, WalletTrans
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { compareMoney, isSupportedCurrency } from "@/lib/wallet-rules";
-import { SETTLEMENT_CURRENCY } from "@/lib/tournament-prize-settlement-rules";
 
 export async function reconcilePrizeSettlementWallets(tournamentId: string) {
   await requireAdmin();
