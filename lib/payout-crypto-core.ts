@@ -17,7 +17,7 @@ export function encryptPayoutDataWithKey(plaintext: string, key: Buffer) {
 export function decryptPayoutDataWithKey(payload: string, key: Buffer) {
   if (key.length !== KEY_LENGTH) throw new Error("PAYOUT_ENCRYPTION_KEY must decode to exactly 32 bytes.");
   const parts = payload.split(".");
-  if (parts.length !== 3 || parts.some((part) => !part)) throw new Error("Invalid encrypted payout destination data.");
+  if (parts.length !== 3 || !parts[0] || !parts[1]) throw new Error("Invalid encrypted payout destination data.");
   const [ivEncoded, tagEncoded, ciphertextEncoded] = parts;
   const iv = Buffer.from(ivEncoded, "base64url");
   const tag = Buffer.from(tagEncoded, "base64url");
