@@ -1,22 +1,19 @@
 DO $$
 BEGIN
   CREATE TYPE "PayoutPaymentType" AS ENUM ('UPI', 'IMPS', 'NEFT', 'RTGS');
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$
 BEGIN
   CREATE TYPE "PayoutStatus" AS ENUM ('PAYOUT_INITIATED', 'PROCESSING', 'PAID', 'FAILED', 'REVERSED');
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$
 BEGIN
   CREATE TYPE "PayoutBeneficiaryStatus" AS ENUM ('ACTIVE', 'PENDING', 'FAILED', 'DISABLED');
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 ALTER TYPE "WalletReferenceType" ADD VALUE IF NOT EXISTS 'WITHDRAWAL_PAYOUT';
@@ -26,7 +23,7 @@ ALTER TYPE "WithdrawalRequestStatus" ADD VALUE IF NOT EXISTS 'PAID';
 ALTER TYPE "WithdrawalRequestStatus" ADD VALUE IF NOT EXISTS 'FAILED';
 ALTER TYPE "WithdrawalRequestStatus" ADD VALUE IF NOT EXISTS 'REVERSED';
 
-CREATE TABLE "PayoutBeneficiary" (
+CREATE TABLE IF NOT EXISTS "PayoutBeneficiary" (
   "id" UUID NOT NULL,
   "payoutDestinationId" UUID NOT NULL,
   "provider" TEXT NOT NULL,
@@ -37,7 +34,7 @@ CREATE TABLE "PayoutBeneficiary" (
   CONSTRAINT "PayoutBeneficiary_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "Payout" (
+CREATE TABLE IF NOT EXISTS "Payout" (
   "id" UUID NOT NULL,
   "withdrawalRequestId" UUID NOT NULL,
   "provider" TEXT NOT NULL,
@@ -57,7 +54,7 @@ CREATE TABLE "Payout" (
   CONSTRAINT "Payout_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "PayoutWebhookEvent" (
+CREATE TABLE IF NOT EXISTS "PayoutWebhookEvent" (
   "id" UUID NOT NULL,
   "provider" TEXT NOT NULL,
   "eventType" VARCHAR(64) NOT NULL,
@@ -69,20 +66,29 @@ CREATE TABLE "PayoutWebhookEvent" (
   CONSTRAINT "PayoutWebhookEvent_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "PayoutBeneficiary_payoutDestinationId_provider_key" ON "PayoutBeneficiary"("payoutDestinationId", "provider");
-CREATE UNIQUE INDEX "PayoutBeneficiary_provider_providerBeneficiaryId_key" ON "PayoutBeneficiary"("provider", "providerBeneficiaryId");
-CREATE INDEX "PayoutBeneficiary_status_idx" ON "PayoutBeneficiary"("status");
-CREATE UNIQUE INDEX "Payout_merchantTransferId_key" ON "Payout"("merchantTransferId");
-CREATE UNIQUE INDEX "Payout_providerTransferId_key" ON "Payout"("providerTransferId");
-CREATE INDEX "Payout_withdrawalRequestId_idx" ON "Payout"("withdrawalRequestId");
-CREATE INDEX "Payout_status_idx" ON "Payout"("status");
-CREATE INDEX "Payout_createdAt_idx" ON "Payout"("createdAt");
-CREATE INDEX "PayoutWebhookEvent_merchantTransferId_idx" ON "PayoutWebhookEvent"("merchantTransferId");
-CREATE INDEX "PayoutWebhookEvent_payoutId_idx" ON "PayoutWebhookEvent"("payoutId");
-CREATE INDEX "PayoutWebhookEvent_receivedAt_idx" ON "PayoutWebhookEvent"("receivedAt");
-CREATE UNIQUE INDEX "PayoutWebhookEvent_fingerprint_key" ON "PayoutWebhookEvent"("fingerprint");
-CREATE UNIQUE INDEX "Payout_withdrawal_active_key" ON "Payout"("withdrawalRequestId") WHERE "status" IN ('PAYOUT_INITIATED', 'PROCESSING');
+CREATE UNIQUE INDEX IF NOT EXISTS "PayoutBeneficiary_payoutDestinationId_provider_key" ON "PayoutBeneficiary"("payoutDestinationId", "provider");
+CREATE UNIQUE INDEX IF NOT EXISTS "PayoutBeneficiary_provider_providerBeneficiaryId_key" ON "PayoutBeneficiary"("provider", "providerBeneficiaryId");
+CREATE INDEX IF NOT EXISTS "PayoutBeneficiary_status_idx" ON "PayoutBeneficiary"("status");
+CREATE UNIQUE INDEX IF NOT EXISTS "Payout_merchantTransferId_key" ON "Payout"("merchantTransferId");
+CREATE UNIQUE INDEX IF NOT EXISTS "Payout_providerTransferId_key" ON "Payout"("providerTransferId");
+CREATE INDEX IF NOT EXISTS "Payout_withdrawalRequestId_idx" ON "Payout"("withdrawalRequestId");
+CREATE INDEX IF NOT EXISTS "Payout_status_idx" ON "Payout"("status");
+CREATE INDEX IF NOT EXISTS "Payout_createdAt_idx" ON "Payout"("createdAt");
+CREATE INDEX IF NOT EXISTS "PayoutWebhookEvent_merchantTransferId_idx" ON "PayoutWebhookEvent"("merchantTransferId");
+CREATE INDEX IF NOT EXISTS "PayoutWebhookEvent_payoutId_idx" ON "PayoutWebhookEvent"("payoutId");
+CREATE INDEX IF NOT EXISTS "PayoutWebhookEvent_receivedAt_idx" ON "PayoutWebhookEvent"("receivedAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "PayoutWebhookEvent_fingerprint_key" ON "PayoutWebhookEvent"("fingerprint");
+CREATE UNIQUE INDEX IF NOT EXISTS "Payout_withdrawal_active_key" ON "Payout"("withdrawalRequestId") WHERE "status" IN ('PAYOUT_INITIATED', 'PROCESSING');
 
-ALTER TABLE "PayoutBeneficiary" ADD CONSTRAINT "PayoutBeneficiary_payoutDestinationId_fkey" FOREIGN KEY ("payoutDestinationId") REFERENCES "PayoutDestination"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "Payout" ADD CONSTRAINT "Payout_withdrawalRequestId_fkey" FOREIGN KEY ("withdrawalRequestId") REFERENCES "WithdrawalRequest"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "PayoutWebhookEvent" ADD CONSTRAINT "PayoutWebhookEvent_payoutId_fkey" FOREIGN KEY ("payoutId") REFERENCES "Payout"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PayoutBeneficiary_payoutDestinationId_fkey') THEN
+    ALTER TABLE "PayoutBeneficiary" ADD CONSTRAINT "PayoutBeneficiary_payoutDestinationId_fkey" FOREIGN KEY ("payoutDestinationId") REFERENCES "PayoutDestination"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Payout_withdrawalRequestId_fkey') THEN
+    ALTER TABLE "Payout" ADD CONSTRAINT "Payout_withdrawalRequestId_fkey" FOREIGN KEY ("withdrawalRequestId") REFERENCES "WithdrawalRequest"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PayoutWebhookEvent_payoutId_fkey') THEN
+    ALTER TABLE "PayoutWebhookEvent" ADD CONSTRAINT "PayoutWebhookEvent_payoutId_fkey" FOREIGN KEY ("payoutId") REFERENCES "Payout"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END $$;
