@@ -119,3 +119,21 @@ export async function reconcileWithdrawalDestinations() {
   }
   return { ok: errors.length === 0, errors };
 }
+
+export function formatWithdrawalDestinationError(error: unknown) {
+  const code = error instanceof Error ? error.message : "UNKNOWN";
+  const messages: Record<string, string> = {
+    DESTINATION_NOT_FOUND: "Payout destination not found or it does not belong to your account.",
+    DESTINATION_DISABLED: "This payout destination is disabled.",
+    DESTINATION_NOT_VERIFIED: "This payout destination is not verified yet, so the withdrawal cannot be approved.",
+    DESTINATION_OWNERSHIP_MISMATCH: "Payout destination ownership validation failed.",
+    DESTINATION_SNAPSHOT_MISMATCH: "The withdrawal destination no longer matches its immutable snapshot.",
+    MISSING_DESTINATION_SNAPSHOT: "This withdrawal is missing its payout destination snapshot.",
+    DESTINATION_DATA_CORRUPTED: "The payout destination data could not be safely read. Please create a new destination.",
+    WITHDRAWAL_INTEGRITY_ERROR: "Withdrawal financial records failed integrity validation.",
+    INVALID_DESTINATION_TYPE: "Select a supported payout destination type.",
+    INVALID_DESTINATION_DATA: "Enter valid payout destination details.",
+    IDEMPOTENCY_KEY_REUSED: "This request key was already used with different withdrawal details.",
+  };
+  return messages[code] ?? "The withdrawal destination operation could not be completed.";
+}
