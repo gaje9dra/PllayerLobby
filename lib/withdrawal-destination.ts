@@ -6,7 +6,6 @@ import { prisma } from "@/lib/prisma";
 import { decryptPayoutData, encryptPayoutData } from "@/lib/payout-crypto";
 import { compareMoney } from "@/lib/wallet-rules";
 import { evaluateWithdrawalAmount, getAvailableWithdrawalBalance, validateWithdrawalAmount, WITHDRAWAL_CURRENCY } from "@/lib/withdrawal-rules";
-import { getOwnedDestinationForWithdrawal } from "@/lib/payout-destination";
 
 const RESERVED_STATUSES = [WithdrawalRequestStatus.PENDING, WithdrawalRequestStatus.APPROVED] as const;
 
@@ -84,7 +83,7 @@ export async function approveWithdrawalRequestWithDestination(withdrawalId: stri
     if (!destination || destination.userId !== request.userId) throw new Error("DESTINATION_OWNERSHIP_MISMATCH");
     if (destination.status !== PayoutDestinationStatus.VERIFIED) throw new Error("DESTINATION_NOT_VERIFIED");
     if (destination.type !== request.destinationTypeSnapshot || destination.maskedDestination !== request.destinationMaskedSnapshot) throw new Error("DESTINATION_SNAPSHOT_MISMATCH");
-    try { const snapshot = JSON.parse(decryptPayoutData(request.encryptedDestinationSnapshot)); validateSnapshot(snapshot, request.destinationTypeSnapshot); } catch (error) { if (error instanceof Error && error.message === "DESTINATION_DATA_CORRUPTED") throw error; throw new Error("DESTINATION_DATA_CORRUPTED"); }
+    try { const snapshot = JSON.parse(decryptPayoutData(request.encryptedDestinationSnapshot)); validateSnapshot(snapshot, request.destinationTypeSnapshot); } catch { throw new Error("DESTINATION_DATA_CORRUPTED"); }
     const reservedRows = await tx.$queryRaw<Array<{ amount: string }>>(Prisma.sql`
       SELECT COALESCE(SUM("amount"), 0)::text AS "amount" FROM "WithdrawalRequest"
       WHERE "walletId" = ${request.walletId}::uuid AND "status" IN ('PENDING','APPROVED') AND "id" <> ${request.id}::uuid
