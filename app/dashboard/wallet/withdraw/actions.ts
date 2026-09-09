@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { cancelWithdrawalRequest, createWithdrawalRequest, formatWithdrawalError } from "@/lib/withdrawal";
+import { cancelWithdrawalRequest, formatWithdrawalError } from "@/lib/withdrawal";
+import { createWithdrawalRequestWithDestination } from "@/lib/withdrawal-destination";
 
 export type WithdrawalActionState = {
   ok: boolean;
@@ -13,7 +14,8 @@ export async function createWithdrawalAction(_previous: WithdrawalActionState, f
   try {
     const amount = String(formData.get("amount") ?? "");
     const idempotencyKey = String(formData.get("idempotencyKey") ?? "");
-    const result = await createWithdrawalRequest(amount, idempotencyKey);
+    const destinationId = String(formData.get("payoutDestinationId") ?? "");
+    const result = await createWithdrawalRequestWithDestination(amount, idempotencyKey, destinationId);
     revalidatePath("/dashboard/wallet");
     revalidatePath("/dashboard/wallet/withdraw");
     return { ok: true, message: result.idempotent ? "This withdrawal request was already submitted." : "Withdrawal request submitted for admin review.", withdrawalId: result.request.id };
