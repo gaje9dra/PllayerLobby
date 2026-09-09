@@ -112,7 +112,7 @@ export async function initiatePayUTransfer(input: PayUTransferInput) {
   return withAuth(async (token, config) => {
     const url = new URL(`${baseUrl(config.environment)}/payout/v2/payment`);
     url.searchParams.set("pid", config.merchantId);
-    return requestJson(url.toString(), { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify([input]) });
+    return requestJson(url.toString(), { method: "POST", headers: authHeaders(token, config.merchantId), body: JSON.stringify([input]) });
   });
 }
 
