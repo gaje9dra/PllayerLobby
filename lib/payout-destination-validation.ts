@@ -14,7 +14,7 @@ type StoredPayoutData =
 
 function cleanText(value: string, max: number) {
   const normalized = value.trim();
-  if (!normalized || normalized.length > max || /[\u0000-\u001f\u007f]/.test(normalized)) return null;
+  if (!normalized || normalized.length > max || /[\u0000-\u001f\u007f]/.test(value)) return null;
   return normalized;
 }
 
@@ -23,7 +23,9 @@ export function validatePayoutDestinationInput(input: PayoutDestinationInput): {
   if (!displayName) return null;
 
   if (input.type === "UPI") {
-    const upiId = input.upiId.trim().toLowerCase();
+    const rawUpiId = input.upiId;
+    if (/[^\x20-\x7e]/.test(rawUpiId)) return null;
+    const upiId = rawUpiId.trim().toLowerCase();
     if (!UPI_PATTERN.test(upiId)) return null;
     const at = upiId.indexOf("@");
     const local = upiId.slice(0, at);
@@ -34,6 +36,7 @@ export function validatePayoutDestinationInput(input: PayoutDestinationInput): {
 
   const accountHolderName = cleanText(input.accountHolderName, 100);
   const bankName = cleanText(input.bankName, 100);
+  if (/[\u0000-\u001f\u007f]/.test(input.accountNumber) || /[\u0000-\u001f\u007f]/.test(input.ifsc)) return null;
   const accountNumber = input.accountNumber.replace(/[\s-]/g, "");
   const ifsc = input.ifsc.trim().toUpperCase();
   if (!accountHolderName || !NAME_PATTERN.test(accountHolderName) || !bankName || !ACCOUNT_PATTERN.test(accountNumber) || !IFSC_PATTERN.test(ifsc)) return null;
