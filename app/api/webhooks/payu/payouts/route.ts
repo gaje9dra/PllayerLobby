@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     if (!event) return Response.json({ ok: false }, { status: 400 });
     await handlePayUPayoutWebhook({
       event,
-      authorization: typeof body.authorization === "string" ? body.authorization : headerAuthorization,
+      authorization: headerAuthorization || (typeof body.authorization === "string" ? body.authorization : undefined),
       payoutMerchantId: typeof body.payoutMerchantId === "string" || typeof body.payoutMerchantId === "number" ? String(body.payoutMerchantId) : undefined,
       merchantReferenceId: typeof body.merchantReferenceId === "string" ? body.merchantReferenceId : undefined,
       payuRefId: typeof body.payuRefId === "string" ? body.payuRefId : undefined,
