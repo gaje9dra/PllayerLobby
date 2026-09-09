@@ -2,9 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { formatWithdrawalError, rejectWithdrawalRequest } from "@/lib/withdrawal";
-import { approveWithdrawalRequestWithDestination } from "@/lib/withdrawal-destination";
+import { approveWithdrawalRequestWithDestination, formatWithdrawalDestinationError } from "@/lib/withdrawal-destination";
 
 export type AdminWithdrawalActionState = { ok: boolean; message?: string };
+
+function formatAdminError(error: unknown) {
+  const code = error instanceof Error ? error.message : "";
+  const destinationCodes = ["DESTINATION_NOT_VERIFIED", "DESTINATION_OWNERSHIP_MISMATCH", "DESTINATION_SNAPSHOT_MISMATCH", "MISSING_DESTINATION_SNAPSHOT", "DESTINATION_DATA_CORRUPTED"];
+  return destinationCodes.includes(code) ? formatWithdrawalDestinationError(error) : formatWithdrawalError(error);
+}
 
 export async function approveWithdrawalAction(_previous: AdminWithdrawalActionState, formData: FormData): Promise<AdminWithdrawalActionState> {
   try {
@@ -15,9 +21,7 @@ export async function approveWithdrawalAction(_previous: AdminWithdrawalActionSt
     revalidatePath("/dashboard/wallet/withdraw");
     return { ok: true, message: `Withdrawal ₹${result.amount.toFixed(2)} approved. No payout was initiated.` };
   } catch (error) {
-    const code = error instanceof Error ? error.message : "";
-    const message = code === "DESTINATION_NOT_VERIFIED" ? "Withdrawal cannot be approved until its payout destination is verified." : formatWithdrawalError(error);
-    return { ok: false, message };
+    return { ok: false, message: formatAdminError(error) };
   }
 }
 
