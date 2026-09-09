@@ -4,8 +4,8 @@ import test from "node:test";
 
 process.env.PAYOUT_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-import { decryptPayoutData, encryptPayoutData } from "../lib/payout-crypto";
-import { validatePayoutDestinationInput } from "../lib/payout-destination";
+const { decryptPayoutData, encryptPayoutData } = await import("../lib/payout-crypto");
+const { validatePayoutDestinationInput } = await import("../lib/payout-destination");
 
 test("payout encryption round-trips plaintext", () => {
   const plaintext = JSON.stringify({ version: 1, type: "UPI", upiId: "player@example" });
