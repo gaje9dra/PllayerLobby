@@ -3,20 +3,15 @@ import "server-only";
 import { Prisma, PayoutStatus, WithdrawalRequestStatus } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getPayUPayoutConfig, createPayUBeneficiary, getPayUTransferStatus, initiatePayUTransfer, validatePayUVpa, type PayUPaymentType } from "@/lib/payu-payout-client";
+import { createPayUBeneficiary, getPayUTransferStatus, initiatePayUTransfer, validatePayUVpa, type PayUPaymentType } from "@/lib/payu-payout-client";
 import { decryptPayoutData } from "@/lib/payout-crypto";
 import { validatePayoutDestinationInput } from "@/lib/payout-destination-validation";
-import { creditWallet, debitWallet } from "@/lib/wallet";
+import { debitWallet } from "@/lib/wallet";
 
 const PROVIDER = "PAYU";
 
 function safeProviderMessage(value: unknown) {
   return String(value ?? "Provider request failed").replace(/[\r\n]+/g, " ").slice(0, 300);
-}
-
-function requiredString(value: unknown, code: string) {
-  if (typeof value !== "string" || !value.trim()) throw new Error(code);
-  return value.trim();
 }
 
 function parseSnapshot(encrypted: string, type: "UPI" | "BANK_ACCOUNT") {
@@ -157,5 +152,3 @@ export function formatPayoutError(error: unknown) {
   const messages: Record<string, string> = { WITHDRAWAL_NOT_APPROVED: "The withdrawal must be approved before payout processing.", PAYOUT_ALREADY_ACTIVE: "A payout is already being processed for this withdrawal.", PAYU_VPA_VALIDATION_FAILED: "PayU could not validate the UPI VPA.", PAYU_BENEFICIARY_CREATION_FAILED: "PayU beneficiary creation failed.", BENEFICIARY_CREATION_IN_PROGRESS: "PayU beneficiary setup is still in progress.", PAYU_TRANSFER_REJECTED: "PayU rejected the payout request.", PAYU_TRANSFER_UNCERTAIN: "PayU response was uncertain. Do not retry until the payout status is reconciled.", PAYOUT_RETRY_NOT_ALLOWED: "Retry is allowed only after a definitive PayU failure.", INVALID_PAYMENT_TYPE: "Invalid payout payment type.", UPI_REQUIRES_UPI_PAYMENT_TYPE: "UPI destinations require UPI payout processing.", BANK_DESTINATION_REQUIRES_BANK_PAYMENT_TYPE: "Bank destinations require IMPS, NEFT, or RTGS processing." };
   return messages[code] ?? "Payout processing could not be completed.";
 }
-
-export function getPayoutEnvironment() { return getPayUPayoutConfig().environment; }
