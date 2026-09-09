@@ -22,6 +22,7 @@ export function getPayUPayoutConfig() {
 
 function baseUrl(environment: PayUPayoutEnvironment) { return environment === "PRODUCTION" ? "https://payout.payumoney.com" : "https://uatoneapi.payu.in"; }
 function authUrl(environment: PayUPayoutEnvironment) { return environment === "PRODUCTION" ? "https://accounts.payu.in/oauth/token" : "https://uat-accounts.payu.in/oauth/token"; }
+function transferUrl(environment: PayUPayoutEnvironment) { return environment === "PRODUCTION" ? "/payout/payment" : "/payout/v2/payment"; }
 
 async function requestJson(url: string, init: RequestInit) {
   const response = await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(15_000) });
@@ -66,9 +67,7 @@ async function fetchAccessToken(forceRefresh = false) {
     let response;
     if (tokenCache?.refreshToken) {
       try { response = await authenticateWithRefreshToken(tokenCache.refreshToken); } catch { response = await authenticateWithClientCredentials(); }
-    } else {
-      response = await authenticateWithClientCredentials();
-    }
+    } else response = await authenticateWithClientCredentials();
     tokenCache = { accessToken: response.accessToken, refreshToken: response.refreshToken ?? tokenCache?.refreshToken, expiresAt: Date.now() + response.expiresIn * 1000 };
     return response.accessToken;
   })().finally(() => { tokenPromise = null; });
@@ -102,8 +101,8 @@ export async function validatePayUVpa(vpa: string) {
 export type PayUTransferInput = { beneficiaryName: string; beneficiaryEmail?: string; beneficiaryMobile?: string; beneficiaryAccountNumber?: string; beneficiaryIfscCode?: string; vpa?: string; purpose: string; amount: number; batchId: string; merchantRefId: string; paymentType: PayUPaymentType; retry: boolean };
 export async function initiatePayUTransfer(input: PayUTransferInput) {
   return withAuth(async (token, config) => {
-    const url = new URL(`${baseUrl(config.environment)}/payout/v2/payment`);
-    url.searchParams.set("pid", config.merchantId);
+    const url = new URL(`${baseUrl(config.environment)}${transferUrl(config.environment)}`);
+    if (config.environment === "TEST") url.searchParams.set("pid", config.merchantId);
     return requestJson(url.toString(), { method: "POST", headers: authHeaders(token, config.merchantId), body: JSON.stringify([input]) });
   });
 }
