@@ -115,7 +115,7 @@ export async function reconcilePayUPayout(payoutId: string) {
   await requireAdmin();
   const payout = await prisma.payout.findUnique({ where: { id: payoutId }, select: { id: true, withdrawalRequestId: true, merchantTransferId: true, status: true, amount: true, currency: true } });
   if (!payout) throw new Error("PAYOUT_NOT_FOUND");
-  if (![PayoutStatus.PAYOUT_INITIATED, PayoutStatus.PROCESSING].includes(payout.status)) return payout;
+  if (payout.status !== PayoutStatus.PAYOUT_INITIATED && payout.status !== PayoutStatus.PROCESSING) return payout;
   const response = await getPayUTransferStatus(payout.merchantTransferId);
   const providerStatus = extractProviderStatus(response, payout.merchantTransferId);
   if (providerStatus === "SUCCESS") await markPayoutPaid(payout.id, payout.withdrawalRequestId);
@@ -142,7 +142,7 @@ async function markPayoutPaid(payoutId: string, withdrawalId: string) {
     if (payout.status === PayoutStatus.REVERSED) throw new Error("PAYOUT_FINAL_STATE");
     const request = await tx.withdrawalRequest.findUnique({ where: { id: withdrawalId }, select: { userId: true, walletId: true } });
     if (!request) throw new Error("WITHDRAWAL_NOT_FOUND");
-    await debitWallet(request.walletId, payout.amount.toString(), "WITHDRAWAL_PAYOUT", payout.id, `Withdrawal payout ${payout.id}`, tx);
+    await debitWallet({ walletId: request.walletId, amount: payout.amount.toString(), currency: payout.currency, referenceType: "WITHDRAWAL", referenceId: payout.id, category: "WITHDRAWAL", description: `Withdrawal payout ${payout.id}` });
     await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.PAID, completedAt: new Date() } });
     await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.PAID } });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
