@@ -7,104 +7,24 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserRole {
-  USER
-  ADMIN
-}
-
-enum UserStatus {
-  ACTIVE
-  SUSPENDED
-  BANNED
-}
-
-enum TournamentFormat {
-  SOLO
-  DUO
-  SQUAD
-  TEAM
-}
-
-enum TournamentStatus {
-  DRAFT
-  UPCOMING
-  REGISTRATION_OPEN
-  REGISTRATION_CLOSED
-  LIVE
-  COMPLETED
-  CANCELLED
-}
-
-enum RegistrationStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  INITIATED
-  PENDING
-  SUCCESS
-  FAILED
-  CANCELLED
-}
-
-enum TournamentResultStatus {
-  DRAFT
-  VERIFIED
-  DISQUALIFIED
-}
-
-enum TournamentPrizeStatus {
-  DRAFT
-  FINALIZED
-}
-
-enum TournamentPrizeSettlementStatus {
-  PENDING
-  APPROVED
-  CREDITED
-  CANCELLED
-}
-
-enum WalletTransactionType {
-  CREDIT
-  DEBIT
-}
-
-enum WalletTransactionCategory {
-  PRIZE
-  REFUND
-  WITHDRAWAL
-  ENTRY_FEE
-  ADJUSTMENT
-}
-
-enum WalletReferenceType {
-  PRIZE_SETTLEMENT
-  REFUND
-  WITHDRAWAL
-  ENTRY_PAYMENT
-  ADJUSTMENT
-}
-
-enum WithdrawalRequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  CANCELLED
-}
-
-enum PayoutDestinationType {
-  UPI
-  BANK_ACCOUNT
-}
-
-enum PayoutDestinationStatus {
-  PENDING_VERIFICATION
-  VERIFIED
-  DISABLED
-}
+enum UserRole { USER ADMIN }
+enum UserStatus { ACTIVE SUSPENDED BANNED }
+enum TournamentFormat { SOLO DUO SQUAD TEAM }
+enum TournamentStatus { DRAFT UPCOMING REGISTRATION_OPEN REGISTRATION_CLOSED LIVE COMPLETED CANCELLED }
+enum RegistrationStatus { PENDING CONFIRMED CANCELLED }
+enum PaymentStatus { INITIATED PENDING SUCCESS FAILED CANCELLED }
+enum TournamentResultStatus { DRAFT VERIFIED DISQUALIFIED }
+enum TournamentPrizeStatus { DRAFT FINALIZED }
+enum TournamentPrizeSettlementStatus { PENDING APPROVED CREDITED CANCELLED }
+enum WalletTransactionType { CREDIT DEBIT }
+enum WalletTransactionCategory { PRIZE REFUND WITHDRAWAL ENTRY_FEE ADJUSTMENT }
+enum WalletReferenceType { PRIZE_SETTLEMENT REFUND WITHDRAWAL WITHDRAWAL_PAYOUT ENTRY_PAYMENT ADJUSTMENT }
+enum WithdrawalRequestStatus { PENDING APPROVED PAYOUT_INITIATED PROCESSING PAID FAILED REVERSED REJECTED CANCELLED }
+enum PayoutDestinationType { UPI BANK_ACCOUNT }
+enum PayoutDestinationStatus { PENDING_VERIFICATION VERIFIED DISABLED }
+enum PayoutPaymentType { UPI IMPS NEFT RTGS }
+enum PayoutStatus { PAYOUT_INITIATED PROCESSING PAID FAILED REVERSED }
+enum PayoutBeneficiaryStatus { ACTIVE PENDING FAILED DISABLED }
 
 model User {
   id String @id @default(uuid()) @db.Uuid
@@ -369,6 +289,7 @@ model WithdrawalRequest {
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
   payoutDestination PayoutDestination? @relation(fields: [payoutDestinationId], references: [id], onDelete: Restrict)
   reviewedBy User? @relation("WithdrawalReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  payouts Payout[]
   @@unique([userId, idempotencyKey])
   @@index([userId])
   @@index([walletId])
@@ -390,6 +311,60 @@ model PayoutDestination {
   verifiedAt DateTime?
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   withdrawals WithdrawalRequest[]
+  beneficiaries PayoutBeneficiary[]
   @@index([userId, status])
   @@index([createdAt])
+}
+
+model PayoutBeneficiary {
+  id String @id @default(uuid()) @db.Uuid
+  payoutDestinationId String @db.Uuid
+  provider String
+  providerBeneficiaryId String
+  status PayoutBeneficiaryStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  payoutDestination PayoutDestination @relation(fields: [payoutDestinationId], references: [id], onDelete: Restrict)
+  @@unique([payoutDestinationId, provider])
+  @@unique([provider, providerBeneficiaryId])
+  @@index([status])
+}
+
+model Payout {
+  id String @id @default(uuid()) @db.Uuid
+  withdrawalRequestId String @db.Uuid
+  provider String
+  merchantTransferId String @unique @db.VarChar(40)
+  providerTransferId String? @unique
+  providerReference String?
+  amount Decimal @db.Decimal(20, 2)
+  currency String @db.VarChar(3)
+  paymentType PayoutPaymentType
+  status PayoutStatus @default(PAYOUT_INITIATED)
+  failureCode String? @db.VarChar(128)
+  failureReason String? @db.VarChar(1000)
+  initiatedAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  withdrawalRequest WithdrawalRequest @relation(fields: [withdrawalRequestId], references: [id], onDelete: Restrict)
+  webhookEvents PayoutWebhookEvent[]
+  @@index([withdrawalRequestId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PayoutWebhookEvent {
+  id String @id @default(uuid()) @db.Uuid
+  provider String
+  eventType String @db.VarChar(64)
+  merchantTransferId String? @db.VarChar(40)
+  providerReference String?
+  fingerprint String @unique @db.Char(64)
+  receivedAt DateTime @default(now())
+  payoutId String? @db.Uuid
+  payout Payout? @relation(fields: [payoutId], references: [id], onDelete: Restrict)
+  @@index([merchantTransferId])
+  @@index([payoutId])
+  @@index([receivedAt])
 }
