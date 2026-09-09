@@ -1,5 +1,12 @@
-import { test, expect } from "node:test";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import { isValidPayUPaymentType, isPaymentTypeAllowed, isValidMerchantReference, canRetryPayUPayout, isActivePayUPayout, isFinalPayUPayout, isKnownPayUWebhookEvent, mapsPayUTransferStatus, shouldReleaseReservation, shouldDebitWallet, isDefinitiveFailure, isAmbiguousProviderResult } from "@/lib/payu-payout-rules";
+
+const expect = (actual: unknown) => ({
+  toBe(expected: unknown) {
+    assert.strictEqual(actual, expected);
+  },
+});
 
 test("accepts UPI payment type", () => expect(isValidPayUPaymentType("UPI")).toBe(true));
 test("accepts IMPS payment type", () => expect(isValidPayUPaymentType("IMPS")).toBe(true));
