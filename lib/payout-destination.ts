@@ -47,9 +47,11 @@ function normalizeInput(input: PayoutDestinationInput): { displayName: string; d
   return { displayName, data: { version: 1, type: "BANK_ACCOUNT", accountHolderName, accountNumber, ifsc, bankName }, maskedDestination: `••••••••${accountNumber.slice(-4)}` };
 }
 
-function safeStatus(status: PayoutDestinationStatus) {
-  return status;
+export function validatePayoutDestinationInput(input: PayoutDestinationInput) {
+  return normalizeInput(input);
 }
+
+function safeStatus(status: PayoutDestinationStatus) { return status; }
 
 export async function createPayoutDestination(input: PayoutDestinationInput) {
   const user = await requireActiveUser();
@@ -85,11 +87,7 @@ export async function getOwnedDestinationForWithdrawal(destinationId: string, us
   if (!destination || destination.userId !== userId) throw new Error("DESTINATION_NOT_FOUND");
   if (destination.status === PayoutDestinationStatus.DISABLED) throw new Error("DESTINATION_DISABLED");
   let data: StoredPayoutData;
-  try {
-    data = JSON.parse(decryptPayoutData(destination.encryptedDestinationData)) as StoredPayoutData;
-  } catch {
-    throw new Error("DESTINATION_DATA_CORRUPTED");
-  }
+  try { data = JSON.parse(decryptPayoutData(destination.encryptedDestinationData)) as StoredPayoutData; } catch { throw new Error("DESTINATION_DATA_CORRUPTED"); }
   if (data.version !== 1 || data.type !== destination.type) throw new Error("DESTINATION_DATA_CORRUPTED");
   return { id: destination.id, type: destination.type, status: destination.status, maskedDestination: destination.maskedDestination, data };
 }
