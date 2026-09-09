@@ -159,7 +159,9 @@ test("blank bank name is rejected", () => {
 });
 
 test("blank display name is rejected", () => {
-  assert.equal(validatePayoutDestinationInput(validUpi()).displayName, "UPI");
+  const validResult = validatePayoutDestinationInput(validUpi());
+  assert.ok(validResult);
+  assert.equal(validResult.displayName, "UPI");
   assert.equal(validatePayoutDestinationInput({ type: "UPI", displayName: "", upiId: "player@upi" }), null);
 });
 
