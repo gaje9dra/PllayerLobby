@@ -2,13 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { cancelWithdrawalRequest, formatWithdrawalError } from "@/lib/withdrawal";
-import { createWithdrawalRequestWithDestination } from "@/lib/withdrawal-destination";
+import { createWithdrawalRequestWithDestination, formatWithdrawalDestinationError } from "@/lib/withdrawal-destination";
 
-export type WithdrawalActionState = {
-  ok: boolean;
-  message?: string;
-  withdrawalId?: string;
-};
+export type WithdrawalActionState = { ok: boolean; message?: string; withdrawalId?: string };
 
 export async function createWithdrawalAction(_previous: WithdrawalActionState, formData: FormData): Promise<WithdrawalActionState> {
   try {
@@ -20,7 +16,9 @@ export async function createWithdrawalAction(_previous: WithdrawalActionState, f
     revalidatePath("/dashboard/wallet/withdraw");
     return { ok: true, message: result.idempotent ? "This withdrawal request was already submitted." : "Withdrawal request submitted for admin review.", withdrawalId: result.request.id };
   } catch (error) {
-    return { ok: false, message: formatWithdrawalError(error) };
+    const destinationMessage = formatWithdrawalDestinationError(error);
+    const knownDestinationCodes = ["DESTINATION_NOT_FOUND", "DESTINATION_DISABLED", "DESTINATION_DATA_CORRUPTED", "INVALID_IDEMPOTENCY_KEY", "IDEMPOTENCY_KEY_REUSED", "CURRENCY_MISMATCH"];
+    return { ok: false, message: knownDestinationCodes.includes(error instanceof Error ? error.message : "") ? destinationMessage : formatWithdrawalError(error) };
   }
 }
 
