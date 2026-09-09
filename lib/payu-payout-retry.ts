@@ -14,5 +14,6 @@ export async function retryFailedWithdrawalPayout(withdrawalId: string, paymentT
     if (payout?.status !== PayoutStatus.FAILED || request.status !== WithdrawalRequestStatus.FAILED) throw new Error("PAYOUT_RETRY_NOT_ALLOWED");
     await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.APPROVED, rejectionReason: null } });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  if (!paymentType) throw new Error("PAYMENT_TYPE_REQUIRED_FOR_RETRY");
   return initiateWithdrawalPayout(withdrawalId, paymentType);
 }
