@@ -1,9 +1,10 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { Prisma, PayoutStatus, WithdrawalRequestStatus } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createPayUBeneficiary, getPayUTransferStatus, initiatePayUTransfer, validatePayUVpa, type PayUPaymentType } from "@/lib/payu-payout-client";
+import { getPayUPayoutConfig, createPayUBeneficiary, getPayUTransferStatus, initiatePayUTransfer, validatePayUVpa, type PayUPaymentType } from "@/lib/payu-payout-client";
 import { decryptPayoutData } from "@/lib/payout-crypto";
 import { validatePayoutDestinationInput } from "@/lib/payout-destination-validation";
 import { debitWallet } from "@/lib/wallet";
@@ -16,19 +17,19 @@ function safeProviderMessage(value: unknown) {
 
 function parseSnapshot(encrypted: string, type: "UPI" | "BANK_ACCOUNT") {
   let data: unknown;
-  try { data = decryptPayoutData(encrypted); } catch { throw new Error("DESTINATION_DATA_CORRUPTED"); }
+  try { data = JSON.parse(decryptPayoutData(encrypted)); } catch { throw new Error("DESTINATION_DATA_CORRUPTED"); }
   if (!data || typeof data !== "object") throw new Error("DESTINATION_DATA_CORRUPTED");
   const input = data as Record<string, unknown>;
-  const normalized = validatePayoutDestinationInput({
-    type,
-    displayName: String(input.displayName ?? "Player payout"),
-    upiId: typeof input.upiId === "string" ? input.upiId : "",
-    accountNumber: typeof input.accountNumber === "string" ? input.accountNumber : "",
-    ifsc: typeof input.ifsc === "string" ? input.ifsc : "",
-    accountHolderName: typeof input.accountHolderName === "string" ? input.accountHolderName : "",
-    bankName: typeof input.bankName === "string" ? input.bankName : "",
-  });
-  if (!normalized.ok) throw new Error("DESTINATION_DATA_CORRUPTED");
+  if (input.version !== 1 || input.type !== type) throw new Error("DESTINATION_DATA_CORRUPTED");
+  if (type === "UPI") {
+    if (typeof input.upiId !== "string") throw new Error("DESTINATION_DATA_CORRUPTED");
+    const normalized = validatePayoutDestinationInput({ type: "UPI", displayName: typeof input.displayName === "string" ? input.displayName : "Player payout", upiId: input.upiId });
+    if (!normalized) throw new Error("DESTINATION_DATA_CORRUPTED");
+    return normalized.data;
+  }
+  if (typeof input.accountNumber !== "string" || typeof input.ifsc !== "string" || typeof input.accountHolderName !== "string" || typeof input.bankName !== "string") throw new Error("DESTINATION_DATA_CORRUPTED");
+  const normalized = validatePayoutDestinationInput({ type: "BANK_ACCOUNT", displayName: typeof input.displayName === "string" ? input.displayName : "Player payout", accountNumber: input.accountNumber, ifsc: input.ifsc, accountHolderName: input.accountHolderName, bankName: input.bankName });
+  if (!normalized) throw new Error("DESTINATION_DATA_CORRUPTED");
   return normalized.data;
 }
 
@@ -36,7 +37,9 @@ async function ensureBeneficiary(input: { destinationId: string; type: "UPI" | "
   const existing = await prisma.payoutBeneficiary.findUnique({ where: { payoutDestinationId_provider: { payoutDestinationId: input.destinationId, provider: PROVIDER } } });
   if (existing?.status === "ACTIVE") return existing;
   if (existing?.status === "PENDING") throw new Error("BENEFICIARY_CREATION_IN_PROGRESS");
-  const created = await createPayUBeneficiary({ name: input.name, email: input.email, mobile: input.mobile, accountNo: input.type === "BANK_ACCOUNT" ? input.data.accountNumber : undefined, ifsc: input.type === "BANK_ACCOUNT" ? input.data.ifsc : undefined, vpa: input.type === "UPI" ? input.data.upiId : undefined });
+  const created = await createPayUBeneficiary(input.type === "BANK_ACCOUNT"
+    ? { name: input.name, email: input.email, mobile: input.mobile, accountNo: input.data.accountNumber, ifsc: input.data.ifsc }
+    : { name: input.name, email: input.email, mobile: input.mobile, vpa: input.data.upiId });
   const providerId = created && typeof created === "object" && "data" in created && Array.isArray((created as { data?: unknown }).data) ? String(((created as { data: unknown[] }).data[0] as Record<string, unknown>)?.beneficiaryId ?? "") : "";
   if (!providerId) throw new Error("PAYU_BENEFICIARY_CREATION_FAILED");
   return prisma.payoutBeneficiary.upsert({ where: { payoutDestinationId_provider: { payoutDestinationId: input.destinationId, provider: PROVIDER } }, update: { providerBeneficiaryId: providerId, status: "ACTIVE" }, create: { payoutDestinationId: input.destinationId, provider: PROVIDER, providerBeneficiaryId: providerId, status: "ACTIVE" } });
@@ -84,21 +87,22 @@ export async function initiateWithdrawalPayout(withdrawalId: string, paymentType
       const valid = validation && typeof validation === "object" && "status" in validation ? Number((validation as { status?: unknown }).status) === 0 : false;
       if (!valid) throw new Error("PAYU_VPA_VALIDATION_FAILED");
     }
-    await ensureBeneficiary({ destinationId: prepared.withdrawal.payoutDestinationId!, type: prepared.withdrawal.destinationTypeSnapshot!, data: snapshot, name: user.name || String(snapshot.accountHolderName || "Player"), email: user.email, mobile: user.phone || undefined });
-    const transfer = await initiatePayUTransfer({ beneficiaryName: user.name || String(snapshot.accountHolderName || "Player"), beneficiaryEmail: user.email, beneficiaryMobile: user.phone || undefined, beneficiaryAccountNumber: prepared.payoutType === "UPI" ? undefined : String(snapshot.accountNumber), beneficiaryIfscCode: prepared.payoutType === "UPI" ? undefined : String(snapshot.ifsc), vpa: prepared.payoutType === "UPI" ? String(snapshot.upiId) : undefined, purpose: "PlayerLobby withdrawal", amount: Number(Number(prepared.withdrawal.amount).toFixed(2)), batchId: prepared.payout.id, merchantRefId: prepared.payout.merchantTransferId, paymentType: prepared.payoutType, retry: false });
+    await ensureBeneficiary({ destinationId: prepared.withdrawal.payoutDestinationId!, type: prepared.withdrawal.destinationTypeSnapshot!, data: snapshot, name: user.name || (prepared.payoutType === "BANK_ACCOUNT" ? snapshot.accountHolderName : "Player"), email: user.email, mobile: user.phone || undefined });
+    const transfer = await initiatePayUTransfer({ beneficiaryName: user.name || (prepared.payoutType === "BANK_ACCOUNT" ? snapshot.accountHolderName : "Player"), beneficiaryEmail: user.email, beneficiaryMobile: user.phone || undefined, beneficiaryAccountNumber: prepared.payoutType === "UPI" ? undefined : snapshot.accountNumber, beneficiaryIfscCode: prepared.payoutType === "UPI" ? undefined : snapshot.ifsc, vpa: prepared.payoutType === "UPI" ? snapshot.upiId : undefined, purpose: "PlayerLobby withdrawal", amount: Number(Number(prepared.withdrawal.amount).toFixed(2)), batchId: prepared.payout.id, merchantRefId: prepared.payout.merchantTransferId, paymentType: prepared.payoutType, retry: false });
     const providerStatus = transfer && typeof transfer === "object" && "status" in transfer ? Number((transfer as { status?: unknown }).status) : 1;
     const data = transfer && typeof transfer === "object" && "data" in transfer ? (transfer as { data?: unknown }).data : null;
     if (providerStatus !== 0) {
       const first = Array.isArray(data) ? data[0] : data;
       const code = first && typeof first === "object" && "code" in first ? String((first as { code?: unknown }).code ?? "PAYU_TRANSFER_REJECTED") : "PAYU_TRANSFER_REJECTED";
       const reason = first && typeof first === "object" && "error" in first ? safeProviderMessage((first as { error?: unknown }).error) : "PayU rejected the transfer request.";
-      await updateFailedPayout(prepared.payout.id, prepared.withdrawal.id, code, reason || "PayU rejected the transfer request.");
+      await updateFailedPayout(prepared.payout.id, prepared.withdrawal.id, code, reason);
       throw new Error("PAYU_TRANSFER_REJECTED");
     }
     await prisma.$transaction(async (tx) => { await tx.payout.update({ where: { id: prepared.payout.id }, data: { status: PayoutStatus.PROCESSING } }); await tx.withdrawalRequest.update({ where: { id: prepared.withdrawal.id }, data: { status: WithdrawalRequestStatus.PROCESSING } }); });
-    return { ...prepared.payout, status: PayoutStatus.PROCESSING };
+    return { payoutId: prepared.payout.id, merchantTransferId: prepared.payout.merchantTransferId, status: PayoutStatus.PROCESSING };
   } catch (error) {
-    if (error instanceof Error && ["PAYU_VPA_VALIDATION_FAILED", "PAYU_BENEFICIARY_CREATION_FAILED", "BENEFICIARY_CREATION_IN_PROGRESS", "PAYU_TRANSFER_REJECTED"].includes(error.message)) throw error;
+    const message = error instanceof Error ? error.message : "PAYU_TRANSFER_UNCERTAIN";
+    if (["PAYU_VPA_VALIDATION_FAILED", "PAYU_BENEFICIARY_CREATION_FAILED", "BENEFICIARY_CREATION_IN_PROGRESS", "PAYU_TRANSFER_REJECTED"].includes(message)) throw error;
     throw new Error("PAYU_TRANSFER_UNCERTAIN");
   }
 }
@@ -126,7 +130,7 @@ function extractProviderStatus(response: unknown, merchantTransferId: string) {
   const row = list.find((item) => item && typeof item === "object" && String((item as Record<string, unknown>).merchantRefId ?? (item as Record<string, unknown>).merchantReferenceId ?? "") === merchantTransferId) as Record<string, unknown> | undefined;
   const value = String(row?.status ?? row?.transactionStatus ?? row?.txnStatus ?? "").toUpperCase();
   if (["SUCCESS", "SUCCESSFUL", "TRANSFER_SUCCESS", "COMPLETED", "PAID"].includes(value)) return "SUCCESS" as const;
-  if (["FAILED", "FAILURE", "TRANSFER_FAILED", "REQUEST_PROCESSING_FAILED"].includes(value)) return "FAILED" as const;
+  if (["FAILED", "FAILURE", "TRANSFER_FAILED"].includes(value)) return "FAILED" as const;
   if (["REVERSED", "TRANSFER_REVERSED"].includes(value)) return "REVERSED" as const;
   return "PROCESSING" as const;
 }
@@ -144,8 +148,29 @@ async function markPayoutPaid(payoutId: string, withdrawalId: string) {
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
-async function markPayoutFailedFromProvider(payoutId: string, withdrawalId: string) { await prisma.$transaction(async (tx) => { await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.FAILED, failureReason: "PayU reported definitive failure." } }); await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.FAILED, rejectionReason: "PayU reported definitive failure." } }); }); }
-async function markPayoutReversed(payoutId: string, withdrawalId: string) { await prisma.$transaction(async (tx) => { await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.REVERSED } }); await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.REVERSED } }); }); }
+async function markPayoutFailedFromProvider(payoutId: string, withdrawalId: string) {
+  await prisma.$transaction(async (tx) => { await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.FAILED, failureReason: "PayU reported definitive failure." } }); await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.FAILED, rejectionReason: "PayU reported definitive failure." } }); });
+}
+
+async function markPayoutReversed(payoutId: string, withdrawalId: string) {
+  await prisma.$transaction(async (tx) => { await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.REVERSED } }); await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.REVERSED } }); });
+}
+
+export async function handlePayUPayoutWebhook(input: { event: string; authorization?: string; payoutMerchantId?: string; merchantReferenceId?: string; payuRefId?: string; bankReferenceId?: string; msg?: string; responseCode?: string }) {
+  const config = getPayUPayoutConfig();
+  if (input.authorization !== config.webhookSecret) throw new Error("INVALID_WEBHOOK_AUTHORIZATION");
+  if (input.payoutMerchantId && input.payoutMerchantId !== config.merchantId) throw new Error("INVALID_PAYOUT_MERCHANT");
+  const fingerprint = createHash("sha256").update(JSON.stringify({ event: input.event, merchantReferenceId: input.merchantReferenceId ?? null, payuRefId: input.payuRefId ?? null, bankReferenceId: input.bankReferenceId ?? null, msg: input.msg ?? null, responseCode: input.responseCode ?? null })).digest("hex");
+  const existing = await prisma.payoutWebhookEvent.findUnique({ where: { fingerprint }, select: { id: true, payoutId: true } });
+  if (existing) return { duplicate: true, payoutId: existing.payoutId };
+  const payout = input.merchantReferenceId ? await prisma.payout.findUnique({ where: { merchantTransferId: input.merchantReferenceId }, select: { id: true, withdrawalRequestId: true, status: true } }) : input.payuRefId ? await prisma.payout.findFirst({ where: { providerTransferId: input.payuRefId }, select: { id: true, withdrawalRequestId: true, status: true } }) : null;
+  await prisma.payoutWebhookEvent.create({ data: { provider: PROVIDER, eventType: input.event, merchantTransferId: input.merchantReferenceId || null, providerReference: input.payuRefId || input.bankReferenceId || null, fingerprint, payoutId: payout?.id || null } });
+  if (!payout) return { duplicate: false, payoutId: null, action: "UNKNOWN_PAYOUT" as const };
+  if (input.event === "TRANSFER_SUCCESS") { await markPayoutPaid(payout.id, payout.withdrawalRequestId); return { duplicate: false, payoutId: payout.id, action: "PAID" as const }; }
+  if (input.event === "TRANSFER_FAILED") { await markPayoutFailedFromProvider(payout.id, payout.withdrawalRequestId); return { duplicate: false, payoutId: payout.id, action: "FAILED" as const }; }
+  if (input.event === "TRANSFER_REVERSED") { await markPayoutReversed(payout.id, payout.withdrawalRequestId); return { duplicate: false, payoutId: payout.id, action: "REVERSED" as const }; }
+  return { duplicate: false, payoutId: payout.id, action: "IGNORED_EVENT" as const };
+}
 
 export function formatPayoutError(error: unknown) {
   const code = error instanceof Error ? error.message : "";
