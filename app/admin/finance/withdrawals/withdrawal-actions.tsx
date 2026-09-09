@@ -17,11 +17,7 @@ export function WithdrawalActions({ withdrawalId, status, payoutId, payoutStatus
       <input type="hidden" name="withdrawalId" value={withdrawalId} />
       <button type="submit" disabled={approving || rejecting} className="w-full rounded-lg bg-lime-300 px-3 py-2 text-xs font-black text-slate-950 disabled:opacity-50">{approving ? "Approving…" : "Approve"}</button>
     </form>
-    <form action={reject}>
-      <input type="hidden" name="withdrawalId" value={withdrawalId} />
-      <input name="reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} required placeholder="Rejection reason" className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white outline-none" />
-      <button type="submit" disabled={approving || rejecting} className="mt-2 w-full rounded-lg border border-rose-300/20 px-3 py-2 text-xs font-bold text-rose-200 disabled:opacity-50">{rejecting ? "Rejecting…" : "Reject"}</button>
-    </form>
+    <form action={reject}><input type="hidden" name="withdrawalId" value={withdrawalId} /><input name="reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} required placeholder="Rejection reason" className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white outline-none" /><button type="submit" disabled={approving || rejecting} className="mt-2 w-full rounded-lg border border-rose-300/20 px-3 py-2 text-xs font-bold text-rose-200 disabled:opacity-50">{rejecting ? "Rejecting…" : "Reject"}</button></form>
     {approveState.message ? <p role="status" className={`text-xs ${approveState.ok ? "text-lime-200" : "text-rose-200"}`}>{approveState.message}</p> : null}
     {rejectState.message ? <p role="status" className={`text-xs ${rejectState.ok ? "text-lime-200" : "text-rose-200"}`}>{rejectState.message}</p> : null}
   </div>;
@@ -29,6 +25,7 @@ export function WithdrawalActions({ withdrawalId, status, payoutId, payoutStatus
   if (status === "APPROVED") return <div className="space-y-3">
     <form action={process} onSubmit={(event) => { if (!window.confirm("Send this approved withdrawal to PayU? The transfer will use the immutable withdrawal destination snapshot.")) event.preventDefault(); }}>
       <input type="hidden" name="withdrawalId" value={withdrawalId} />
+      <input type="hidden" name="retry" value="false" />
       {destinationType === "BANK_ACCOUNT" ? <select name="paymentType" defaultValue="IMPS" className="mb-2 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white"><option value="IMPS">IMPS</option><option value="NEFT">NEFT</option><option value="RTGS">RTGS</option></select> : <input type="hidden" name="paymentType" value="UPI" />}
       <button type="submit" disabled={processing} className="w-full rounded-lg bg-lime-300 px-3 py-2 text-xs font-black text-slate-950 disabled:opacity-50">{processing ? "Sending to PayU…" : "Process Payout"}</button>
     </form>
@@ -42,8 +39,8 @@ export function WithdrawalActions({ withdrawalId, status, payoutId, payoutStatus
   </div>;
 
   if (status === "FAILED") return <div className="space-y-2">
-    <form action={process}><input type="hidden" name="withdrawalId" value={withdrawalId} /><input type="hidden" name="paymentType" value={destinationType === "UPI" ? "UPI" : "IMPS"} /><button type="submit" disabled={processing} className="w-full rounded-lg border border-lime-300/20 px-3 py-2 text-xs font-bold text-lime-200 disabled:opacity-50">{processing ? "Retrying…" : "Retry Failed Payout"}</button></form>
-    <p className="text-[11px] text-slate-500">Retry is available only after PayU has definitively reported failure.</p>
+    <form action={process} onSubmit={(event) => { if (!window.confirm("PayU has definitively failed the previous transfer. Create a new payout attempt with a new merchant reference?")) event.preventDefault(); }}><input type="hidden" name="withdrawalId" value={withdrawalId} /><input type="hidden" name="retry" value="true" /><input type="hidden" name="paymentType" value={destinationType === "UPI" ? "UPI" : "IMPS"} /><button type="submit" disabled={processing} className="w-full rounded-lg border border-lime-300/20 px-3 py-2 text-xs font-bold text-lime-200 disabled:opacity-50">{processing ? "Retrying…" : "Retry Failed Payout"}</button></form>
+    <p className="text-[11px] text-slate-500">Retry is available only after PayU has definitively reported failure; the previous payout remains immutable history.</p>
     {processState.message ? <p role="status" className={`text-xs ${processState.ok ? "text-lime-200" : "text-rose-200"}`}>{processState.message}</p> : null}
   </div>;
 
