@@ -7,18 +7,16 @@ import { decryptPayoutData, encryptPayoutData } from "@/lib/payout-crypto";
 import { compareMoney } from "@/lib/wallet-rules";
 import { evaluateWithdrawalAmount, getAvailableWithdrawalBalance, validateWithdrawalAmount, WITHDRAWAL_CURRENCY } from "@/lib/withdrawal-rules";
 
+const RESERVED_STATUSES = "'PENDING','APPROVED','PAYOUT_INITIATED','PROCESSING'";
+
 async function lockWallet(tx: Prisma.TransactionClient, walletId: string) {
-  const rows = await tx.$queryRaw<Array<{ id: string; userId: string; currency: string; balance: string }>>(Prisma.sql`
-    SELECT "id", "userId", "currency", "balance"::text AS "balance" FROM "Wallet" WHERE "id" = ${walletId}::uuid FOR UPDATE
-  `);
+  const rows = await tx.$queryRaw<Array<{ id: string; userId: string; currency: string; balance: string }>>(Prisma.sql`SELECT "id", "userId", "currency", "balance"::text AS "balance" FROM "Wallet" WHERE "id" = ${walletId}::uuid FOR UPDATE`);
   if (!rows[0]) throw new Error("WALLET_NOT_FOUND");
   return rows[0];
 }
 
 async function getReserved(tx: Prisma.TransactionClient, walletId: string) {
-  const rows = await tx.$queryRaw<Array<{ amount: string }>>(Prisma.sql`
-    SELECT COALESCE(SUM("amount"), 0)::text AS "amount" FROM "WithdrawalRequest" WHERE "walletId" = ${walletId}::uuid AND "status" IN ('PENDING','APPROVED')
-  `);
+  const rows = await tx.$queryRaw<Array<{ amount: string }>>(Prisma.sql`SELECT COALESCE(SUM("amount"), 0)::text AS "amount" FROM "WithdrawalRequest" WHERE "walletId" = ${walletId}::uuid AND "status" IN (${Prisma.raw(RESERVED_STATUSES)})`);
   return rows[0]?.amount ?? "0.00";
 }
 
@@ -33,32 +31,26 @@ export async function createWithdrawalRequestWithDestination(amountInput: string
   const idempotencyKey = idempotencyKeyInput.trim();
   if (!/^[A-Za-z0-9._:-]{16,128}$/.test(idempotencyKey)) throw new Error("INVALID_IDEMPOTENCY_KEY");
   if (!destinationIdInput || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(destinationIdInput)) throw new Error("DESTINATION_NOT_FOUND");
-
   return prisma.$transaction(async (tx) => {
     const existing = await tx.withdrawalRequest.findUnique({ where: { userId_idempotencyKey: { userId: user.id, idempotencyKey } } });
     if (existing) {
       if (existing.amount.toString() !== amount || existing.payoutDestinationId !== destinationIdInput) throw new Error("IDEMPOTENCY_KEY_REUSED");
       return { request: existing, idempotent: true };
     }
-
     const walletRecord = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
     if (!walletRecord) throw new Error("WALLET_NOT_FOUND");
     const wallet = await lockWallet(tx, walletRecord.id);
     if (wallet.userId !== user.id || wallet.currency !== WITHDRAWAL_CURRENCY) throw new Error("CURRENCY_MISMATCH");
-
     const destination = await tx.payoutDestination.findUnique({ where: { id: destinationIdInput }, select: { id: true, userId: true, type: true, status: true, maskedDestination: true, encryptedDestinationData: true } });
     if (!destination || destination.userId !== user.id) throw new Error("DESTINATION_NOT_FOUND");
     if (destination.status === PayoutDestinationStatus.DISABLED) throw new Error("DESTINATION_DISABLED");
-
     let data: unknown;
     try { data = JSON.parse(decryptPayoutData(destination.encryptedDestinationData)); } catch { throw new Error("DESTINATION_DATA_CORRUPTED"); }
     validateSnapshot(data, destination.type);
-
     const reserved = await getReserved(tx, wallet.id);
     const available = getAvailableWithdrawalBalance(wallet.balance, reserved);
     const evaluation = evaluateWithdrawalAmount(amount, available);
     if (!evaluation.eligible) throw new Error(evaluation.reason);
-
     const encryptedSnapshot = encryptPayoutData(JSON.stringify(data));
     const request = await tx.withdrawalRequest.create({ data: { userId: user.id, walletId: wallet.id, payoutDestinationId: destination.id, destinationTypeSnapshot: destination.type, destinationMaskedSnapshot: destination.maskedDestination, encryptedDestinationSnapshot: encryptedSnapshot, amount: evaluation.amount!, currency: WITHDRAWAL_CURRENCY, status: WithdrawalRequestStatus.PENDING, idempotencyKey } });
     return { request, idempotent: false };
@@ -74,7 +66,6 @@ export async function approveWithdrawalRequestWithDestination(withdrawalId: stri
     const user = await tx.user.findUnique({ where: { id: request.userId }, select: { id: true, status: true } });
     if (!user || user.status !== "ACTIVE") throw new Error("USER_NOT_ACTIVE");
     if (!request.payoutDestinationId || !request.destinationTypeSnapshot || !request.destinationMaskedSnapshot || !request.encryptedDestinationSnapshot) throw new Error("MISSING_DESTINATION_SNAPSHOT");
-
     const wallet = await lockWallet(tx, request.walletId);
     if (wallet.userId !== request.userId || wallet.currency !== request.currency) throw new Error("WITHDRAWAL_INTEGRITY_ERROR");
     const destination = await tx.payoutDestination.findUnique({ where: { id: request.payoutDestinationId }, select: { id: true, userId: true, type: true, status: true, maskedDestination: true } });
@@ -82,10 +73,7 @@ export async function approveWithdrawalRequestWithDestination(withdrawalId: stri
     if (destination.status !== PayoutDestinationStatus.VERIFIED) throw new Error("DESTINATION_NOT_VERIFIED");
     if (destination.type !== request.destinationTypeSnapshot || destination.maskedDestination !== request.destinationMaskedSnapshot) throw new Error("DESTINATION_SNAPSHOT_MISMATCH");
     try { const snapshot = JSON.parse(decryptPayoutData(request.encryptedDestinationSnapshot)); validateSnapshot(snapshot, request.destinationTypeSnapshot); } catch { throw new Error("DESTINATION_DATA_CORRUPTED"); }
-    const reservedRows = await tx.$queryRaw<Array<{ amount: string }>>(Prisma.sql`
-      SELECT COALESCE(SUM("amount"), 0)::text AS "amount" FROM "WithdrawalRequest"
-      WHERE "walletId" = ${request.walletId}::uuid AND "status" IN ('PENDING','APPROVED') AND "id" <> ${request.id}::uuid
-    `);
+    const reservedRows = await tx.$queryRaw<Array<{ amount: string }>>(Prisma.sql`SELECT COALESCE(SUM("amount"), 0)::text AS "amount" FROM "WithdrawalRequest" WHERE "walletId" = ${request.walletId}::uuid AND "status" IN ('PENDING','APPROVED','PAYOUT_INITIATED','PROCESSING') AND "id" <> ${request.id}::uuid`);
     const available = getAvailableWithdrawalBalance(wallet.balance, reservedRows[0]?.amount ?? "0.00");
     if (compareMoney(request.amount.toString(), available) > 0) throw new Error("INSUFFICIENT_AVAILABLE_BALANCE");
     return tx.withdrawalRequest.update({ where: { id: request.id }, data: { status: WithdrawalRequestStatus.APPROVED, reviewedAt: new Date(), reviewedById: admin.id }, select: { id: true, status: true, amount: true, currency: true, payoutDestinationId: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, reviewedAt: true, reviewedById: true } });
@@ -98,7 +86,7 @@ export async function getAdminWithdrawalsWithDestination(input: { page?: number;
   const take = 20;
   const where = input.status ? { status: input.status } : {};
   const [items, total] = await Promise.all([
-    prisma.withdrawalRequest.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * take, take, select: { id: true, amount: true, currency: true, status: true, payoutDestinationId: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, rejectionReason: true, createdAt: true, reviewedAt: true, reviewedBy: { select: { name: true, email: true } }, user: { select: { id: true, name: true, email: true, status: true } }, wallet: { select: { id: true, currency: true, balance: true } }, payoutDestination: { select: { id: true, type: true, status: true, maskedDestination: true, userId: true } } } }),
+    prisma.withdrawalRequest.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * take, take, select: { id: true, amount: true, currency: true, status: true, payoutDestinationId: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, rejectionReason: true, createdAt: true, reviewedAt: true, reviewedBy: { select: { name: true, email: true } }, user: { select: { id: true, name: true, email: true, status: true } }, wallet: { select: { id: true, currency: true, balance: true } }, payoutDestination: { select: { id: true, type: true, status: true, maskedDestination: true, userId: true } }, payouts: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, provider: true, merchantTransferId: true, providerTransferId: true, providerReference: true, amount: true, currency: true, paymentType: true, status: true, failureCode: true, failureReason: true, initiatedAt: true, completedAt: true, createdAt: true } } } }),
     prisma.withdrawalRequest.count({ where }),
   ]);
   return { items, page, total, totalPages: Math.max(1, Math.ceil(total / take)) };
@@ -122,18 +110,6 @@ export async function reconcileWithdrawalDestinations() {
 
 export function formatWithdrawalDestinationError(error: unknown) {
   const code = error instanceof Error ? error.message : "UNKNOWN";
-  const messages: Record<string, string> = {
-    DESTINATION_NOT_FOUND: "Payout destination not found or it does not belong to your account.",
-    DESTINATION_DISABLED: "This payout destination is disabled.",
-    DESTINATION_NOT_VERIFIED: "This payout destination is not verified yet, so the withdrawal cannot be approved.",
-    DESTINATION_OWNERSHIP_MISMATCH: "Payout destination ownership validation failed.",
-    DESTINATION_SNAPSHOT_MISMATCH: "The withdrawal destination no longer matches its immutable snapshot.",
-    MISSING_DESTINATION_SNAPSHOT: "This withdrawal is missing its payout destination snapshot.",
-    DESTINATION_DATA_CORRUPTED: "The payout destination data could not be safely read. Please create a new destination.",
-    WITHDRAWAL_INTEGRITY_ERROR: "Withdrawal financial records failed integrity validation.",
-    INVALID_DESTINATION_TYPE: "Select a supported payout destination type.",
-    INVALID_DESTINATION_DATA: "Enter valid payout destination details.",
-    IDEMPOTENCY_KEY_REUSED: "This request key was already used with different withdrawal details.",
-  };
+  const messages: Record<string, string> = { DESTINATION_NOT_FOUND: "Payout destination not found or it does not belong to your account.", DESTINATION_DISABLED: "This payout destination is disabled.", DESTINATION_NOT_VERIFIED: "This payout destination is not verified yet, so the withdrawal cannot be approved.", DESTINATION_OWNERSHIP_MISMATCH: "Payout destination ownership validation failed.", DESTINATION_SNAPSHOT_MISMATCH: "The withdrawal destination no longer matches its immutable snapshot.", MISSING_DESTINATION_SNAPSHOT: "This withdrawal is missing its payout destination snapshot.", DESTINATION_DATA_CORRUPTED: "The payout destination data could not be safely read. Please create a new destination.", WITHDRAWAL_INTEGRITY_ERROR: "Withdrawal financial records failed integrity validation.", INVALID_DESTINATION_TYPE: "Select a supported payout destination type.", INVALID_DESTINATION_DATA: "Enter valid payout destination details.", IDEMPOTENCY_KEY_REUSED: "This request key was already used with different withdrawal details." };
   return messages[code] ?? "The withdrawal destination operation could not be completed.";
 }
