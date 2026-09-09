@@ -7,8 +7,6 @@ import { decryptPayoutData, encryptPayoutData } from "@/lib/payout-crypto";
 import { compareMoney } from "@/lib/wallet-rules";
 import { evaluateWithdrawalAmount, getAvailableWithdrawalBalance, validateWithdrawalAmount, WITHDRAWAL_CURRENCY } from "@/lib/withdrawal-rules";
 
-const RESERVED_STATUSES = [WithdrawalRequestStatus.PENDING, WithdrawalRequestStatus.APPROVED] as const;
-
 async function lockWallet(tx: Prisma.TransactionClient, walletId: string) {
   const rows = await tx.$queryRaw<Array<{ id: string; userId: string; currency: string; balance: string }>>(Prisma.sql`
     SELECT "id", "userId", "currency", "balance"::text AS "balance" FROM "Wallet" WHERE "id" = ${walletId}::uuid FOR UPDATE
@@ -79,7 +77,7 @@ export async function approveWithdrawalRequestWithDestination(withdrawalId: stri
 
     const wallet = await lockWallet(tx, request.walletId);
     if (wallet.userId !== request.userId || wallet.currency !== request.currency) throw new Error("WITHDRAWAL_INTEGRITY_ERROR");
-    const destination = await tx.payoutDestination.findUnique({ where: { id: request.payoutDestinationId }, select: { id: true, userId: true, type: true, status: true, maskedDestination: true, encryptedDestinationData: true } });
+    const destination = await tx.payoutDestination.findUnique({ where: { id: request.payoutDestinationId }, select: { id: true, userId: true, type: true, status: true, maskedDestination: true } });
     if (!destination || destination.userId !== request.userId) throw new Error("DESTINATION_OWNERSHIP_MISMATCH");
     if (destination.status !== PayoutDestinationStatus.VERIFIED) throw new Error("DESTINATION_NOT_VERIFIED");
     if (destination.type !== request.destinationTypeSnapshot || destination.maskedDestination !== request.destinationMaskedSnapshot) throw new Error("DESTINATION_SNAPSHOT_MISMATCH");
@@ -100,7 +98,7 @@ export async function getAdminWithdrawalsWithDestination(input: { page?: number;
   const take = 20;
   const where = input.status ? { status: input.status } : {};
   const [items, total] = await Promise.all([
-    prisma.withdrawalRequest.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * take, take, select: { id: true, amount: true, currency: true, status: true, payoutDestinationId: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, rejectionReason: true, createdAt: true, reviewedAt: true, reviewedBy: { select: { name: true, email: true } }, user: { select: { id: true, name: true, email: true, status: true } }, payoutDestination: { select: { id: true, type: true, status: true, maskedDestination: true, userId: true } } } }),
+    prisma.withdrawalRequest.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * take, take, select: { id: true, amount: true, currency: true, status: true, payoutDestinationId: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, rejectionReason: true, createdAt: true, reviewedAt: true, reviewedBy: { select: { name: true, email: true } }, user: { select: { id: true, name: true, email: true, status: true } }, wallet: { select: { id: true, currency: true, balance: true } }, payoutDestination: { select: { id: true, type: true, status: true, maskedDestination: true, userId: true } } } }),
     prisma.withdrawalRequest.count({ where }),
   ]);
   return { items, page, total, totalPages: Math.max(1, Math.ceil(total / take)) };
