@@ -200,7 +200,7 @@ model VerificationToken {
 }
 
 model Game {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid())
   name String
   slug String @unique
   code String @unique
@@ -497,4 +497,14 @@ model PayoutWebhookEvent {
   @@index([merchantTransferId])
   @@index([payoutId])
   @@index([receivedAt])
+}
+
+model SecurityRateLimit {
+  id String @id @default(uuid()) @db.Uuid
+  keyHash String @unique @db.Char(64)
+  windowStartedAt DateTime
+  requestCount Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([windowStartedAt])
 }
