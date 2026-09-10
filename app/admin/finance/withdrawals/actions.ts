@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { formatWithdrawalError, rejectWithdrawalRequest } from "@/lib/withdrawal";
 import { approveWithdrawalRequestWithDestination, formatWithdrawalDestinationError } from "@/lib/withdrawal-destination";
 import { formatPayoutError, initiateWithdrawalPayout, reconcilePayUPayout, retryFailedWithdrawalPayout } from "@/lib/payu-payout-processing";
+import { recordAdminAuditEvent } from "@/lib/admin-audit";
 
 export type AdminWithdrawalActionState = { ok: boolean; message?: string };
 
@@ -15,12 +16,21 @@ function formatAdminError(error: unknown) {
   return destinationCodes.includes(code) ? formatWithdrawalDestinationError(error) : formatWithdrawalError(error);
 }
 
+async function audit(action: string, targetId: string, metadata?: Record<string, unknown>) {
+  try {
+    await recordAdminAuditEvent({ action, targetType: "WITHDRAWAL", targetId, metadata });
+  } catch (error) {
+    console.error("Admin audit logging failed:", error instanceof Error ? error.name : "unknown");
+  }
+}
+
 function paymentType(formData: FormData) { return String(formData.get("paymentType") ?? ""); }
 
 export async function approveWithdrawalAction(_previous: AdminWithdrawalActionState, formData: FormData): Promise<AdminWithdrawalActionState> {
   try {
     const id = String(formData.get("withdrawalId") ?? "");
     const result = await approveWithdrawalRequestWithDestination(id);
+    await audit("WITHDRAWAL_APPROVED", id, { amount: result.amount.toFixed(2), currency: result.currency });
     revalidatePath("/admin/finance/withdrawals");
     revalidatePath("/dashboard/wallet");
     revalidatePath("/dashboard/wallet/withdraw");
@@ -33,6 +43,7 @@ export async function rejectWithdrawalAction(_previous: AdminWithdrawalActionSta
     const id = String(formData.get("withdrawalId") ?? "");
     const reason = String(formData.get("reason") ?? "");
     await rejectWithdrawalRequest(id, reason);
+    await audit("WITHDRAWAL_REJECTED", id);
     revalidatePath("/admin/finance/withdrawals");
     revalidatePath("/dashboard/wallet");
     revalidatePath("/dashboard/wallet/withdraw");
@@ -43,7 +54,9 @@ export async function rejectWithdrawalAction(_previous: AdminWithdrawalActionSta
 export async function processPayoutAction(_previous: AdminWithdrawalActionState, formData: FormData): Promise<AdminWithdrawalActionState> {
   try {
     const id = String(formData.get("withdrawalId") ?? "");
-    const result = await initiateWithdrawalPayout(id, paymentType(formData));
+    const type = paymentType(formData);
+    const result = await initiateWithdrawalPayout(id, type);
+    await audit("PAYOUT_INITIATED", id, { payoutId: result.id, merchantTransferId: result.merchantTransferId, paymentType: type });
     revalidatePath("/admin/finance/withdrawals");
     revalidatePath("/dashboard/wallet/withdraw");
     return { ok: true, message: `PayU accepted payout ${result.merchantTransferId} for processing. It is not marked PAID until PayU confirms success.` };
@@ -54,6 +67,7 @@ export async function checkPayoutStatusAction(_previous: AdminWithdrawalActionSt
   try {
     const payoutId = String(formData.get("payoutId") ?? "");
     const result = await reconcilePayUPayout(payoutId);
+    await audit("PAYOUT_RECONCILED", payoutId, { providerStatus: result.providerStatus, localStatus: result.localStatus });
     revalidatePath("/admin/finance/withdrawals");
     revalidatePath("/dashboard/wallet/withdraw");
     return { ok: true, message: `PayU status: ${result.providerStatus}.` };
@@ -63,7 +77,9 @@ export async function checkPayoutStatusAction(_previous: AdminWithdrawalActionSt
 export async function retryPayoutAction(_previous: AdminWithdrawalActionState, formData: FormData): Promise<AdminWithdrawalActionState> {
   try {
     const id = String(formData.get("withdrawalId") ?? "");
-    const result = await retryFailedWithdrawalPayout(id, paymentType(formData));
+    const type = paymentType(formData);
+    const result = await retryFailedWithdrawalPayout(id, type);
+    await audit("PAYOUT_RETRY_INITIATED", id, { payoutId: result.id, merchantTransferId: result.merchantTransferId, paymentType: type });
     revalidatePath("/admin/finance/withdrawals");
     revalidatePath("/dashboard/wallet/withdraw");
     return { ok: true, message: `Retry ${result.id} was accepted for processing. It uses a new payout attempt.` };
