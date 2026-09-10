@@ -5,6 +5,8 @@ import { formatWithdrawalError, rejectWithdrawalRequest } from "@/lib/withdrawal
 import { approveWithdrawalRequestWithDestination, formatWithdrawalDestinationError } from "@/lib/withdrawal-destination";
 import { formatPayoutError, initiateWithdrawalPayout, reconcilePayUPayout, retryFailedWithdrawalPayout } from "@/lib/payu-payout-processing";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
+import { requireAdmin } from "@/lib/auth";
+import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 
 export type AdminWithdrawalActionState = { ok: boolean; message?: string };
 
@@ -22,6 +24,12 @@ async function audit(action: string, targetId: string, metadata?: Record<string,
   } catch (error) {
     console.error("Admin audit logging failed:", error instanceof Error ? error.name : "unknown");
   }
+}
+
+async function allowPrivilegedPayoutAction() {
+  const admin = await requireAdmin();
+  const rateLimit = await consumeSecurityRateLimit({ namespace: "admin-payout-action", key: admin.id, limit: 20, windowSeconds: 60 });
+  return rateLimit.allowed;
 }
 
 function paymentType(formData: FormData) { return String(formData.get("paymentType") ?? ""); }
@@ -53,6 +61,7 @@ export async function rejectWithdrawalAction(_previous: AdminWithdrawalActionSta
 
 export async function processPayoutAction(_previous: AdminWithdrawalActionState, formData: FormData): Promise<AdminWithdrawalActionState> {
   try {
+    if (!(await allowPrivilegedPayoutAction())) return { ok: false, message: "Too many payout operations. Please wait and try again." };
     const id = String(formData.get("withdrawalId") ?? "");
     const type = paymentType(formData);
     const result = await initiateWithdrawalPayout(id, type);
@@ -65,6 +74,7 @@ export async function processPayoutAction(_previous: AdminWithdrawalActionState,
 
 export async function checkPayoutStatusAction(_previous: AdminWithdrawalActionState, formData: FormData): Promise<AdminWithdrawalActionState> {
   try {
+    if (!(await allowPrivilegedPayoutAction())) return { ok: false, message: "Too many payout operations. Please wait and try again." };
     const payoutId = String(formData.get("payoutId") ?? "");
     const result = await reconcilePayUPayout(payoutId);
     await audit("PAYOUT_RECONCILED", payoutId, { providerStatus: result.providerStatus, localStatus: result.localStatus });
@@ -76,6 +86,7 @@ export async function checkPayoutStatusAction(_previous: AdminWithdrawalActionSt
 
 export async function retryPayoutAction(_previous: AdminWithdrawalActionState, formData: FormData): Promise<AdminWithdrawalActionState> {
   try {
+    if (!(await allowPrivilegedPayoutAction())) return { ok: false, message: "Too many payout operations. Please wait and try again." };
     const id = String(formData.get("withdrawalId") ?? "");
     const type = paymentType(formData);
     const result = await retryFailedWithdrawalPayout(id, type);
