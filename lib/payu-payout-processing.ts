@@ -28,8 +28,9 @@ function readSnapshot(encrypted: string, type: "UPI" | "BANK_ACCOUNT"): Destinat
     ? { type: "UPI" as const, displayName: String(value.displayName ?? ""), upiId: String(value.upiId ?? "") }
     : { type: "BANK_ACCOUNT" as const, displayName: String(value.displayName ?? ""), accountNumber: String(value.accountNumber ?? ""), ifsc: String(value.ifsc ?? ""), accountHolderName: String(value.accountHolderName ?? ""), bankName: String(value.bankName ?? "") };
   const result = validatePayoutDestinationInput(input);
-  if (!result.ok) throw new Error("DESTINATION_DATA_CORRUPTED");
-  return result.data;
+  if (!result) throw new Error("DESTINATION_DATA_CORRUPTED");
+  if (result.data.type === "UPI") return { type: "UPI", displayName: result.displayName, upiId: result.data.upiId };
+  return { type: "BANK_ACCOUNT", displayName: result.displayName, accountNumber: result.data.accountNumber, ifsc: result.data.ifsc, accountHolderName: result.data.accountHolderName, bankName: result.data.bankName };
 }
 
 function paymentTypeFor(destinationType: "UPI" | "BANK_ACCOUNT", value: string): PayoutPaymentType {
