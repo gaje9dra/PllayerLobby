@@ -28,6 +28,8 @@ export async function consumeSecurityRateLimit(input: {
   const windowMs = input.windowSeconds * 1000;
 
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${keyHash}, 0))`);
+
     const existing = await tx.securityRateLimit.findUnique({
       where: { keyHash },
       select: { id: true, windowStartedAt: true, requestCount: true },
@@ -56,12 +58,10 @@ export async function consumeSecurityRateLimit(input: {
       };
     }
 
-    const updated = await tx.securityRateLimit.updateMany({
-      where: { id: existing.id, requestCount: existing.requestCount },
+    await tx.securityRateLimit.update({
+      where: { id: existing.id },
       data: { requestCount: { increment: 1 } },
     });
-
-    if (updated.count !== 1) throw new Prisma.PrismaClientKnownRequestError("RATE_LIMIT_RETRY", { code: "P2034", clientVersion: "security-rate-limit" });
 
     return {
       allowed: true,
