@@ -1,135 +1,110 @@
-# PayU Payout Processing — Phase 5.5
+# PayU Payout Processing — Phase 5.5–5.6
 
-Phase 5.5 adds PayU Payouts as the external provider for approved PlayerLobby withdrawals. It is separate from the existing PayU payment-gateway integration used for tournament entry payments.
+PlayerLobby uses PayU Payouts as the external provider for approved withdrawals. This is separate from the existing PayU payment-gateway integration used for tournament entry payments.
 
-## Current PayU documentation used
-
-The implementation follows the current PayU Payouts documentation for authentication, single transfer, transfer status, beneficiary registration, VPA validation, and webhooks. PayU's current initiation response can mean that the request is accepted for processing; it is not treated as final payment success.
-
-## Environment
-
-Development defaults to `PAYU_PAYOUT_ENVIRONMENT=TEST`. Production additionally requires `PAYU_PAYOUT_PRODUCTION_ENABLED=true`. Production credentials are never used by development code automatically.
-
-Required server-only variables:
-
-- `PAYU_PAYOUT_ENVIRONMENT`
-- `PAYU_PAYOUT_MERCHANT_ID`
-- `PAYU_PAYOUT_CLIENT_ID`
-- `PAYU_PAYOUT_CLIENT_SECRET`
-- `PAYU_PAYOUT_WEBHOOK_SECRET`
-- `PAYU_PAYOUT_PRODUCTION_ENABLED`
-
-No payout secret is prefixed with `NEXT_PUBLIC_` or exposed to the browser.
-
-## Authentication
-
-The client uses PayU's private Client ID + Client Secret OAuth flow with the `create_payout_transactions` scope. Access tokens are cached in server memory until shortly before expiry. Concurrent token requests share one promise to avoid token storms. A 401 clears the cache and retries authentication once. The current private-client flow does not require a stored refresh token, so the application re-authenticates with the server-only client credentials when the access token expires.
-
-## Beneficiaries
-
-`PayoutBeneficiary` maps a PlayerLobby `PayoutDestination` to a PayU beneficiary ID. The mapping is unique per destination/provider. A pending beneficiary creation blocks another registration attempt until it can be reconciled; the system does not blindly create duplicates.
-
-The actual transfer uses the verified immutable withdrawal snapshot. The beneficiary mapping is maintained for provider identity and reuse.
-
-## Transfer lifecycle
+## Provider lifecycle
 
 ```text
 APPROVED
-   ↓
+  ↓
 PAYOUT_INITIATED
-   ↓
+  ↓
 PROCESSING
-   ↓
-PAID
+  ├──→ PAID
+  │     ↓
+  │   REVERSED
+  └──→ FAILED
 ```
 
-Definitive failure:
+The server enforces this payout state machine. Provider acceptance is never treated as `PAID`.
 
-```text
-PROCESSING → FAILED
-```
+## Phase 5.6 reconciliation
 
-Reversal:
+`reconcilePayUPayout(payoutId)` is the authoritative manual recovery service for ambiguous initiation responses, missed webhooks, and status mismatches. It:
 
-```text
-PAID → REVERSED
-```
+1. loads the immutable payout and merchant reference;
+2. queries PayU status using the existing merchant reference;
+3. verifies amount/currency when PayU supplies amount data;
+4. transitions only through valid payout states;
+5. performs wallet accounting in the same serializable transaction as the final payout state;
+6. records reconciliation metadata and a sanitized audit event;
+7. never creates a second payout for an unresolved result.
 
-The PayU initiation response is never interpreted as `PAID`.
+Provider states are interpreted as:
 
-## Idempotency and retries
-
-A withdrawal can have only one active payout in `PAYOUT_INITIATED` or `PROCESSING` state. A server-generated `merchantRefId` is unique and limited to PayU's documented 40-character maximum.
-
-Timeouts, network errors, 5xx responses, and malformed/ambiguous provider responses do not trigger an immediate second transfer. The existing merchant reference is reconciled through PayU's transfer-status API first.
-
-A retry is allowed only after a definitive failure. The retry creates a new payout record and a new merchant reference; the old payout remains immutable history.
+- `SUCCESS` → `PAID` and exactly one wallet `DEBIT`.
+- `FAILED` → `FAILED` and the withdrawal reservation is released by state transition.
+- pending/processing/unknown → remain unresolved; funds remain reserved.
+- amount/currency mismatch → `MISMATCH`; no accounting finalization.
+- local/provider final-state conflict → `CONFLICT`; no blind accounting action.
 
 ## Webhooks
 
-Endpoint:
+Endpoint: `POST /api/webhooks/payu/payouts`.
 
-`POST /api/webhooks/payu/payouts`
-
-The handler validates PayU's configured merchant authorization value and payout merchant ID, matches the merchant reference, stores an idempotent event fingerprint, and performs only short database work before returning HTTP 200. It does not make another PayU HTTP request before acknowledging a valid webhook.
-
-Handled transfer events include:
+Handled transaction events:
 
 - `TRANSFER_SUCCESS`
 - `TRANSFER_FAILED`
 - `TRANSFER_REVERSED`
-- `REQUEST_PROCESSING_FAILED` is recorded but is not treated as a definitive transfer failure.
+- `REQUEST_PROCESSING_FAILED`
 
-The current PayU documentation says valid webhook responses should be returned within 10 seconds and that failed deliveries can be retried. The implementation therefore keeps the webhook path short.
+Other provider notifications are safely recorded without changing a payout. Transaction events are matched by merchant reference and, where available, provider reference. Webhook events have a unique fingerprint and are stored/processed inside the same transaction as accounting, so a failed transaction rolls back the event and allows a safe provider retry.
 
-PayU also documents test and production source IPs for webhook allowlisting. This project does not hardcode proxy-sensitive IP enforcement in application code; production infrastructure should configure the current PayU allowlist using trusted source-IP handling.
+`REQUEST_PROCESSING_FAILED` is deliberately not treated as a definitive bank failure. It flags the payout for reconciliation and the provider status must be checked before funds are released or another transfer is created.
 
-## Wallet and ledger
+## Idempotent accounting
 
-Funds remain reserved by the existing withdrawal reservation model while a request is `PENDING`, `APPROVED`, `PAYOUT_INITIATED`, or `PROCESSING`.
+Successful payout accounting is:
 
-Only authoritative PayU success creates the permanent wallet debit:
+- `WalletTransaction.type = DEBIT`
+- `category = WITHDRAWAL`
+- `referenceType = WITHDRAWAL_PAYOUT`
+- `referenceId = Payout.id`
 
-- type: `DEBIT`
-- category: `WITHDRAWAL`
-- reference type: `WITHDRAWAL_PAYOUT`
-- reference ID: `Payout.id`
-- amount/currency: server-side payout values
+The wallet row is locked before the debit. The existing wallet-transaction uniqueness constraint plus transaction checks prevent duplicate debits from duplicate webhooks, webhook/reconciliation races, retries, delayed provider responses, or application restarts.
 
-The debit and `PAID` state transition happen in one serializable transaction and are idempotent.
+A failed payout creates no fake debit/credit pair. Its reserved amount becomes available again because the withdrawal leaves the reservation statuses.
 
-A definitive failed payout changes the payout/withdrawal to `FAILED`; because the wallet was only reserved, no fake debit-then-credit transaction is created.
+## Reversals
 
-A reversal is preserved as `REVERSED`. The original successful payout and ledger history are not silently rewritten, and the system does not automatically create a new payout or automatic wallet credit.
+A reversal is only accepted after local `PAID`.
 
-## Reconciliation
+The original payout remains historical and changes to `REVERSED`. Exactly one compensating wallet `CREDIT` is created against the same payout reference after verifying that the original debit exists and matches the payout amount/currency. The withdrawal becomes `REVERSED`.
 
-`reconcilePayUPayout(payoutId)` compares the local payout with PayU's transfer status. It is intended for ambiguous initiation responses, missed webhooks, and manual admin recovery.
+No automatic new payout is created after a reversal.
 
-The service detects unresolved/unknown provider status and avoids blind retries. It also protects against local/provider mismatches such as a local final state conflicting with a definitive provider result.
+## Controlled retry
 
-## Privacy
+A retry is allowed only from a definitively `FAILED` withdrawal/payout. It:
 
-The provider client decrypts payout destination data only server-side when needed for a transfer. Full bank-account numbers and UPI VPAs are never sent to browser UI or logs. Provider responses are reduced to safe metadata such as references, status, error codes, and timestamps.
+- creates a new payout attempt;
+- generates a new unique `merchantTransferId`;
+- preserves the old payout record;
+- links the new payout through `previousPayoutId`;
+- never overwrites provider references or old payout history.
+
+Timeouts, 5xx responses, ambiguous responses, and `REQUEST_PROCESSING_FAILED` do not qualify for automatic retry.
+
+## Audit/reconciliation metadata
+
+Each payout stores reconciliation status, last reconciliation time, reconciliation message, and reversal time where applicable. Sanitized payout webhook/audit events store the event type, merchant/provider references, safe payload data, received time, processed time, and payout relation. Secrets, access tokens, full bank details, and full UPI destinations are never stored in these audit payloads.
 
 ## Admin controls
 
-- `APPROVED`: Process payout and select UPI or IMPS/NEFT/RTGS according to destination.
-- `PAYOUT_INITIATED` / `PROCESSING`: Check PayU status.
-- `FAILED`: Retry only after definitive provider failure.
-- `PAID`: no retry.
-- `REVERSED`: reconciliation required.
+- `APPROVED`: process payout with the destination-compatible payment type.
+- `PAYOUT_INITIATED` / `PROCESSING`: reconcile/check PayU status; no retry while unresolved.
+- `FAILED`: retry through a new payout attempt.
+- flagged `PENDING` / `REQUIRED` / `MISMATCH` / `CONFLICT`: reconcile before taking further action.
+- `PAID`: no arbitrary “Mark as Paid” control.
+- `REVERSED`: historical final state; no automatic retry.
 
-Normal users cannot initiate payouts or access admin payout controls.
+All payout-changing operations remain server-side admin-authorized. Users see only their own withdrawal history with masked destination data.
 
-## UAT testing
+## Environment safety
 
-PayU recommends testing with test credentials before production. PayU's current test documentation provides test behavior for bank-account transfer responses and a dedicated VPA (`kk@okaxis`) for VPA validation.
+Development/staging uses `PAYU_PAYOUT_ENVIRONMENT=TEST`. Production additionally requires `PAYU_PAYOUT_PRODUCTION_ENABLED=true`. Credentials are server-only and `.env` files must remain ignored. Production credentials are not part of Phase 5.6.
 
-Provider-level UAT requires a PayU payout test merchant, credentials, payout activation, and a reachable webhook URL. Without those external provider prerequisites, repository tests can verify security/state/idempotency behavior but cannot prove a real PayU transfer occurred.
+## UAT
 
-## Explicit exclusions
-
-Phase 5.5 does not add another payout provider, crypto/cash payouts, refunds, TDS/tax calculation, KYC providers, Aadhaar/PAN verification, arbitrary wallet editing, or automatic prize redistribution.
-
-Production launch still requires separate legal/compliance review for Indian gaming, payment, KYC, age, tax/TDS, fraud/AML, privacy, PayU terms, and game-publisher requirements.
+PayU recommends testing payout integration with test credentials before production. Repository tests cover state transitions, provider-result interpretation, idempotency rules, and accounting invariants. A real PayU UAT transfer still requires an activated PayU payout test merchant, valid UAT credentials, and a reachable webhook URL; repository tests cannot substitute for provider-side UAT.
