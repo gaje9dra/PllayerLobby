@@ -30,7 +30,9 @@ test("payout encryption uses authenticated ciphertext", () => {
   assert.equal(iv.length > 0, true);
   assert.equal(tag.length > 0, true);
   assert.equal(ciphertext.length > 0, true);
-  assert.throws(() => decryptPayoutDataWithKey(`${iv}.${tag}.${ciphertext.slice(0, -1)}x`, key));
+  const tamperedTag = Buffer.from(tag, "base64url");
+  tamperedTag[0] ^= 1;
+  assert.throws(() => decryptPayoutDataWithKey(`${iv}.${tamperedTag.toString("base64url")}.${ciphertext}`, key));
 });
 
 test("payout encryption rejects malformed payloads", () => {
