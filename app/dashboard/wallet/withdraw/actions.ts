@@ -3,11 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { cancelWithdrawalRequest, formatWithdrawalError } from "@/lib/withdrawal";
 import { createWithdrawalRequestWithDestination, formatWithdrawalDestinationError } from "@/lib/withdrawal-destination";
+import { requireActiveUser } from "@/lib/auth";
+import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 
 export type WithdrawalActionState = { ok: boolean; message?: string; withdrawalId?: string };
 
 export async function createWithdrawalAction(_previous: WithdrawalActionState, formData: FormData): Promise<WithdrawalActionState> {
   try {
+    const user = await requireActiveUser();
+    const rateLimit = await consumeSecurityRateLimit({ namespace: "withdrawal-create", key: user.id, limit: 5, windowSeconds: 60 });
+    if (!rateLimit.allowed) return { ok: false, message: "Too many withdrawal requests. Please wait and try again." };
+
     const amount = String(formData.get("amount") ?? "");
     const idempotencyKey = String(formData.get("idempotencyKey") ?? "");
     const destinationId = String(formData.get("payoutDestinationId") ?? "");
