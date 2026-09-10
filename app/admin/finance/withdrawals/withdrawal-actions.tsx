@@ -4,9 +4,9 @@ import { useActionState, useState } from "react";
 import { approveWithdrawalAction, checkPayoutStatusAction, processPayoutAction, rejectWithdrawalAction, retryPayoutAction, type AdminWithdrawalActionState } from "@/app/admin/finance/withdrawals/actions";
 
 const initial: AdminWithdrawalActionState = { ok: false };
-type Props = { withdrawalId: string; status: string; payoutId?: string | null; destinationType?: string | null; paymentType?: string | null };
+type Props = { withdrawalId: string; status: string; payoutId?: string | null; destinationType?: string | null; paymentType?: string | null; reconciliationStatus?: string | null };
 
-export function WithdrawalActions({ withdrawalId, status, payoutId, destinationType, paymentType }: Props) {
+export function WithdrawalActions({ withdrawalId, status, payoutId, destinationType, paymentType, reconciliationStatus }: Props) {
   const [approveState, approve, approving] = useActionState(approveWithdrawalAction, initial);
   const [rejectState, reject, rejecting] = useActionState(rejectWithdrawalAction, initial);
   const [processState, process, processing] = useActionState(processPayoutAction, initial);
@@ -15,6 +15,7 @@ export function WithdrawalActions({ withdrawalId, status, payoutId, destinationT
   const [reason, setReason] = useState("");
   const defaultType = destinationType === "UPI" ? "UPI" : (paymentType === "NEFT" || paymentType === "RTGS" || paymentType === "IMPS" ? paymentType : "IMPS");
   const bankOptions = <><option value="IMPS">IMPS</option><option value="NEFT">NEFT</option><option value="RTGS">RTGS</option></>;
+  const needsReconciliation = payoutId && ["PENDING", "REQUIRED", "MISMATCH", "CONFLICT"].includes(reconciliationStatus ?? "");
 
   if (status === "PENDING") return <div className="space-y-3">
     <form action={approve} onSubmit={(event) => { if (!window.confirm("Approve this withdrawal request?")) event.preventDefault(); }}><input type="hidden" name="withdrawalId" value={withdrawalId} /><button type="submit" disabled={approving || rejecting} className="w-full rounded-lg bg-lime-300 px-3 py-2 text-xs font-black text-slate-950 disabled:opacity-50">{approving ? "Approving…" : "Approve"}</button></form>
@@ -27,9 +28,9 @@ export function WithdrawalActions({ withdrawalId, status, payoutId, destinationT
     {processState.message ? <p role="status" className={`text-xs ${processState.ok ? "text-lime-200" : "text-rose-200"}`}>{processState.message}</p> : null}
   </div>;
 
-  if ((status === "PAYOUT_INITIATED" || status === "PROCESSING") && payoutId) return <div className="space-y-2">
-    <form action={check}><input type="hidden" name="payoutId" value={payoutId} /><button type="submit" disabled={checking} className="w-full rounded-lg border border-amber-300/20 px-3 py-2 text-xs font-bold text-amber-200 disabled:opacity-50">{checking ? "Checking…" : "Check PayU status"}</button></form>
-    <p className="text-[11px] text-slate-500">No retry while the transfer is unresolved.</p>{checkState.message ? <p role="status" className={`text-xs ${checkState.ok ? "text-lime-200" : "text-rose-200"}`}>{checkState.message}</p> : null}
+  if (payoutId && (status === "PAYOUT_INITIATED" || status === "PROCESSING" || needsReconciliation)) return <div className="space-y-2">
+    <form action={check}><input type="hidden" name="payoutId" value={payoutId} /><button type="submit" disabled={checking} className="w-full rounded-lg border border-amber-300/20 px-3 py-2 text-xs font-bold text-amber-200 disabled:opacity-50">{checking ? "Checking…" : "Reconcile PayU status"}</button></form>
+    {status === "PAYOUT_INITIATED" || status === "PROCESSING" ? <p className="text-[11px] text-slate-500">No retry while the transfer is unresolved.</p> : null}{checkState.message ? <p role="status" className={`text-xs ${checkState.ok ? "text-lime-200" : "text-rose-200"}`}>{checkState.message}</p> : null}
   </div>;
 
   if (status === "FAILED") return <div className="space-y-2">
@@ -38,6 +39,6 @@ export function WithdrawalActions({ withdrawalId, status, payoutId, destinationT
   </div>;
 
   if (status === "PAID") return <span className="text-xs font-semibold text-lime-200">Paid</span>;
-  if (status === "REVERSED") return <span className="text-xs font-semibold text-amber-200">Reconciliation required</span>;
+  if (status === "REVERSED") return <span className="text-xs font-semibold text-amber-200">Reversed — no automatic retry</span>;
   return <span className="text-xs font-semibold text-slate-500">No action</span>;
 }
