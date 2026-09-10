@@ -134,7 +134,7 @@ export async function initiateTransfer(input: { beneficiaryName: string; benefic
     payload.beneficiaryAccountNumber = input.accountNumber;
     payload.beneficiaryIfscCode = input.ifsc;
   }
-  const response = await requestPayout("/payout/v2/payment", { method: "POST", body: JSON.stringify([payload]) });
+  const response = await requestPayout(`/payout/v2/payment?pid=${encodeURIComponent(getPayUPayoutConfig().merchantId)}`, { method: "POST", body: JSON.stringify([payload]) });
   if (!response.ok) {
     if (response.status >= 500) throw new Error("PAYU_TRANSFER_UNCERTAIN");
     throw new Error("PAYU_TRANSFER_HTTP_ERROR");
