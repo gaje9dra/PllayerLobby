@@ -39,7 +39,7 @@ export async function processPayUPayoutWebhook(event: Event) {
       if (payout.status === PayoutStatus.FAILED || payout.status === PayoutStatus.REVERSED) return { recorded: true as const, action: "CRITICAL_MISMATCH" as const };
       const request = await tx.withdrawalRequest.findUnique({ where: { id: payout.withdrawalRequestId }, select: { id: true, walletId: true, amount: true, currency: true, status: true } });
       if (!request || request.currency !== payout.currency || compareMoney(request.amount.toString(), payout.amount.toString()) !== 0) throw new Error("PAYOUT_AMOUNT_MISMATCH");
-      if ([WithdrawalRequestStatus.FAILED, WithdrawalRequestStatus.REVERSED, WithdrawalRequestStatus.PAID].includes(request.status)) return { recorded: true as const, action: "CRITICAL_MISMATCH" as const };
+      if (([WithdrawalRequestStatus.FAILED, WithdrawalRequestStatus.REVERSED, WithdrawalRequestStatus.PAID] as WithdrawalRequestStatus[]).includes(request.status)) return { recorded: true as const, action: "CRITICAL_MISMATCH" as const };
       const walletRows = await tx.$queryRaw<Array<{ id: string; currency: string; balance: string }>>(Prisma.sql`SELECT "id", "currency", "balance"::text AS "balance" FROM "Wallet" WHERE "id" = ${request.walletId}::uuid FOR UPDATE`);
       const wallet = walletRows[0];
       if (!wallet || wallet.currency !== request.currency) throw new Error("WALLET_INTEGRITY_ERROR");
