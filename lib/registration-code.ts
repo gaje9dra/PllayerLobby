@@ -4,6 +4,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, t
 import { RegistrationStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireActiveUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 import { formatRegistrationCode, normalizeRegistrationCode } from "@/lib/registration-code-rules";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -76,6 +77,19 @@ export async function validateRegistrationCode(
   if (!UUID_PATTERN.test(registrationId) || !UUID_PATTERN.test(tournamentId)) return false;
   const user = await getCurrentUser();
   if (!user || user.status !== "ACTIVE") return false;
+
+  let rateLimit: Awaited<ReturnType<typeof consumeSecurityRateLimit>>;
+  try {
+    rateLimit = await consumeSecurityRateLimit({
+      namespace: "registration-code",
+      key: `${user.id}:${registrationId}`,
+      limit: 10,
+      windowSeconds: 300,
+    });
+  } catch {
+    return false;
+  }
+  if (!rateLimit.allowed) return false;
 
   const codeHash = hashRegistrationCode(input);
   if (!codeHash) return false;
