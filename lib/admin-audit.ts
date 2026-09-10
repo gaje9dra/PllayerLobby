@@ -1,5 +1,7 @@
 import "server-only";
 
+import crypto from "node:crypto";
+import { Prisma } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -24,20 +26,17 @@ export async function recordAdminAuditEvent(input: {
   const action = clean(input.action, MAX_ACTION_LENGTH);
   const targetType = clean(input.targetType, MAX_TARGET_TYPE_LENGTH);
   const targetId = clean(input.targetId, MAX_TARGET_ID_LENGTH);
-  let metadataJson: string | undefined;
+  let metadataJson: string | null = null;
   if (input.metadata) {
     metadataJson = JSON.stringify(input.metadata);
     if (metadataJson.length > MAX_METADATA_LENGTH) throw new Error("INVALID_AUDIT_METADATA");
   }
 
-  return prisma.adminAuditLog.create({
-    data: {
-      actorUserId: admin.id,
-      action,
-      targetType,
-      targetId,
-      metadataJson,
-    },
-    select: { id: true, actorUserId: true, action: true, targetType: true, targetId: true, createdAt: true },
-  });
+  const id = crypto.randomUUID();
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "AdminAuditLog" ("id", "actorUserId", "action", "targetType", "targetId", "metadataJson", "createdAt")
+    VALUES (${id}::uuid, ${admin.id}::uuid, ${action}, ${targetType}, ${targetId}, ${metadataJson}, CURRENT_TIMESTAMP)
+  `);
+
+  return { id, actorUserId: admin.id, action, targetType, targetId };
 }
