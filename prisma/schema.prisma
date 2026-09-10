@@ -200,7 +200,7 @@ model VerificationToken {
 }
 
 model Game {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @db.Uuid
   name String
   slug String @unique
   code String @unique
