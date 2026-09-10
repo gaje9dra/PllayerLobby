@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const body = await request.json() as Record<string, unknown>;
-    const authorization = request.headers.get("authorization") ?? request.headers.get("x-authorization") ?? String(body.authorization ?? "");
+    const authorization = request.headers.get("authorization") ?? "";
     await processPayUPayoutWebhook({
       event: String(body.event ?? ""),
       merchantReferenceId: typeof body.merchantReferenceId === "string" ? body.merchantReferenceId : undefined,
