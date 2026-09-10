@@ -127,6 +127,17 @@ enum PayoutStatus {
   REVERSED
 }
 
+enum PayoutReconciliationStatus {
+  NOT_CHECKED
+  PENDING
+  MATCHED
+  FAILED
+  REVERSED
+  MISMATCH
+  CONFLICT
+  REQUIRED
+}
+
 enum PayoutBeneficiaryStatus {
   ACTIVE
   PENDING
@@ -189,7 +200,7 @@ model VerificationToken {
 }
 
 model Game {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid())
   name String
   slug String @unique
   code String @unique
@@ -445,20 +456,29 @@ model Payout {
   merchantTransferId String @unique @db.VarChar(40)
   providerTransferId String? @unique
   providerReference String?
+  previousPayoutId String? @db.Uuid
   amount Decimal @db.Decimal(20, 2)
   currency String @db.VarChar(3)
   paymentType PayoutPaymentType
   status PayoutStatus @default(PAYOUT_INITIATED)
+  reconciliationStatus PayoutReconciliationStatus @default(NOT_CHECKED)
+  reconciliationMessage String? @db.VarChar(1000)
+  lastReconciledAt DateTime?
   failureCode String? @db.VarChar(128)
   failureReason String? @db.VarChar(1000)
   initiatedAt DateTime?
   completedAt DateTime?
+  reversedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   withdrawalRequest WithdrawalRequest @relation(fields: [withdrawalRequestId], references: [id], onDelete: Restrict)
+  previousPayout Payout? @relation("PayoutRetry", fields: [previousPayoutId], references: [id], onDelete: Restrict)
+  retryPayouts Payout[] @relation("PayoutRetry")
   webhookEvents PayoutWebhookEvent[]
   @@index([withdrawalRequestId])
   @@index([status])
+  @@index([reconciliationStatus])
+  @@index([previousPayoutId])
   @@index([createdAt])
 }
 
@@ -469,7 +489,9 @@ model PayoutWebhookEvent {
   merchantTransferId String? @db.VarChar(40)
   providerReference String?
   fingerprint String @unique @db.Char(64)
+  sanitizedPayload String? @db.Text
   receivedAt DateTime @default(now())
+  processedAt DateTime?
   payoutId String? @db.Uuid
   payout Payout? @relation(fields: [payoutId], references: [id], onDelete: Restrict)
   @@index([merchantTransferId])
