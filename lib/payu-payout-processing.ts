@@ -1,13 +1,14 @@
 import "server-only";
 
 import crypto from "node:crypto";
-import { Prisma, PayoutPaymentType, PayoutStatus, WithdrawalRequestStatus } from "@/app/generated/prisma/client";
+import { Prisma, PayoutPaymentType, PayoutReconciliationStatus, PayoutStatus, WithdrawalRequestStatus } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createBeneficiary, getTransferStatus, initiateTransfer, validateVPA } from "@/lib/payu-payout-client";
 import { decryptPayoutData } from "@/lib/payout-crypto";
 import { validatePayoutDestinationInput } from "@/lib/payout-destination-validation";
-import { compareMoney, normalizeMoney } from "@/lib/wallet-rules";
+import { addMoney, compareMoney, normalizeMoney, subtractMoney } from "@/lib/wallet-rules";
+import { assertPayoutTransition, isActivePayoutStatus } from "@/lib/payout-state";
 
 const PROVIDER = "PAYU";
 const ACTIVE = [PayoutStatus.PAYOUT_INITIATED, PayoutStatus.PROCESSING] as const;
@@ -16,7 +17,9 @@ type DestinationSnapshot =
   | { type: "UPI"; displayName: string; upiId: string }
   | { type: "BANK_ACCOUNT"; displayName: string; accountNumber: string; ifsc: string; accountHolderName: string; bankName: string };
 
-function safeMessage(value: unknown) { return String(value ?? "Provider request failed").replace(/[\r\n]+/g, " ").slice(0, 300); }
+type AuditEvent = { eventType: string; merchantTransferId?: string | null; providerReference?: string | null; payoutId?: string | null; payload?: Record<string, unknown> };
+
+function safeMessage(value: unknown) { return String(value ?? "Provider request failed").replace(/[\r\n]+/g, " ").slice(0, 1000); }
 function newMerchantRef() { return `PL${crypto.randomBytes(10).toString("hex")}${Date.now().toString(36)}`.slice(0, 40); }
 
 function readSnapshot(encrypted: string, type: "UPI" | "BANK_ACCOUNT"): DestinationSnapshot {
@@ -59,6 +62,35 @@ async function ensureBeneficiary(destinationId: string, snapshot: DestinationSna
   return prisma.payoutBeneficiary.upsert({ where: { payoutDestinationId_provider: { payoutDestinationId: destinationId, provider: PROVIDER } }, update: { providerBeneficiaryId: providerId, status: "ACTIVE" }, create: { payoutDestinationId: destinationId, provider: PROVIDER, providerBeneficiaryId: providerId, status: "ACTIVE" } });
 }
 
+function auditFingerprint(event: AuditEvent) {
+  return crypto.createHash("sha256").update(JSON.stringify({
+    eventType: event.eventType,
+    merchantTransferId: event.merchantTransferId ?? null,
+    providerReference: event.providerReference ?? null,
+    payoutId: event.payoutId ?? null,
+    payload: event.payload ?? null,
+  })).digest("hex");
+}
+
+async function recordAuditEvent(tx: Prisma.TransactionClient, event: AuditEvent) {
+  const fingerprint = auditFingerprint(event);
+  await tx.payoutWebhookEvent.create({
+    data: {
+      provider: PROVIDER,
+      eventType: event.eventType,
+      merchantTransferId: event.merchantTransferId ?? null,
+      providerReference: event.providerReference ?? null,
+      fingerprint,
+      sanitizedPayload: event.payload ? JSON.stringify(event.payload).slice(0, 10000) : null,
+      payoutId: event.payoutId ?? null,
+      processedAt: new Date(),
+    },
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message.includes("Unique constraint")) return;
+    throw error;
+  });
+}
+
 async function preparePayout(withdrawalId: string, paymentType: PayoutPaymentType, retry: boolean) {
   return prisma.$transaction(async (tx) => {
     const request = await tx.withdrawalRequest.findUnique({ where: { id: withdrawalId }, select: { id: true, userId: true, walletId: true, payoutDestinationId: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, encryptedDestinationSnapshot: true, amount: true, currency: true, status: true } });
@@ -73,18 +105,23 @@ async function preparePayout(withdrawalId: string, paymentType: PayoutPaymentTyp
     if (destination.maskedDestination !== request.destinationMaskedSnapshot) throw new Error("DESTINATION_SNAPSHOT_MISMATCH");
     const active = await tx.payout.findFirst({ where: { withdrawalRequestId: request.id, status: { in: [...ACTIVE] } }, select: { id: true } });
     if (active) throw new Error("PAYOUT_ALREADY_ACTIVE");
-    const payout = await tx.payout.create({ data: { withdrawalRequestId: request.id, provider: PROVIDER, merchantTransferId: newMerchantRef(), amount: request.amount, currency: request.currency, paymentType, status: PayoutStatus.PAYOUT_INITIATED, initiatedAt: new Date() } });
+    const previous = retry ? await tx.payout.findFirst({ where: { withdrawalRequestId: request.id }, orderBy: { createdAt: "desc" }, select: { id: true, status: true } }) : null;
+    if (retry && (!previous || previous.status !== PayoutStatus.FAILED)) throw new Error("PAYOUT_RETRY_NOT_ALLOWED");
+    const payout = await tx.payout.create({ data: { withdrawalRequestId: request.id, provider: PROVIDER, merchantTransferId: newMerchantRef(), previousPayoutId: previous?.id, amount: request.amount, currency: request.currency, paymentType, status: PayoutStatus.PAYOUT_INITIATED, reconciliationStatus: PayoutReconciliationStatus.NOT_CHECKED, initiatedAt: new Date() } });
     await tx.withdrawalRequest.update({ where: { id: request.id }, data: { status: WithdrawalRequestStatus.PAYOUT_INITIATED } });
+    await recordAuditEvent(tx, { eventType: retry ? "RETRY_CREATED" : "PAYOUT_INITIATED", merchantTransferId: payout.merchantTransferId, payoutId: payout.id, payload: { previousPayoutId: previous?.id ?? null } });
     return { payout, request };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 async function setFailed(payoutId: string, withdrawalId: string, code: string, reason: string) {
   await prisma.$transaction(async (tx) => {
-    const payout = await tx.payout.findUnique({ where: { id: payoutId }, select: { status: true } });
-    if (!payout || payout.status === PayoutStatus.PAID || payout.status === PayoutStatus.REVERSED) return;
-    await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.FAILED, failureCode: code.slice(0, 128), failureReason: reason.slice(0, 1000) } });
+    const payout = await tx.payout.findUnique({ where: { id: payoutId }, select: { status: true, merchantTransferId: true } });
+    if (!payout || payout.status === PayoutStatus.PAID || payout.status === PayoutStatus.REVERSED || payout.status === PayoutStatus.FAILED) return;
+    assertPayoutTransition(payout.status, PayoutStatus.FAILED);
+    await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.FAILED, reconciliationStatus: PayoutReconciliationStatus.FAILED, reconciliationMessage: reason.slice(0, 1000), lastReconciledAt: new Date(), failureCode: code.slice(0, 128), failureReason: reason.slice(0, 1000) } });
     await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.FAILED, rejectionReason: reason.slice(0, 1000) } });
+    await recordAuditEvent(tx, { eventType: "LOCAL_DEFINITIVE_FAILURE", merchantTransferId: payout.merchantTransferId, payoutId, payload: { code, reason } });
   });
 }
 
@@ -107,8 +144,12 @@ async function sendPrepared(prepared: Awaited<ReturnType<typeof preparePayout>>,
     const status = Number(root.status ?? -1);
     if (status === 0) {
       return prisma.$transaction(async (tx) => {
-        const payout = await tx.payout.update({ where: { id: prepared.payout.id }, data: { status: PayoutStatus.PROCESSING }, select: { id: true, status: true, merchantTransferId: true, amount: true, currency: true, paymentType: true } });
+        const current = await tx.payout.findUnique({ where: { id: prepared.payout.id }, select: { status: true } });
+        if (!current) throw new Error("PAYOUT_NOT_FOUND");
+        assertPayoutTransition(current.status, PayoutStatus.PROCESSING);
+        const payout = await tx.payout.update({ where: { id: prepared.payout.id }, data: { status: PayoutStatus.PROCESSING, reconciliationStatus: PayoutReconciliationStatus.PENDING, reconciliationMessage: null }, select: { id: true, status: true, merchantTransferId: true, amount: true, currency: true, paymentType: true } });
         await tx.withdrawalRequest.update({ where: { id: prepared.request.id }, data: { status: WithdrawalRequestStatus.PROCESSING } });
+        await recordAuditEvent(tx, { eventType: "TRANSFER_ACCEPTED", merchantTransferId: payout.merchantTransferId, payoutId: payout.id, payload: { providerStatus: "ACCEPTED" } });
         return payout;
       });
     }
@@ -122,7 +163,10 @@ async function sendPrepared(prepared: Awaited<ReturnType<typeof preparePayout>>,
     throw new Error("PAYU_TRANSFER_UNCERTAIN");
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
-    if (["PAYU_VPA_VALIDATION_FAILED", "PAYU_TRANSFER_REJECTED", "PAYU_TRANSFER_UNCERTAIN", "BENEFICIARY_CREATION_IN_PROGRESS", "PAYU_BENEFICIARY_CREATION_FAILED"].includes(code)) throw error;
+    if (code === "PAYU_TRANSFER_HTTP_ERROR") {
+      await setFailed(prepared.payout.id, prepared.request.id, "PAYU_TRANSFER_HTTP_ERROR", "PayU rejected the payout request before accepting it.");
+    }
+    if (["PAYU_VPA_VALIDATION_FAILED", "PAYU_TRANSFER_REJECTED", "PAYU_TRANSFER_UNCERTAIN", "BENEFICIARY_CREATION_IN_PROGRESS", "PAYU_BENEFICIARY_CREATION_FAILED", "PAYU_TRANSFER_HTTP_ERROR"].includes(code)) throw error;
     throw new Error("PAYU_TRANSFER_UNCERTAIN");
   }
 }
@@ -141,9 +185,9 @@ export async function retryFailedWithdrawalPayout(withdrawalId: string, paymentT
   return sendPrepared(await preparePayout(withdrawalId, paymentTypeFor(request.destinationTypeSnapshot, paymentTypeInput), true), true);
 }
 
-function providerResult(response: unknown, merchantRefId: string, expectedAmount: string, expectedCurrency: string) {
+export function providerResult(response: unknown, merchantRefId: string, expectedAmount: string, expectedCurrency: string) {
   const root = response && typeof response === "object" ? response as Record<string, unknown> : {};
-  const data = root.data && typeof root.data === "object" ? root.data as Record<string, unknown> : {};
+  const data = root.data && typeof root.data === "object' ? root.data as Record<string, unknown> : {};
   const rows = Array.isArray(data.transactionDetails) ? data.transactionDetails : [];
   const row = rows.find((item) => item && typeof item === "object" && String((item as Record<string, unknown>).merchantRefId ?? "") === merchantRefId) as Record<string, unknown> | undefined;
   if (!row) return { state: "UNKNOWN" as const };
@@ -158,98 +202,189 @@ function providerResult(response: unknown, merchantRefId: string, expectedAmount
   return { state: "PROCESSING" as const, providerReference: ref };
 }
 
+async function finalizeSuccessTx(tx: Prisma.TransactionClient, payoutId: string, withdrawalId: string, providerReference?: string, bankReference?: string) {
+  const payout = await tx.payout.findUnique({ where: { id: payoutId }, select: { id: true, status: true, merchantTransferId: true, withdrawalRequestId: true, amount: true, currency: true } });
+  if (!payout || payout.withdrawalRequestId !== withdrawalId) throw new Error("PAYOUT_NOT_FOUND");
+  if (payout.status === PayoutStatus.PAID) return "ALREADY_PAID" as const;
+  if (payout.status === PayoutStatus.FAILED || payout.status === PayoutStatus.REVERSED) throw new Error("PAYOUT_STATE_CONFLICT");
+  assertPayoutTransition(payout.status, PayoutStatus.PAID);
+  const request = await tx.withdrawalRequest.findUnique({ where: { id: withdrawalId }, select: { id: true, walletId: true, amount: true, currency: true, status: true } });
+  if (!request || request.status === WithdrawalRequestStatus.PAID || request.status === WithdrawalRequestStatus.FAILED || request.status === WithdrawalRequestStatus.REVERSED) throw new Error("PAYOUT_STATE_CONFLICT");
+  if (request.currency !== payout.currency || compareMoney(request.amount.toString(), payout.amount.toString()) !== 0) throw new Error("PAYOUT_AMOUNT_MISMATCH");
+  const walletRows = await tx.$queryRaw<Array<{ id: string; currency: string; balance: string }>>(Prisma.sql`SELECT "id", "currency", "balance"::text AS "balance" FROM "Wallet" WHERE "id" = ${request.walletId}::uuid FOR UPDATE`);
+  const wallet = walletRows[0];
+  if (!wallet || wallet.currency !== request.currency) throw new Error("WALLET_INTEGRITY_ERROR");
+  if (compareMoney(wallet.balance, payout.amount.toString()) < 0) throw new Error("INSUFFICIENT_WALLET_BALANCE");
+  const existing = await tx.walletTransaction.findFirst({ where: { walletId: request.walletId, referenceType: "WITHDRAWAL_PAYOUT", referenceId: payout.id, type: "DEBIT", category: "WITHDRAWAL" }, select: { id: true, amount: true, currency: true } });
+  if (!existing) {
+    const next = subtractMoney(wallet.balance, payout.amount.toString());
+    await tx.walletTransaction.create({ data: { walletId: request.walletId, type: "DEBIT", category: "WITHDRAWAL", amount: payout.amount, currency: request.currency, referenceType: "WITHDRAWAL_PAYOUT", referenceId: payout.id, description: "Successful PayU payout" } });
+    await tx.wallet.update({ where: { id: request.walletId }, data: { balance: next } });
+  } else if (existing.amount.toString() !== payout.amount.toString() || existing.currency !== payout.currency) throw new Error("PAYOUT_LEDGER_TERM_MISMATCH");
+  await tx.payout.update({ where: { id: payout.id }, data: { status: PayoutStatus.PAID, providerTransferId: providerReference || undefined, providerReference: bankReference || providerReference || undefined, completedAt: new Date(), reconciliationStatus: PayoutReconciliationStatus.MATCHED, reconciliationMessage: null, lastReconciledAt: new Date() } });
+  await tx.withdrawalRequest.update({ where: { id: request.id }, data: { status: WithdrawalRequestStatus.PAID } });
+  return "PAID" as const;
+}
+
+async function finalizeFailureTx(tx: Prisma.TransactionClient, payoutId: string, withdrawalId: string, providerReference?: string, message?: string) {
+  const payout = await tx.payout.findUnique({ where: { id: payoutId }, select: { id: true, status: true, merchantTransferId: true } });
+  if (!payout) throw new Error("PAYOUT_NOT_FOUND");
+  if (payout.status === PayoutStatus.FAILED) return "ALREADY_FAILED" as const;
+  if (payout.status === PayoutStatus.PAID || payout.status === PayoutStatus.REVERSED) throw new Error("PAYOUT_STATE_CONFLICT");
+  assertPayoutTransition(payout.status, PayoutStatus.FAILED);
+  const reason = safeMessage(message || "PayU reported a definitive transfer failure.");
+  await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.FAILED, providerTransferId: providerReference || undefined, providerReference: providerReference || undefined, failureCode: "PAYU_TRANSFER_FAILED", failureReason: reason, reconciliationStatus: PayoutReconciliationStatus.FAILED, reconciliationMessage: reason, lastReconciledAt: new Date() } });
+  await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.FAILED, rejectionReason: reason } });
+  return "FAILED" as const;
+}
+
+async function reversePayoutTx(tx: Prisma.TransactionClient, payoutId: string, withdrawalId: string, providerReference?: string, bankReference?: string) {
+  const payout = await tx.payout.findUnique({ where: { id: payoutId }, select: { id: true, status: true, merchantTransferId: true, withdrawalRequestId: true, amount: true, currency: true } });
+  if (!payout || payout.withdrawalRequestId !== withdrawalId) throw new Error("PAYOUT_NOT_FOUND");
+  if (payout.status === PayoutStatus.REVERSED) return "ALREADY_REVERSED" as const;
+  if (payout.status !== PayoutStatus.PAID) throw new Error("PAYOUT_STATE_CONFLICT");
+  assertPayoutTransition(payout.status, PayoutStatus.REVERSED);
+  const request = await tx.withdrawalRequest.findUnique({ where: { id: withdrawalId }, select: { id: true, walletId: true, amount: true, currency: true, status: true } });
+  if (!request || request.status !== WithdrawalRequestStatus.PAID || request.currency !== payout.currency || compareMoney(request.amount.toString(), payout.amount.toString()) !== 0) throw new Error("PAYOUT_STATE_CONFLICT");
+  const walletRows = await tx.$queryRaw<Array<{ id: string; currency: string; balance: string }>>(Prisma.sql`SELECT "id", "currency", "balance"::text AS "balance" FROM "Wallet" WHERE "id" = ${request.walletId}::uuid FOR UPDATE`);
+  const wallet = walletRows[0];
+  if (!wallet || wallet.currency !== request.currency) throw new Error("WALLET_INTEGRITY_ERROR");
+  const debit = await tx.walletTransaction.findFirst({ where: { walletId: request.walletId, referenceType: "WITHDRAWAL_PAYOUT", referenceId: payout.id, type: "DEBIT", category: "WITHDRAWAL" }, select: { amount: true, currency: true } });
+  if (!debit || debit.currency !== payout.currency || compareMoney(debit.amount.toString(), payout.amount.toString()) !== 0) throw new Error("PAYOUT_LEDGER_TERM_MISMATCH");
+  const credit = await tx.walletTransaction.findFirst({ where: { walletId: request.walletId, referenceType: "WITHDRAWAL_PAYOUT", referenceId: payout.id, type: "CREDIT", category: "WITHDRAWAL" }, select: { amount: true, currency: true } });
+  if (!credit) {
+    const next = addMoney(wallet.balance, payout.amount.toString());
+    await tx.walletTransaction.create({ data: { walletId: request.walletId, type: "CREDIT", category: "WITHDRAWAL", amount: payout.amount, currency: request.currency, referenceType: "WITHDRAWAL_PAYOUT", referenceId: payout.id, description: "Reversal of PayU payout" } });
+    await tx.wallet.update({ where: { id: request.walletId }, data: { balance: next } });
+  } else if (credit.amount.toString() !== payout.amount.toString() || credit.currency !== payout.currency) throw new Error("PAYOUT_LEDGER_TERM_MISMATCH");
+  await tx.payout.update({ where: { id: payout.id }, data: { status: PayoutStatus.REVERSED, providerTransferId: providerReference || undefined, providerReference: bankReference || providerReference || undefined, reversedAt: new Date(), reconciliationStatus: PayoutReconciliationStatus.REVERSED, reconciliationMessage: "PayU reversed the previously successful payout.", lastReconciledAt: new Date() } });
+  await tx.withdrawalRequest.update({ where: { id: request.id }, data: { status: WithdrawalRequestStatus.REVERSED } });
+  return "REVERSED" as const;
+}
+
 export async function reconcilePayUPayout(payoutId: string) {
   await requireAdmin();
   const payout = await prisma.payout.findUnique({ where: { id: payoutId }, include: { withdrawalRequest: { select: { id: true, amount: true, currency: true, status: true } } } });
   if (!payout) throw new Error("PAYOUT_NOT_FOUND");
   const response = await getTransferStatus(payout.merchantTransferId);
   const provider = providerResult(response, payout.merchantTransferId, payout.amount.toString(), payout.currency);
-  if (provider.state === "MISMATCH") return { payoutId, localStatus: payout.status, providerStatus: "MISMATCH" as const, providerReference: null };
-  if (provider.state === "SUCCESS") {
-    if (payout.status === PayoutStatus.FAILED || payout.status === PayoutStatus.REVERSED) return { payoutId, localStatus: payout.status, providerStatus: "SUCCESS" as const, providerReference: provider.providerReference ?? null, discrepancy: "LOCAL_FINAL_FAILURE_CONFLICTS_WITH_PROVIDER_SUCCESS" };
-    await finalizeSuccess(payout.id, payout.withdrawalRequestId, provider.providerReference, provider.bankReference);
-  } else if (provider.state === "FAILED") {
-    if (payout.status === PayoutStatus.PAID) return { payoutId, localStatus: payout.status, providerStatus: "FAILED" as const, providerReference: provider.providerReference ?? null, discrepancy: "LOCAL_PAID_CONFLICTS_WITH_PROVIDER_FAILURE" };
-    await finalizeFailure(payout.id, payout.withdrawalRequestId, provider.providerReference, provider.message);
-  }
-  return { payoutId, localStatus: payout.status, providerStatus: provider.state, providerReference: provider.providerReference ?? null };
-}
-
-async function finalizeSuccess(payoutId: string, withdrawalId: string, providerReference?: string, bankReference?: string) {
-  await prisma.$transaction(async (tx) => {
-    const payout = await tx.payout.findUnique({ where: { id: payoutId }, select: { id: true, status: true, withdrawalRequestId: true, amount: true, currency: true } });
-    if (!payout || payout.withdrawalRequestId !== withdrawalId) throw new Error("PAYOUT_NOT_FOUND");
-    if (payout.status === PayoutStatus.PAID) return;
-    if (payout.status === PayoutStatus.FAILED || payout.status === PayoutStatus.REVERSED) throw new Error("PAYOUT_STATE_CONFLICT");
-    const request = await tx.withdrawalRequest.findUnique({ where: { id: withdrawalId }, select: { id: true, walletId: true, amount: true, currency: true, status: true } });
-    if (!request || request.status === WithdrawalRequestStatus.PAID || request.status === WithdrawalRequestStatus.FAILED || request.status === WithdrawalRequestStatus.REVERSED) throw new Error("PAYOUT_STATE_CONFLICT");
-    if (request.currency !== payout.currency || compareMoney(request.amount.toString(), payout.amount.toString()) !== 0) throw new Error("PAYOUT_AMOUNT_MISMATCH");
-    const walletRows = await tx.$queryRaw<Array<{ id: string; currency: string; balance: string }>>(Prisma.sql`SELECT "id", "currency", "balance"::text AS "balance" FROM "Wallet" WHERE "id" = ${request.walletId}::uuid FOR UPDATE`);
-    const wallet = walletRows[0];
-    if (!wallet || wallet.currency !== request.currency) throw new Error("WALLET_INTEGRITY_ERROR");
-    if (compareMoney(wallet.balance, payout.amount.toString()) < 0) throw new Error("INSUFFICIENT_WALLET_BALANCE");
-    const existing = await tx.walletTransaction.findFirst({ where: { walletId: request.walletId, referenceType: "WITHDRAWAL_PAYOUT", referenceId: payout.id, type: "DEBIT", category: "WITHDRAWAL" }, select: { id: true, amount: true, currency: true } });
-    if (!existing) {
-      const cents = BigInt(wallet.balance.replace(".", "")) - BigInt(payout.amount.toString().replace(".", ""));
-      const next = `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
-      await tx.walletTransaction.create({ data: { walletId: request.walletId, type: "DEBIT", category: "WITHDRAWAL", amount: payout.amount, currency: request.currency, referenceType: "WITHDRAWAL_PAYOUT", referenceId: payout.id, description: "Successful PayU payout" } });
-      await tx.wallet.update({ where: { id: request.walletId }, data: { balance: next } });
-    } else if (existing.amount.toString() !== payout.amount.toString() || existing.currency !== payout.currency) throw new Error("PAYOUT_LEDGER_TERM_MISMATCH");
-    await tx.payout.update({ where: { id: payout.id }, data: { status: PayoutStatus.PAID, providerTransferId: providerReference || undefined, providerReference: bankReference || providerReference || undefined, completedAt: new Date() } });
-    await tx.withdrawalRequest.update({ where: { id: request.id }, data: { status: WithdrawalRequestStatus.PAID } });
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.payout.findUnique({ where: { id: payout.id }, select: { id: true, status: true, merchantTransferId: true, withdrawalRequestId: true } });
+    if (!current) throw new Error("PAYOUT_NOT_FOUND");
+    if (provider.state === "MISMATCH") {
+      await tx.payout.update({ where: { id: current.id }, data: { reconciliationStatus: PayoutReconciliationStatus.MISMATCH, reconciliationMessage: "PayU status response amount/currency does not match the approved payout.", lastReconciledAt: new Date() } });
+      await recordAuditEvent(tx, { eventType: "RECONCILIATION_MISMATCH", merchantTransferId: current.merchantTransferId, payoutId: current.id, payload: { providerStatus: "MISMATCH" } });
+      return { payoutId, localStatus: current.status, providerStatus: "MISMATCH" as const, providerReference: null };
+    }
+    if (provider.state === "UNKNOWN") {
+      await tx.payout.update({ where: { id: current.id }, data: { reconciliationStatus: PayoutReconciliationStatus.PENDING, reconciliationMessage: "PayU did not return a definitive transaction record; payout remains unresolved.", lastReconciledAt: new Date() } });
+      await recordAuditEvent(tx, { eventType: "RECONCILIATION_PENDING", merchantTransferId: current.merchantTransferId, payoutId: current.id, payload: { providerStatus: "UNKNOWN" } });
+      return { payoutId, localStatus: current.status, providerStatus: "UNKNOWN" as const, providerReference: null };
+    }
+    if (provider.state === "PROCESSING") {
+      await tx.payout.update({ where: { id: current.id }, data: { reconciliationStatus: PayoutReconciliationStatus.PENDING, reconciliationMessage: null, lastReconciledAt: new Date(), providerReference: provider.providerReference || undefined } });
+      await recordAuditEvent(tx, { eventType: "RECONCILIATION_PENDING", merchantTransferId: current.merchantTransferId, providerReference: provider.providerReference, payoutId: current.id, payload: { providerStatus: "PROCESSING" } });
+      return { payoutId, localStatus: current.status, providerStatus: "PROCESSING" as const, providerReference: provider.providerReference ?? null };
+    }
+    if (provider.state === "SUCCESS") {
+      if (current.status === PayoutStatus.FAILED || current.status === PayoutStatus.REVERSED) {
+        await tx.payout.update({ where: { id: current.id }, data: { reconciliationStatus: PayoutReconciliationStatus.CONFLICT, reconciliationMessage: "Provider SUCCESS conflicts with a local final failure/reversal.", lastReconciledAt: new Date() } });
+        await recordAuditEvent(tx, { eventType: "RECONCILIATION_CONFLICT", merchantTransferId: current.merchantTransferId, providerReference: provider.providerReference, payoutId: current.id, payload: { providerStatus: "SUCCESS", localStatus: current.status } });
+        return { payoutId, localStatus: current.status, providerStatus: "SUCCESS" as const, providerReference: provider.providerReference ?? null, discrepancy: "LOCAL_FINAL_FAILURE_CONFLICTS_WITH_PROVIDER_SUCCESS" };
+      }
+      const action = await finalizeSuccessTx(tx, current.id, current.withdrawalRequestId, provider.providerReference, provider.bankReference);
+      await recordAuditEvent(tx, { eventType: "RECONCILIATION_SUCCESS", merchantTransferId: current.merchantTransferId, providerReference: provider.providerReference, payoutId: current.id, payload: { providerStatus: "SUCCESS", accountingAction: action } });
+      return { payoutId, localStatus: PayoutStatus.PAID, providerStatus: "SUCCESS" as const, providerReference: provider.providerReference ?? null };
+    }
+    if (current.status === PayoutStatus.PAID || current.status === PayoutStatus.REVERSED) {
+      await tx.payout.update({ where: { id: current.id }, data: { reconciliationStatus: PayoutReconciliationStatus.CONFLICT, reconciliationMessage: "Provider FAILURE conflicts with a local final successful/reversed payout.", lastReconciledAt: new Date() } });
+      await recordAuditEvent(tx, { eventType: "RECONCILIATION_CONFLICT", merchantTransferId: current.merchantTransferId, providerReference: provider.providerReference, payoutId: current.id, payload: { providerStatus: "FAILED", localStatus: current.status } });
+      return { payoutId, localStatus: current.status, providerStatus: "FAILED" as const, providerReference: provider.providerReference ?? null, discrepancy: "LOCAL_FINAL_SUCCESS_CONFLICTS_WITH_PROVIDER_FAILURE" };
+    }
+    const action = await finalizeFailureTx(tx, current.id, current.withdrawalRequestId, provider.providerReference, provider.message);
+    await recordAuditEvent(tx, { eventType: "RECONCILIATION_FAILURE", merchantTransferId: current.merchantTransferId, providerReference: provider.providerReference, payoutId: current.id, payload: { providerStatus: "FAILED", accountingAction: action } });
+    return { payoutId, localStatus: PayoutStatus.FAILED, providerStatus: "FAILED" as const, providerReference: provider.providerReference ?? null };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
-async function finalizeFailure(payoutId: string, withdrawalId: string, providerReference?: string, message?: string) {
-  await prisma.$transaction(async (tx) => {
-    const payout = await tx.payout.findUnique({ where: { id: payoutId }, select: { status: true } });
-    if (!payout || payout.status === PayoutStatus.PAID || payout.status === PayoutStatus.REVERSED) return;
-    await tx.payout.update({ where: { id: payoutId }, data: { status: PayoutStatus.FAILED, providerTransferId: providerReference || undefined, providerReference: providerReference || undefined, failureCode: "PAYU_TRANSFER_FAILED", failureReason: safeMessage(message || "PayU reported a definitive transfer failure.") } });
-    await tx.withdrawalRequest.update({ where: { id: withdrawalId }, data: { status: WithdrawalRequestStatus.FAILED, rejectionReason: safeMessage(message || "PayU reported a definitive transfer failure.") } });
-  });
-}
-
-export async function handlePayUPayoutWebhook(event: { event: string; merchantReferenceId?: string; payuRefId?: string; bankReferenceId?: string; payoutMerchantId?: string; msg?: string; authorization?: string }) {
+export async function processPayUPayoutWebhook(event: { event: string; merchantReferenceId?: string; payuRefId?: string; bankReferenceId?: string; payoutMerchantId?: string; msg?: string; authorization?: string }) {
   const { getPayUPayoutConfig } = await import("@/lib/payu-payout-client");
   const config = getPayUPayoutConfig();
   if (event.authorization !== config.webhookSecret) throw new Error("INVALID_WEBHOOK_AUTHORIZATION");
   if (event.payoutMerchantId !== config.merchantId) throw new Error("INVALID_PAYOUT_MERCHANT_ID");
-  if (!event.merchantReferenceId) throw new Error("MISSING_MERCHANT_REFERENCE");
-  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ event: event.event, merchantReferenceId: event.merchantReferenceId, payuRefId: event.payuRefId ?? null, bankReferenceId: event.bankReferenceId ?? null, payoutMerchantId: event.payoutMerchantId, msg: event.msg ?? null })).digest("hex");
-  try {
-    const result = await prisma.$transaction(async (tx) => {
-      const duplicate = await tx.payoutWebhookEvent.findUnique({ where: { fingerprint }, select: { id: true } });
-      if (duplicate) return { duplicate: true as const };
-      const payout = await tx.payout.findUnique({ where: { merchantTransferId: event.merchantReferenceId! }, select: { id: true, withdrawalRequestId: true } });
-      await tx.payoutWebhookEvent.create({ data: { provider: PROVIDER, eventType: event.event, merchantTransferId: event.merchantReferenceId, providerReference: event.payuRefId || event.bankReferenceId || null, fingerprint, payoutId: payout?.id } });
-      if (!payout) return { unknown: true as const };
-      if (event.event === "TRANSFER_SUCCESS") return { action: "SUCCESS" as const, payoutId: payout.id, withdrawalId: payout.withdrawalRequestId, providerReference: event.payuRefId, bankReference: event.bankReferenceId };
-      if (event.event === "TRANSFER_FAILED") return { action: "FAILED" as const, payoutId: payout.id, withdrawalId: payout.withdrawalRequestId, providerReference: event.payuRefId, message: event.msg };
-      if (event.event === "TRANSFER_REVERSED") return { action: "REVERSED" as const, payoutId: payout.id, withdrawalId: payout.withdrawalRequestId, providerReference: event.payuRefId, bankReference: event.bankReferenceId };
-      return { action: "IGNORED" as const };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    if ("duplicate" in result && result.duplicate) return result;
-    if ("unknown" in result && result.unknown) return result;
-    if (result.action === "SUCCESS") await finalizeSuccess(result.payoutId, result.withdrawalId, result.providerReference, result.bankReference);
-    else if (result.action === "FAILED") await finalizeFailure(result.payoutId, result.withdrawalId, result.providerReference, result.message);
-    else if (result.action === "REVERSED") await prisma.$transaction(async (tx) => {
-      const payout = await tx.payout.findUnique({ where: { id: result.payoutId }, select: { status: true } });
-      if (!payout || payout.status === PayoutStatus.REVERSED) return;
-      if (payout.status === PayoutStatus.FAILED) throw new Error("PAYOUT_STATE_CONFLICT");
-      await tx.payout.update({ where: { id: result.payoutId }, data: { status: PayoutStatus.REVERSED, providerTransferId: result.providerReference || undefined, providerReference: result.bankReference || result.providerReference || undefined } });
-      await tx.withdrawalRequest.update({ where: { id: result.withdrawalId }, data: { status: WithdrawalRequestStatus.REVERSED } });
+  const transactionEvents = new Set(["TRANSFER_SUCCESS", "TRANSFER_FAILED", "TRANSFER_REVERSED", "REQUEST_PROCESSING_FAILED"]);
+  const requiresPayout = transactionEvents.has(event.event);
+  if (requiresPayout && !event.merchantReferenceId && !event.payuRefId && !event.bankReferenceId) throw new Error("MISSING_MERCHANT_REFERENCE");
+  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ event: event.event, merchantReferenceId: event.merchantReferenceId ?? null, payuRefId: event.payuRefId ?? null, bankReferenceId: event.bankReferenceId ?? null, payoutMerchantId: event.payoutMerchantId ?? null, msg: event.msg ?? null })).digest("hex");
+  return prisma.$transaction(async (tx) => {
+    const duplicate = await tx.payoutWebhookEvent.findUnique({ where: { fingerprint }, select: { id: true } });
+    if (duplicate) return { duplicate: true as const };
+
+    const sanitizedPayload = JSON.stringify({ event: event.event, merchantReferenceId: event.merchantReferenceId ?? null, payuRefId: event.payuRefId ?? null, bankReferenceId: event.bankReferenceId ?? null, payoutMerchantId: event.payoutMerchantId ?? null, msg: safeMessage(event.msg) });
+    if (!requiresPayout) {
+      await tx.payoutWebhookEvent.create({ data: { provider: PROVIDER, eventType: event.event, merchantTransferId: event.merchantReferenceId ?? null, providerReference: event.payuRefId || event.bankReferenceId || null, fingerprint, sanitizedPayload, receivedAt: new Date(), processedAt: new Date() } });
+      return { recorded: true as const, action: "IGNORED" as const };
+    }
+
+    const payout = await tx.payout.findFirst({
+      where: {
+        provider: PROVIDER,
+        OR: [
+          ...(event.merchantReferenceId ? [{ merchantTransferId: event.merchantReferenceId }] : []),
+          ...(event.payuRefId ? [{ providerTransferId: event.payuRefId }, { providerReference: event.payuRefId }] : []),
+          ...(event.bankReferenceId ? [{ providerReference: event.bankReferenceId }] : []),
+        ],
+      },
+      select: { id: true, withdrawalRequestId: true, status: true, merchantTransferId: true },
     });
-    return result;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("Unique constraint")) return { duplicate: true };
-    throw error;
-  }
+
+    if (!payout) {
+      await tx.payoutWebhookEvent.create({ data: { provider: PROVIDER, eventType: event.event, merchantTransferId: event.merchantReferenceId ?? null, providerReference: event.payuRefId || event.bankReferenceId || null, fingerprint, sanitizedPayload, processedAt: new Date() } });
+      return { unknown: true as const };
+    }
+
+    await tx.payoutWebhookEvent.create({ data: { provider: PROVIDER, eventType: event.event, merchantTransferId: event.merchantReferenceId ?? payout.merchantTransferId, providerReference: event.payuRefId || event.bankReferenceId || null, fingerprint, sanitizedPayload, payoutId: payout.id, processedAt: new Date() } });
+
+    if (event.event === "REQUEST_PROCESSING_FAILED") {
+      await tx.payout.update({ where: { id: payout.id }, data: { reconciliationStatus: PayoutReconciliationStatus.REQUIRED, reconciliationMessage: safeMessage(event.msg || "PayU reported request-processing failure; provider status must be reconciled."), lastReconciledAt: new Date(), providerTransferId: event.payuRefId || undefined, providerReference: event.payuRefId || undefined } });
+      return { recorded: true as const, action: "RECONCILIATION_REQUIRED" as const, payoutId: payout.id };
+    }
+
+    if (event.event === "TRANSFER_SUCCESS") {
+      if (payout.status === PayoutStatus.FAILED || payout.status === PayoutStatus.REVERSED) {
+        await tx.payout.update({ where: { id: payout.id }, data: { reconciliationStatus: PayoutReconciliationStatus.CONFLICT, reconciliationMessage: "PayU SUCCESS conflicts with the local final payout state.", lastReconciledAt: new Date() } });
+        return { recorded: true as const, action: "CRITICAL_MISMATCH" as const };
+      }
+      const action = await finalizeSuccessTx(tx, payout.id, payout.withdrawalRequestId, event.payuRefId, event.bankReferenceId);
+      return { recorded: true as const, action: action === "ALREADY_PAID" ? "ALREADY_PAID" as const : "PAID" as const };
+    }
+
+    if (event.event === "TRANSFER_FAILED") {
+      if (payout.status === PayoutStatus.PAID || payout.status === PayoutStatus.REVERSED) {
+        await tx.payout.update({ where: { id: payout.id }, data: { reconciliationStatus: PayoutReconciliationStatus.CONFLICT, reconciliationMessage: "PayU FAILURE conflicts with the local final payout state.", lastReconciledAt: new Date() } });
+        return { recorded: true as const, action: "CRITICAL_MISMATCH" as const };
+      }
+      await finalizeFailureTx(tx, payout.id, payout.withdrawalRequestId, event.payuRefId, event.msg);
+      return { recorded: true as const, action: "FAILED" as const };
+    }
+
+    if (event.event === "TRANSFER_REVERSED") {
+      if (payout.status === PayoutStatus.FAILED || payout.status === PayoutStatus.PAYOUT_INITIATED || payout.status === PayoutStatus.PROCESSING) {
+        await tx.payout.update({ where: { id: payout.id }, data: { reconciliationStatus: PayoutReconciliationStatus.CONFLICT, reconciliationMessage: "PayU reversal arrived before a locally recorded successful payout.", lastReconciledAt: new Date() } });
+        return { recorded: true as const, action: "CRITICAL_MISMATCH" as const };
+      }
+      await reversePayoutTx(tx, payout.id, payout.withdrawalRequestId, event.payuRefId, event.bankReferenceId);
+      return { recorded: true as const, action: "REVERSED" as const };
+    }
+
+    return { recorded: true as const, action: "IGNORED" as const };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 export function formatPayoutError(error: unknown) {
   const code = error instanceof Error ? error.message : "";
   const messages: Record<string, string> = {
     PAYU_PAYOUT_ENVIRONMENT_INVALID: "PayU payout environment is invalid.", PAYU_PAYOUT_PRODUCTION_DISABLED: "Production payouts are disabled by the safety switch.", PAYU_AUTH_FAILED: "PayU payout authentication failed.", WITHDRAWAL_NOT_APPROVED: "The withdrawal must be approved before payout processing.", PAYOUT_ALREADY_ACTIVE: "A payout is already processing for this withdrawal.", PAYOUT_RETRY_NOT_ALLOWED: "Retry is allowed only after a definitive PayU failure.",
-    DESTINATION_NOT_VERIFIED: "The payout destination must be verified before processing.", DESTINATION_DISABLED: "The payout destination is disabled.", DESTINATION_SNAPSHOT_MISMATCH: "The payout destination no longer matches the approved withdrawal snapshot.", PAYU_VPA_VALIDATION_FAILED: "PayU could not validate the UPI VPA.", PAYU_BENEFICIARY_CREATION_FAILED: "PayU beneficiary registration failed.", BENEFICIARY_CREATION_IN_PROGRESS: "PayU beneficiary registration is still being reconciled.", PAYU_TRANSFER_REJECTED: "PayU rejected the payout request.", PAYU_TRANSFER_UNCERTAIN: "PayU did not provide a definitive result. Check PayU status before retrying.", PAYU_TRANSFER_HTTP_ERROR: "PayU rejected the payout request.", INVALID_PAYMENT_TYPE: "Invalid payout payment type.", UPI_REQUIRES_UPI_PAYMENT_TYPE: "UPI destinations require UPI payout processing.", BANK_DESTINATION_REQUIRES_BANK_PAYMENT_TYPE: "Bank destinations require IMPS, NEFT, or RTGS.", PAYOUT_AMOUNT_MISMATCH: "The payout amount does not match the withdrawal.", WALLET_INTEGRITY_ERROR: "Wallet integrity validation failed.", INSUFFICIENT_WALLET_BALANCE: "The wallet balance is insufficient for the payout.", PAYOUT_STATE_CONFLICT: "The provider result conflicts with an existing final financial state and requires reconciliation." };
+    DESTINATION_NOT_VERIFIED: "The payout destination must be verified before processing.", DESTINATION_DISABLED: "The payout destination is disabled.", DESTINATION_SNAPSHOT_MISMATCH: "The payout destination no longer matches the approved withdrawal snapshot.", PAYU_VPA_VALIDATION_FAILED: "PayU could not validate the payout VPA.", PAYU_BENEFICIARY_CREATION_FAILED: "PayU beneficiary registration failed.", BENEFICIARY_CREATION_IN_PROGRESS: "PayU beneficiary registration is still being reconciled.", PAYU_TRANSFER_REJECTED: "PayU rejected the payout request.", PAYU_TRANSFER_UNCERTAIN: "PayU did not provide a definitive result. Check PayU status before retrying.", PAYU_TRANSFER_HTTP_ERROR: "PayU rejected the payout request.", INVALID_PAYMENT_TYPE: "Invalid payout payment type.", UPI_REQUIRES_UPI_PAYMENT_TYPE: "UPI destinations require UPI payout processing.", BANK_DESTINATION_REQUIRES_BANK_PAYMENT_TYPE: "Bank destinations require IMPS, NEFT, or RTGS.", PAYOUT_AMOUNT_MISMATCH: "The payout amount does not match the withdrawal.", WALLET_INTEGRITY_ERROR: "Wallet integrity validation failed.", INSUFFICIENT_WALLET_BALANCE: "The wallet balance is insufficient for the payout.", PAYOUT_STATE_CONFLICT: "The provider result conflicts with an existing final financial state and requires reconciliation.", INVALID_PAYOUT_STATE_TRANSITION: "The payout state transition is not allowed." };
   return messages[code] ?? "Payout processing could not be completed.";
 }
