@@ -1,12 +1,27 @@
 import { NextResponse } from "next/server";
 import { processPayUPayoutWebhook } from "@/lib/payu-payout-webhook";
+import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const authorization = request.headers.get("authorization") ?? "";
+  try {
+    const rateLimit = await consumeSecurityRateLimit({
+      namespace: "payu-payout-webhook",
+      key: authorization || "missing-authorization",
+      limit: 120,
+      windowSeconds: 60,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ ok: false }, { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } });
+    }
+  } catch {
+    return NextResponse.json({ ok: false }, { status: 503 });
+  }
+
   try {
     const body = await request.json() as Record<string, unknown>;
-    const authorization = request.headers.get("authorization") ?? "";
     await processPayUPayoutWebhook({
       event: String(body.event ?? ""),
       merchantReferenceId: typeof body.merchantReferenceId === "string" ? body.merchantReferenceId : undefined,
