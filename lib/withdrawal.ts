@@ -71,8 +71,11 @@ export async function getCurrentUserWithdrawals(page = 1) {
   const wallet = await prisma.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
   if (!wallet) return { items: [], page: safePage, total: 0, totalPages: 1 };
   const skip = (safePage - 1) * WITHDRAWAL_PAGE_SIZE;
-  const [items, total] = await Promise.all([prisma.withdrawalRequest.findMany({ where: { userId: user.id, walletId: wallet.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WITHDRAWAL_PAGE_SIZE, select: { id: true, amount: true, currency: true, status: true, rejectionReason: true, createdAt: true, updatedAt: true, reviewedAt: true } }), prisma.withdrawalRequest.count({ where: { userId: user.id, walletId: wallet.id } })]);
-  return { items, page: safePage, total, totalPages: Math.max(1, Math.ceil(total / WITHDRAWAL_PAGE_SIZE)) };
+  const [items, total] = await Promise.all([
+    prisma.withdrawalRequest.findMany({ where: { userId: user.id, walletId: wallet.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WITHDRAWAL_PAGE_SIZE, select: { id: true, amount: true, currency: true, status: true, rejectionReason: true, createdAt: true, updatedAt: true, reviewedAt: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, payouts: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, paymentType: true, status: true, providerReference: true, providerTransferId: true, initiatedAt: true, completedAt: true, reversedAt: true, failureReason: true } } } }),
+    prisma.withdrawalRequest.count({ where: { userId: user.id, walletId: wallet.id } }),
+  ]);
+  return { items: items.map((item) => ({ ...item, payout: item.payouts[0] ?? null })), page: safePage, total, totalPages: Math.max(1, Math.ceil(total / WITHDRAWAL_PAGE_SIZE)) };
 }
 
 export async function createWithdrawalRequest(_amountInput: string, _idempotencyKeyInput: string) { throw new Error("PAYOUT_DESTINATION_REQUIRED"); }
