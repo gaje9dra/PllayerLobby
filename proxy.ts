@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function proxy(request: NextRequest) {
-  const requestId = request.headers.get("x-request-id")?.trim() || randomUUID();
+  const supplied = request.headers.get("x-request-id")?.trim() || "";
+  const requestId = /^[A-Za-z0-9_-]{8,100}$/.test(supplied) ? supplied : randomUUID();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
