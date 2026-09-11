@@ -8,8 +8,13 @@ import { SectionContainer } from "@/components/ui/section-container";
 import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
-  title: "Payment Result | PlayerLobby",
+  title: "Payment Result",
   description: "View the server-verified status of your tournament payment.",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
 };
 
 export const dynamic = "force-dynamic";
