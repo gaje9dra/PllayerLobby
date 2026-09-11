@@ -6,7 +6,12 @@ import { SignOutButton } from "@/components/auth/sign-out-button";
 
 export const metadata: Metadata = {
   title: "Profile",
-  description: "View your ArenaX account information.",
+  description: "View your private PlayerLobby account information.",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
 };
 
 export default async function ProfilePage() {
