@@ -1,14 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
 
-export default function GlobalError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  useEffect(() => {
-    // Keep production error details out of the UI; the framework/server logs retain the diagnostic context.
-  }, []);
-
+export default function GlobalError({ reset }: { reset: () => void }) {
   return (
     <SectionContainer className="py-16 sm:py-24">
       <section className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.025] p-8 text-center shadow-2xl shadow-black/20 sm:p-10">
