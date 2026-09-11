@@ -1,5 +1,7 @@
 import "server-only";
 
+import { assertPayoutsEnabled } from "@/lib/env";
+
 export type PayUPayoutEnvironment = "TEST" | "PRODUCTION";
 export type PayUPaymentType = "UPI" | "IMPS" | "NEFT" | "RTGS";
 
@@ -117,6 +119,7 @@ export async function validateVPA(vpa: string) {
 }
 
 export async function initiateTransfer(input: { beneficiaryName: string; beneficiaryEmail?: string; beneficiaryMobile?: string; accountNumber?: string; ifsc?: string; vpa?: string; purpose: string; amount: number; batchId: string; merchantRefId: string; paymentType: PayUPaymentType; retry: boolean }) {
+  assertPayoutsEnabled();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(input.merchantRefId)) throw new Error("INVALID_MERCHANT_REFERENCE");
   const payload: Record<string, unknown> = {
     beneficiaryName: input.beneficiaryName,
