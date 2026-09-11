@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { RegistrationStatus, TournamentStatus } from "@/app/generated/prisma/client";
@@ -8,6 +9,12 @@ import { Button } from "@/components/ui/button";
 import { JoinRoom } from "@/components/tournaments/join-room";
 import { getJoiningWindowStart } from "@/lib/tournament-room-rules";
 import { formatAppDateTime } from "@/lib/timezone";
+
+export const metadata: Metadata = {
+  title: "Tournament Joining",
+  description: "Private tournament joining information for authorized participants.",
+  robots: { index: false, follow: false, nocache: true },
+};
 
 export const dynamic = "force-dynamic";
 
