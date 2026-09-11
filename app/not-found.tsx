@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
+
+export const metadata: Metadata = {
+  title: "Page Not Found",
+  description: "The requested PlayerLobby page could not be found.",
+  robots: { index: false, follow: false, nocache: true },
+};
 
 export default function NotFound() {
   return (
