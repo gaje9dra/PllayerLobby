@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENVIRONMENT: test
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      APP_TIMEZONE: Asia/Kolkata
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/playerlobby
+      AUTH_SECRET: ci-auth-secret
+      GOOGLE_CLIENT_ID: ci-google-client-id
+      GOOGLE_CLIENT_SECRET: ci-google-client-secret
+      PAYU_MERCHANT_KEY: ci-payu-key
+      PAYU_MERCHANT_SALT: ci-payu-salt
+      PAYU_ENVIRONMENT: test
+      CRON_SECRET: ci-cron-secret
+      PAYOUT_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMA==
+      PAYU_PAYOUT_ENVIRONMENT: TEST
+      PAYU_PAYOUT_MERCHANT_ID: ci-payout-merchant
+      PAYU_PAYOUT_CLIENT_ID: ci-payout-client
+      PAYU_PAYOUT_CLIENT_SECRET: ci-payout-secret
+      PAYU_PAYOUT_WEBHOOK_SECRET: ci-payout-webhook
+      PAYU_PAYOUT_PRODUCTION_ENABLED: "false"
+      PAYOUTS_ENABLED: "true"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: playerlobby
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d playerlobby"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Prisma generate
+        run: npm run prisma:generate
+      - name: Prisma validate
+        run: npm run db:validate
+      - name: Prisma migrate
+        run: npm run db:migrate:deploy
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Tests
+        run: npm test
+      - name: Production build
+        run: npm run build
