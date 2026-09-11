@@ -4,6 +4,7 @@ import { TournamentStatus } from "@/app/generated/prisma/client";
 import { TournamentCard } from "@/components/tournaments/tournament-card";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
+import { siteConfig } from "@/config/site";
 import { prisma } from "@/lib/prisma";
 import { updateDueTournamentLifecycles } from "@/lib/tournament-lifecycle";
 
@@ -19,13 +20,13 @@ export const metadata: Metadata = {
   description: "Browse live and upcoming esports tournaments, compare entry fees and prize pools, and find your next match.",
   alternates: { canonical: "/tournaments" },
   openGraph: {
-    title: "Tournaments | ArenaX",
+    title: `Tournaments | ${siteConfig.name}`,
     description: "Browse live and upcoming esports tournaments and find your next match.",
     url: "/tournaments",
   },
   twitter: {
     card: "summary",
-    title: "Tournaments | ArenaX",
+    title: `Tournaments | ${siteConfig.name}`,
     description: "Browse live and upcoming esports tournaments and find your next match.",
   },
 };
