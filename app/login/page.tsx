@@ -1,6 +1,17 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { siteConfig } from "@/config/site";
+
+export const metadata: Metadata = {
+  title: "Sign in",
+  description: `Securely sign in to ${siteConfig.name} with Google.`,
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
+};
 
 const errorMessages: Record<string, string> = {
   AccountSuspended: "This account is currently suspended. Please contact support if you believe this is a mistake.",
