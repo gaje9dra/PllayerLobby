@@ -47,3 +47,158 @@ export const TournamentStatus = {
 } as const
 
 export type TournamentStatus = (typeof TournamentStatus)[keyof typeof TournamentStatus]
+
+
+export const RegistrationStatus = {
+  PENDING: 'PENDING',
+  CONFIRMED: 'CONFIRMED',
+  CANCELLED: 'CANCELLED'
+} as const
+
+export type RegistrationStatus = (typeof RegistrationStatus)[keyof typeof RegistrationStatus]
+
+
+export const PaymentStatus = {
+  INITIATED: 'INITIATED',
+  PENDING: 'PENDING',
+  SUCCESS: 'SUCCESS',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED'
+} as const
+
+export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus]
+
+
+export const TournamentResultStatus = {
+  DRAFT: 'DRAFT',
+  VERIFIED: 'VERIFIED',
+  DISQUALIFIED: 'DISQUALIFIED'
+} as const
+
+export type TournamentResultStatus = (typeof TournamentResultStatus)[keyof typeof TournamentResultStatus]
+
+
+export const TournamentPrizeStatus = {
+  DRAFT: 'DRAFT',
+  FINALIZED: 'FINALIZED'
+} as const
+
+export type TournamentPrizeStatus = (typeof TournamentPrizeStatus)[keyof typeof TournamentPrizeStatus]
+
+
+export const TournamentPrizeSettlementStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  CREDITED: 'CREDITED',
+  CANCELLED: 'CANCELLED'
+} as const
+
+export type TournamentPrizeSettlementStatus = (typeof TournamentPrizeSettlementStatus)[keyof typeof TournamentPrizeSettlementStatus]
+
+
+export const WalletTransactionType = {
+  CREDIT: 'CREDIT',
+  DEBIT: 'DEBIT'
+} as const
+
+export type WalletTransactionType = (typeof WalletTransactionType)[keyof typeof WalletTransactionType]
+
+
+export const WalletTransactionCategory = {
+  PRIZE: 'PRIZE',
+  REFUND: 'REFUND',
+  WITHDRAWAL: 'WITHDRAWAL',
+  ENTRY_FEE: 'ENTRY_FEE',
+  ADJUSTMENT: 'ADJUSTMENT'
+} as const
+
+export type WalletTransactionCategory = (typeof WalletTransactionCategory)[keyof typeof WalletTransactionCategory]
+
+
+export const WalletReferenceType = {
+  PRIZE_SETTLEMENT: 'PRIZE_SETTLEMENT',
+  REFUND: 'REFUND',
+  WITHDRAWAL: 'WITHDRAWAL',
+  WITHDRAWAL_PAYOUT: 'WITHDRAWAL_PAYOUT',
+  ENTRY_PAYMENT: 'ENTRY_PAYMENT',
+  ADJUSTMENT: 'ADJUSTMENT'
+} as const
+
+export type WalletReferenceType = (typeof WalletReferenceType)[keyof typeof WalletReferenceType]
+
+
+export const WithdrawalRequestStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  PAYOUT_INITIATED: 'PAYOUT_INITIATED',
+  PROCESSING: 'PROCESSING',
+  PAID: 'PAID',
+  FAILED: 'FAILED',
+  REVERSED: 'REVERSED',
+  REJECTED: 'REJECTED',
+  CANCELLED: 'CANCELLED'
+} as const
+
+export type WithdrawalRequestStatus = (typeof WithdrawalRequestStatus)[keyof typeof WithdrawalRequestStatus]
+
+
+export const PayoutDestinationType = {
+  UPI: 'UPI',
+  BANK_ACCOUNT: 'BANK_ACCOUNT'
+} as const
+
+export type PayoutDestinationType = (typeof PayoutDestinationType)[keyof typeof PayoutDestinationType]
+
+
+export const PayoutDestinationStatus = {
+  PENDING_VERIFICATION: 'PENDING_VERIFICATION',
+  VERIFIED: 'VERIFIED',
+  DISABLED: 'DISABLED'
+} as const
+
+export type PayoutDestinationStatus = (typeof PayoutDestinationStatus)[keyof typeof PayoutDestinationStatus]
+
+
+export const PayoutPaymentType = {
+  UPI: 'UPI',
+  IMPS: 'IMPS',
+  NEFT: 'NEFT',
+  RTGS: 'RTGS'
+} as const
+
+export type PayoutPaymentType = (typeof PayoutPaymentType)[keyof typeof PayoutPaymentType]
+
+
+export const PayoutStatus = {
+  PAYOUT_INITIATED: 'PAYOUT_INITIATED',
+  PROCESSING: 'PROCESSING',
+  PAID: 'PAID',
+  FAILED: 'FAILED',
+  REVERSED: 'REVERSED'
+} as const
+
+export type PayoutStatus = (typeof PayoutStatus)[keyof typeof PayoutStatus]
+
+
+export const PayoutReconciliationStatus = {
+  NOT_CHECKED: 'NOT_CHECKED',
+  PENDING: 'PENDING',
+  MATCHED: 'MATCHED',
+  FAILED: 'FAILED',
+  REVERSED: 'REVERSED',
+  MISMATCH: 'MISMATCH',
+  CONFLICT: 'CONFLICT',
+  REQUIRED: 'REQUIRED'
+} as const
+
+export type PayoutReconciliationStatus = (typeof PayoutReconciliationStatus)[keyof typeof PayoutReconciliationStatus]
+
+
+export const PayoutBeneficiaryStatus = {
+  ACTIVE: 'ACTIVE',
+  PENDING: 'PENDING',
+  FAILED: 'FAILED',
+  DISABLED: 'DISABLED'
+} as const
+
+export type PayoutBeneficiaryStatus = (typeof PayoutBeneficiaryStatus)[keyof typeof PayoutBeneficiaryStatus]

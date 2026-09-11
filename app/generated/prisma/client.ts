@@ -71,3 +71,83 @@ export type Game = Prisma.GameModel
  * 
  */
 export type Tournament = Prisma.TournamentModel
+/**
+ * Model Registration
+ * 
+ */
+export type Registration = Prisma.RegistrationModel
+/**
+ * Model RegistrationCode
+ * 
+ */
+export type RegistrationCode = Prisma.RegistrationCodeModel
+/**
+ * Model TournamentRoom
+ * 
+ */
+export type TournamentRoom = Prisma.TournamentRoomModel
+/**
+ * Model Payment
+ * 
+ */
+export type Payment = Prisma.PaymentModel
+/**
+ * Model TournamentResult
+ * 
+ */
+export type TournamentResult = Prisma.TournamentResultModel
+/**
+ * Model TournamentPrize
+ * 
+ */
+export type TournamentPrize = Prisma.TournamentPrizeModel
+/**
+ * Model TournamentPrizeSettlement
+ * 
+ */
+export type TournamentPrizeSettlement = Prisma.TournamentPrizeSettlementModel
+/**
+ * Model Wallet
+ * 
+ */
+export type Wallet = Prisma.WalletModel
+/**
+ * Model WalletTransaction
+ * 
+ */
+export type WalletTransaction = Prisma.WalletTransactionModel
+/**
+ * Model WithdrawalRequest
+ * 
+ */
+export type WithdrawalRequest = Prisma.WithdrawalRequestModel
+/**
+ * Model PayoutDestination
+ * 
+ */
+export type PayoutDestination = Prisma.PayoutDestinationModel
+/**
+ * Model PayoutBeneficiary
+ * 
+ */
+export type PayoutBeneficiary = Prisma.PayoutBeneficiaryModel
+/**
+ * Model Payout
+ * 
+ */
+export type Payout = Prisma.PayoutModel
+/**
+ * Model PayoutWebhookEvent
+ * 
+ */
+export type PayoutWebhookEvent = Prisma.PayoutWebhookEventModel
+/**
+ * Model SecurityRateLimit
+ * 
+ */
+export type SecurityRateLimit = Prisma.SecurityRateLimitModel
+/**
+ * Model AdminAuditLog
+ * 
+ */
+export type AdminAuditLog = Prisma.AdminAuditLogModel

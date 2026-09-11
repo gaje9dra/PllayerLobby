@@ -56,7 +56,23 @@ export const ModelName = {
   Session: 'Session',
   VerificationToken: 'VerificationToken',
   Game: 'Game',
-  Tournament: 'Tournament'
+  Tournament: 'Tournament',
+  Registration: 'Registration',
+  RegistrationCode: 'RegistrationCode',
+  TournamentRoom: 'TournamentRoom',
+  Payment: 'Payment',
+  TournamentResult: 'TournamentResult',
+  TournamentPrize: 'TournamentPrize',
+  TournamentPrizeSettlement: 'TournamentPrizeSettlement',
+  Wallet: 'Wallet',
+  WalletTransaction: 'WalletTransaction',
+  WithdrawalRequest: 'WithdrawalRequest',
+  PayoutDestination: 'PayoutDestination',
+  PayoutBeneficiary: 'PayoutBeneficiary',
+  Payout: 'Payout',
+  PayoutWebhookEvent: 'PayoutWebhookEvent',
+  SecurityRateLimit: 'SecurityRateLimit',
+  AdminAuditLog: 'AdminAuditLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -79,6 +95,7 @@ export const UserScalarFieldEnum = {
   id: 'id',
   name: 'name',
   email: 'email',
+  phone: 'phone',
   emailVerified: 'emailVerified',
   image: 'image',
   role: 'role',
@@ -165,6 +182,251 @@ export const TournamentScalarFieldEnum = {
 } as const
 
 export type TournamentScalarFieldEnum = (typeof TournamentScalarFieldEnum)[keyof typeof TournamentScalarFieldEnum]
+
+
+export const RegistrationScalarFieldEnum = {
+  id: 'id',
+  tournamentId: 'tournamentId',
+  userId: 'userId',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type RegistrationScalarFieldEnum = (typeof RegistrationScalarFieldEnum)[keyof typeof RegistrationScalarFieldEnum]
+
+
+export const RegistrationCodeScalarFieldEnum = {
+  id: 'id',
+  registrationId: 'registrationId',
+  codeHash: 'codeHash',
+  codeEncrypted: 'codeEncrypted',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  revokedAt: 'revokedAt'
+} as const
+
+export type RegistrationCodeScalarFieldEnum = (typeof RegistrationCodeScalarFieldEnum)[keyof typeof RegistrationCodeScalarFieldEnum]
+
+
+export const TournamentRoomScalarFieldEnum = {
+  id: 'id',
+  tournamentId: 'tournamentId',
+  roomIdEncrypted: 'roomIdEncrypted',
+  roomPasswordEncrypted: 'roomPasswordEncrypted',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  publishedAt: 'publishedAt',
+  revokedAt: 'revokedAt'
+} as const
+
+export type TournamentRoomScalarFieldEnum = (typeof TournamentRoomScalarFieldEnum)[keyof typeof TournamentRoomScalarFieldEnum]
+
+
+export const PaymentScalarFieldEnum = {
+  id: 'id',
+  registrationId: 'registrationId',
+  merchantTransactionId: 'merchantTransactionId',
+  payuTransactionId: 'payuTransactionId',
+  amount: 'amount',
+  currency: 'currency',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PaymentScalarFieldEnum = (typeof PaymentScalarFieldEnum)[keyof typeof PaymentScalarFieldEnum]
+
+
+export const TournamentResultScalarFieldEnum = {
+  id: 'id',
+  tournamentId: 'tournamentId',
+  registrationId: 'registrationId',
+  rank: 'rank',
+  score: 'score',
+  resultStatus: 'resultStatus',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type TournamentResultScalarFieldEnum = (typeof TournamentResultScalarFieldEnum)[keyof typeof TournamentResultScalarFieldEnum]
+
+
+export const TournamentPrizeScalarFieldEnum = {
+  id: 'id',
+  tournamentId: 'tournamentId',
+  rank: 'rank',
+  amount: 'amount',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type TournamentPrizeScalarFieldEnum = (typeof TournamentPrizeScalarFieldEnum)[keyof typeof TournamentPrizeScalarFieldEnum]
+
+
+export const TournamentPrizeSettlementScalarFieldEnum = {
+  id: 'id',
+  tournamentId: 'tournamentId',
+  prizeId: 'prizeId',
+  registrationId: 'registrationId',
+  resultId: 'resultId',
+  rank: 'rank',
+  amount: 'amount',
+  currency: 'currency',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type TournamentPrizeSettlementScalarFieldEnum = (typeof TournamentPrizeSettlementScalarFieldEnum)[keyof typeof TournamentPrizeSettlementScalarFieldEnum]
+
+
+export const WalletScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  currency: 'currency',
+  balance: 'balance',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type WalletScalarFieldEnum = (typeof WalletScalarFieldEnum)[keyof typeof WalletScalarFieldEnum]
+
+
+export const WalletTransactionScalarFieldEnum = {
+  id: 'id',
+  walletId: 'walletId',
+  type: 'type',
+  category: 'category',
+  amount: 'amount',
+  currency: 'currency',
+  referenceType: 'referenceType',
+  referenceId: 'referenceId',
+  description: 'description',
+  createdAt: 'createdAt'
+} as const
+
+export type WalletTransactionScalarFieldEnum = (typeof WalletTransactionScalarFieldEnum)[keyof typeof WalletTransactionScalarFieldEnum]
+
+
+export const WithdrawalRequestScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  walletId: 'walletId',
+  payoutDestinationId: 'payoutDestinationId',
+  destinationTypeSnapshot: 'destinationTypeSnapshot',
+  destinationMaskedSnapshot: 'destinationMaskedSnapshot',
+  encryptedDestinationSnapshot: 'encryptedDestinationSnapshot',
+  amount: 'amount',
+  currency: 'currency',
+  status: 'status',
+  idempotencyKey: 'idempotencyKey',
+  rejectionReason: 'rejectionReason',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  reviewedAt: 'reviewedAt',
+  reviewedById: 'reviewedById'
+} as const
+
+export type WithdrawalRequestScalarFieldEnum = (typeof WithdrawalRequestScalarFieldEnum)[keyof typeof WithdrawalRequestScalarFieldEnum]
+
+
+export const PayoutDestinationScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  type: 'type',
+  status: 'status',
+  displayName: 'displayName',
+  maskedDestination: 'maskedDestination',
+  encryptedDestinationData: 'encryptedDestinationData',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  verifiedAt: 'verifiedAt'
+} as const
+
+export type PayoutDestinationScalarFieldEnum = (typeof PayoutDestinationScalarFieldEnum)[keyof typeof PayoutDestinationScalarFieldEnum]
+
+
+export const PayoutBeneficiaryScalarFieldEnum = {
+  id: 'id',
+  payoutDestinationId: 'payoutDestinationId',
+  provider: 'provider',
+  providerBeneficiaryId: 'providerBeneficiaryId',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PayoutBeneficiaryScalarFieldEnum = (typeof PayoutBeneficiaryScalarFieldEnum)[keyof typeof PayoutBeneficiaryScalarFieldEnum]
+
+
+export const PayoutScalarFieldEnum = {
+  id: 'id',
+  withdrawalRequestId: 'withdrawalRequestId',
+  provider: 'provider',
+  merchantTransferId: 'merchantTransferId',
+  providerTransferId: 'providerTransferId',
+  providerReference: 'providerReference',
+  previousPayoutId: 'previousPayoutId',
+  amount: 'amount',
+  currency: 'currency',
+  paymentType: 'paymentType',
+  status: 'status',
+  reconciliationStatus: 'reconciliationStatus',
+  reconciliationMessage: 'reconciliationMessage',
+  lastReconciledAt: 'lastReconciledAt',
+  failureCode: 'failureCode',
+  failureReason: 'failureReason',
+  initiatedAt: 'initiatedAt',
+  completedAt: 'completedAt',
+  reversedAt: 'reversedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PayoutScalarFieldEnum = (typeof PayoutScalarFieldEnum)[keyof typeof PayoutScalarFieldEnum]
+
+
+export const PayoutWebhookEventScalarFieldEnum = {
+  id: 'id',
+  provider: 'provider',
+  eventType: 'eventType',
+  merchantTransferId: 'merchantTransferId',
+  providerReference: 'providerReference',
+  fingerprint: 'fingerprint',
+  sanitizedPayload: 'sanitizedPayload',
+  receivedAt: 'receivedAt',
+  processedAt: 'processedAt',
+  payoutId: 'payoutId'
+} as const
+
+export type PayoutWebhookEventScalarFieldEnum = (typeof PayoutWebhookEventScalarFieldEnum)[keyof typeof PayoutWebhookEventScalarFieldEnum]
+
+
+export const SecurityRateLimitScalarFieldEnum = {
+  id: 'id',
+  keyHash: 'keyHash',
+  windowStartedAt: 'windowStartedAt',
+  requestCount: 'requestCount',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type SecurityRateLimitScalarFieldEnum = (typeof SecurityRateLimitScalarFieldEnum)[keyof typeof SecurityRateLimitScalarFieldEnum]
+
+
+export const AdminAuditLogScalarFieldEnum = {
+  id: 'id',
+  actorUserId: 'actorUserId',
+  action: 'action',
+  targetType: 'targetType',
+  targetId: 'targetId',
+  metadataJson: 'metadataJson',
+  createdAt: 'createdAt'
+} as const
+
+export type AdminAuditLogScalarFieldEnum = (typeof AdminAuditLogScalarFieldEnum)[keyof typeof AdminAuditLogScalarFieldEnum]
 
 
 export const SortOrder = {

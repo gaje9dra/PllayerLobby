@@ -28,6 +28,7 @@ export type UserMinAggregateOutputType = {
   id: string | null
   name: string | null
   email: string | null
+  phone: string | null
   emailVerified: Date | null
   image: string | null
   role: $Enums.UserRole | null
@@ -40,6 +41,7 @@ export type UserMaxAggregateOutputType = {
   id: string | null
   name: string | null
   email: string | null
+  phone: string | null
   emailVerified: Date | null
   image: string | null
   role: $Enums.UserRole | null
@@ -52,6 +54,7 @@ export type UserCountAggregateOutputType = {
   id: number
   name: number
   email: number
+  phone: number
   emailVerified: number
   image: number
   role: number
@@ -66,6 +69,7 @@ export type UserMinAggregateInputType = {
   id?: true
   name?: true
   email?: true
+  phone?: true
   emailVerified?: true
   image?: true
   role?: true
@@ -78,6 +82,7 @@ export type UserMaxAggregateInputType = {
   id?: true
   name?: true
   email?: true
+  phone?: true
   emailVerified?: true
   image?: true
   role?: true
@@ -90,6 +95,7 @@ export type UserCountAggregateInputType = {
   id?: true
   name?: true
   email?: true
+  phone?: true
   emailVerified?: true
   image?: true
   role?: true
@@ -175,6 +181,7 @@ export type UserGroupByOutputType = {
   id: string
   name: string | null
   email: string
+  phone: string | null
   emailVerified: Date | null
   image: string | null
   role: $Enums.UserRole
@@ -208,6 +215,7 @@ export type UserWhereInput = {
   id?: Prisma.UuidFilter<"User"> | string
   name?: Prisma.StringNullableFilter<"User"> | string | null
   email?: Prisma.StringFilter<"User"> | string
+  phone?: Prisma.StringNullableFilter<"User"> | string | null
   emailVerified?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   image?: Prisma.StringNullableFilter<"User"> | string | null
   role?: Prisma.EnumUserRoleFilter<"User"> | $Enums.UserRole
@@ -216,12 +224,19 @@ export type UserWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
   sessions?: Prisma.SessionListRelationFilter
+  registrations?: Prisma.RegistrationListRelationFilter
+  wallet?: Prisma.XOR<Prisma.WalletNullableScalarRelationFilter, Prisma.WalletWhereInput> | null
+  withdrawalRequests?: Prisma.WithdrawalRequestListRelationFilter
+  reviewedWithdrawals?: Prisma.WithdrawalRequestListRelationFilter
+  payoutDestinations?: Prisma.PayoutDestinationListRelationFilter
+  adminAuditEvents?: Prisma.AdminAuditLogListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   name?: Prisma.SortOrderInput | Prisma.SortOrder
   email?: Prisma.SortOrder
+  phone?: Prisma.SortOrderInput | Prisma.SortOrder
   emailVerified?: Prisma.SortOrderInput | Prisma.SortOrder
   image?: Prisma.SortOrderInput | Prisma.SortOrder
   role?: Prisma.SortOrder
@@ -230,6 +245,12 @@ export type UserOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   accounts?: Prisma.AccountOrderByRelationAggregateInput
   sessions?: Prisma.SessionOrderByRelationAggregateInput
+  registrations?: Prisma.RegistrationOrderByRelationAggregateInput
+  wallet?: Prisma.WalletOrderByWithRelationInput
+  withdrawalRequests?: Prisma.WithdrawalRequestOrderByRelationAggregateInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestOrderByRelationAggregateInput
+  payoutDestinations?: Prisma.PayoutDestinationOrderByRelationAggregateInput
+  adminAuditEvents?: Prisma.AdminAuditLogOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -239,6 +260,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   OR?: Prisma.UserWhereInput[]
   NOT?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
   name?: Prisma.StringNullableFilter<"User"> | string | null
+  phone?: Prisma.StringNullableFilter<"User"> | string | null
   emailVerified?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   image?: Prisma.StringNullableFilter<"User"> | string | null
   role?: Prisma.EnumUserRoleFilter<"User"> | $Enums.UserRole
@@ -247,12 +269,19 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
   sessions?: Prisma.SessionListRelationFilter
+  registrations?: Prisma.RegistrationListRelationFilter
+  wallet?: Prisma.XOR<Prisma.WalletNullableScalarRelationFilter, Prisma.WalletWhereInput> | null
+  withdrawalRequests?: Prisma.WithdrawalRequestListRelationFilter
+  reviewedWithdrawals?: Prisma.WithdrawalRequestListRelationFilter
+  payoutDestinations?: Prisma.PayoutDestinationListRelationFilter
+  adminAuditEvents?: Prisma.AdminAuditLogListRelationFilter
 }, "id" | "email">
 
 export type UserOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   name?: Prisma.SortOrderInput | Prisma.SortOrder
   email?: Prisma.SortOrder
+  phone?: Prisma.SortOrderInput | Prisma.SortOrder
   emailVerified?: Prisma.SortOrderInput | Prisma.SortOrder
   image?: Prisma.SortOrderInput | Prisma.SortOrder
   role?: Prisma.SortOrder
@@ -271,6 +300,7 @@ export type UserScalarWhereWithAggregatesInput = {
   id?: Prisma.UuidWithAggregatesFilter<"User"> | string
   name?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   email?: Prisma.StringWithAggregatesFilter<"User"> | string
+  phone?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   emailVerified?: Prisma.DateTimeNullableWithAggregatesFilter<"User"> | Date | string | null
   image?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   role?: Prisma.EnumUserRoleWithAggregatesFilter<"User"> | $Enums.UserRole
@@ -283,6 +313,7 @@ export type UserCreateInput = {
   id?: string
   name?: string | null
   email: string
+  phone?: string | null
   emailVerified?: Date | string | null
   image?: string | null
   role?: $Enums.UserRole
@@ -291,12 +322,19 @@ export type UserCreateInput = {
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogCreateNestedManyWithoutActorInput
 }
 
 export type UserUncheckedCreateInput = {
   id?: string
   name?: string | null
   email: string
+  phone?: string | null
   emailVerified?: Date | string | null
   image?: string | null
   role?: $Enums.UserRole
@@ -305,12 +343,19 @@ export type UserUncheckedCreateInput = {
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletUncheckedCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedCreateNestedManyWithoutActorInput
 }
 
 export type UserUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
@@ -319,12 +364,19 @@ export type UserUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUpdateManyWithoutActorNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
@@ -333,12 +385,19 @@ export type UserUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUncheckedUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedUpdateManyWithoutActorNestedInput
 }
 
 export type UserCreateManyInput = {
   id?: string
   name?: string | null
   email: string
+  phone?: string | null
   emailVerified?: Date | string | null
   image?: string | null
   role?: $Enums.UserRole
@@ -351,6 +410,7 @@ export type UserUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
@@ -363,6 +423,7 @@ export type UserUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
@@ -375,6 +436,7 @@ export type UserCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   name?: Prisma.SortOrder
   email?: Prisma.SortOrder
+  phone?: Prisma.SortOrder
   emailVerified?: Prisma.SortOrder
   image?: Prisma.SortOrder
   role?: Prisma.SortOrder
@@ -387,6 +449,7 @@ export type UserMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   name?: Prisma.SortOrder
   email?: Prisma.SortOrder
+  phone?: Prisma.SortOrder
   emailVerified?: Prisma.SortOrder
   image?: Prisma.SortOrder
   role?: Prisma.SortOrder
@@ -399,6 +462,7 @@ export type UserMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   name?: Prisma.SortOrder
   email?: Prisma.SortOrder
+  phone?: Prisma.SortOrder
   emailVerified?: Prisma.SortOrder
   image?: Prisma.SortOrder
   role?: Prisma.SortOrder
@@ -410,6 +474,11 @@ export type UserMinOrderByAggregateInput = {
 export type UserScalarRelationFilter = {
   is?: Prisma.UserWhereInput
   isNot?: Prisma.UserWhereInput
+}
+
+export type UserNullableScalarRelationFilter = {
+  is?: Prisma.UserWhereInput | null
+  isNot?: Prisma.UserWhereInput | null
 }
 
 export type StringFieldUpdateOperationsInput = {
@@ -464,10 +533,97 @@ export type UserUpdateOneRequiredWithoutSessionsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutSessionsInput, Prisma.UserUpdateWithoutSessionsInput>, Prisma.UserUncheckedUpdateWithoutSessionsInput>
 }
 
+export type UserCreateNestedOneWithoutRegistrationsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutRegistrationsInput, Prisma.UserUncheckedCreateWithoutRegistrationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutRegistrationsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutRegistrationsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutRegistrationsInput, Prisma.UserUncheckedCreateWithoutRegistrationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutRegistrationsInput
+  upsert?: Prisma.UserUpsertWithoutRegistrationsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutRegistrationsInput, Prisma.UserUpdateWithoutRegistrationsInput>, Prisma.UserUncheckedUpdateWithoutRegistrationsInput>
+}
+
+export type UserCreateNestedOneWithoutWalletInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutWalletInput, Prisma.UserUncheckedCreateWithoutWalletInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutWalletInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutWalletNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutWalletInput, Prisma.UserUncheckedCreateWithoutWalletInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutWalletInput
+  upsert?: Prisma.UserUpsertWithoutWalletInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutWalletInput, Prisma.UserUpdateWithoutWalletInput>, Prisma.UserUncheckedUpdateWithoutWalletInput>
+}
+
+export type UserCreateNestedOneWithoutWithdrawalRequestsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutWithdrawalRequestsInput, Prisma.UserUncheckedCreateWithoutWithdrawalRequestsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutWithdrawalRequestsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserCreateNestedOneWithoutReviewedWithdrawalsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutReviewedWithdrawalsInput, Prisma.UserUncheckedCreateWithoutReviewedWithdrawalsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutReviewedWithdrawalsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutWithdrawalRequestsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutWithdrawalRequestsInput, Prisma.UserUncheckedCreateWithoutWithdrawalRequestsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutWithdrawalRequestsInput
+  upsert?: Prisma.UserUpsertWithoutWithdrawalRequestsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutWithdrawalRequestsInput, Prisma.UserUpdateWithoutWithdrawalRequestsInput>, Prisma.UserUncheckedUpdateWithoutWithdrawalRequestsInput>
+}
+
+export type UserUpdateOneWithoutReviewedWithdrawalsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutReviewedWithdrawalsInput, Prisma.UserUncheckedCreateWithoutReviewedWithdrawalsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutReviewedWithdrawalsInput
+  upsert?: Prisma.UserUpsertWithoutReviewedWithdrawalsInput
+  disconnect?: Prisma.UserWhereInput | boolean
+  delete?: Prisma.UserWhereInput | boolean
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutReviewedWithdrawalsInput, Prisma.UserUpdateWithoutReviewedWithdrawalsInput>, Prisma.UserUncheckedUpdateWithoutReviewedWithdrawalsInput>
+}
+
+export type UserCreateNestedOneWithoutPayoutDestinationsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutPayoutDestinationsInput, Prisma.UserUncheckedCreateWithoutPayoutDestinationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutPayoutDestinationsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutPayoutDestinationsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutPayoutDestinationsInput, Prisma.UserUncheckedCreateWithoutPayoutDestinationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutPayoutDestinationsInput
+  upsert?: Prisma.UserUpsertWithoutPayoutDestinationsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutPayoutDestinationsInput, Prisma.UserUpdateWithoutPayoutDestinationsInput>, Prisma.UserUncheckedUpdateWithoutPayoutDestinationsInput>
+}
+
+export type UserCreateNestedOneWithoutAdminAuditEventsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutAdminAuditEventsInput, Prisma.UserUncheckedCreateWithoutAdminAuditEventsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutAdminAuditEventsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutAdminAuditEventsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutAdminAuditEventsInput, Prisma.UserUncheckedCreateWithoutAdminAuditEventsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutAdminAuditEventsInput
+  upsert?: Prisma.UserUpsertWithoutAdminAuditEventsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutAdminAuditEventsInput, Prisma.UserUpdateWithoutAdminAuditEventsInput>, Prisma.UserUncheckedUpdateWithoutAdminAuditEventsInput>
+}
+
 export type UserCreateWithoutAccountsInput = {
   id?: string
   name?: string | null
   email: string
+  phone?: string | null
   emailVerified?: Date | string | null
   image?: string | null
   role?: $Enums.UserRole
@@ -475,12 +631,19 @@ export type UserCreateWithoutAccountsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogCreateNestedManyWithoutActorInput
 }
 
 export type UserUncheckedCreateWithoutAccountsInput = {
   id?: string
   name?: string | null
   email: string
+  phone?: string | null
   emailVerified?: Date | string | null
   image?: string | null
   role?: $Enums.UserRole
@@ -488,6 +651,12 @@ export type UserUncheckedCreateWithoutAccountsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletUncheckedCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedCreateNestedManyWithoutActorInput
 }
 
 export type UserCreateOrConnectWithoutAccountsInput = {
@@ -510,6 +679,7 @@ export type UserUpdateWithoutAccountsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
@@ -517,12 +687,19 @@ export type UserUpdateWithoutAccountsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUpdateManyWithoutActorNestedInput
 }
 
 export type UserUncheckedUpdateWithoutAccountsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
@@ -530,12 +707,19 @@ export type UserUncheckedUpdateWithoutAccountsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUncheckedUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedUpdateManyWithoutActorNestedInput
 }
 
 export type UserCreateWithoutSessionsInput = {
   id?: string
   name?: string | null
   email: string
+  phone?: string | null
   emailVerified?: Date | string | null
   image?: string | null
   role?: $Enums.UserRole
@@ -543,12 +727,19 @@ export type UserCreateWithoutSessionsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogCreateNestedManyWithoutActorInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
   id?: string
   name?: string | null
   email: string
+  phone?: string | null
   emailVerified?: Date | string | null
   image?: string | null
   role?: $Enums.UserRole
@@ -556,6 +747,12 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletUncheckedCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedCreateNestedManyWithoutActorInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -578,6 +775,7 @@ export type UserUpdateWithoutSessionsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
@@ -585,12 +783,19 @@ export type UserUpdateWithoutSessionsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUpdateManyWithoutActorNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
@@ -598,6 +803,588 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUncheckedUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedUpdateManyWithoutActorNestedInput
+}
+
+export type UserCreateWithoutRegistrationsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogCreateNestedManyWithoutActorInput
+}
+
+export type UserUncheckedCreateWithoutRegistrationsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletUncheckedCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedCreateNestedManyWithoutActorInput
+}
+
+export type UserCreateOrConnectWithoutRegistrationsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutRegistrationsInput, Prisma.UserUncheckedCreateWithoutRegistrationsInput>
+}
+
+export type UserUpsertWithoutRegistrationsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutRegistrationsInput, Prisma.UserUncheckedUpdateWithoutRegistrationsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutRegistrationsInput, Prisma.UserUncheckedCreateWithoutRegistrationsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutRegistrationsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutRegistrationsInput, Prisma.UserUncheckedUpdateWithoutRegistrationsInput>
+}
+
+export type UserUpdateWithoutRegistrationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUpdateManyWithoutActorNestedInput
+}
+
+export type UserUncheckedUpdateWithoutRegistrationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUncheckedUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedUpdateManyWithoutActorNestedInput
+}
+
+export type UserCreateWithoutWalletInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationCreateNestedManyWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogCreateNestedManyWithoutActorInput
+}
+
+export type UserUncheckedCreateWithoutWalletInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedCreateNestedManyWithoutActorInput
+}
+
+export type UserCreateOrConnectWithoutWalletInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutWalletInput, Prisma.UserUncheckedCreateWithoutWalletInput>
+}
+
+export type UserUpsertWithoutWalletInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutWalletInput, Prisma.UserUncheckedUpdateWithoutWalletInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutWalletInput, Prisma.UserUncheckedCreateWithoutWalletInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutWalletInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutWalletInput, Prisma.UserUncheckedUpdateWithoutWalletInput>
+}
+
+export type UserUpdateWithoutWalletInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUpdateManyWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUpdateManyWithoutActorNestedInput
+}
+
+export type UserUncheckedUpdateWithoutWalletInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedUpdateManyWithoutActorNestedInput
+}
+
+export type UserCreateWithoutWithdrawalRequestsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletCreateNestedOneWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogCreateNestedManyWithoutActorInput
+}
+
+export type UserUncheckedCreateWithoutWithdrawalRequestsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletUncheckedCreateNestedOneWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedCreateNestedManyWithoutActorInput
+}
+
+export type UserCreateOrConnectWithoutWithdrawalRequestsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutWithdrawalRequestsInput, Prisma.UserUncheckedCreateWithoutWithdrawalRequestsInput>
+}
+
+export type UserCreateWithoutReviewedWithdrawalsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestCreateNestedManyWithoutUserInput
+  payoutDestinations?: Prisma.PayoutDestinationCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogCreateNestedManyWithoutActorInput
+}
+
+export type UserUncheckedCreateWithoutReviewedWithdrawalsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletUncheckedCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutUserInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedCreateNestedManyWithoutUserInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedCreateNestedManyWithoutActorInput
+}
+
+export type UserCreateOrConnectWithoutReviewedWithdrawalsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutReviewedWithdrawalsInput, Prisma.UserUncheckedCreateWithoutReviewedWithdrawalsInput>
+}
+
+export type UserUpsertWithoutWithdrawalRequestsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutWithdrawalRequestsInput, Prisma.UserUncheckedUpdateWithoutWithdrawalRequestsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutWithdrawalRequestsInput, Prisma.UserUncheckedCreateWithoutWithdrawalRequestsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutWithdrawalRequestsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutWithdrawalRequestsInput, Prisma.UserUncheckedUpdateWithoutWithdrawalRequestsInput>
+}
+
+export type UserUpdateWithoutWithdrawalRequestsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUpdateOneWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUpdateManyWithoutActorNestedInput
+}
+
+export type UserUncheckedUpdateWithoutWithdrawalRequestsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUncheckedUpdateOneWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedUpdateManyWithoutActorNestedInput
+}
+
+export type UserUpsertWithoutReviewedWithdrawalsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutReviewedWithdrawalsInput, Prisma.UserUncheckedUpdateWithoutReviewedWithdrawalsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutReviewedWithdrawalsInput, Prisma.UserUncheckedCreateWithoutReviewedWithdrawalsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutReviewedWithdrawalsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutReviewedWithdrawalsInput, Prisma.UserUncheckedUpdateWithoutReviewedWithdrawalsInput>
+}
+
+export type UserUpdateWithoutReviewedWithdrawalsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUpdateManyWithoutUserNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUpdateManyWithoutActorNestedInput
+}
+
+export type UserUncheckedUpdateWithoutReviewedWithdrawalsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUncheckedUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutUserNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedUpdateManyWithoutUserNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedUpdateManyWithoutActorNestedInput
+}
+
+export type UserCreateWithoutPayoutDestinationsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestCreateNestedManyWithoutReviewedByInput
+  adminAuditEvents?: Prisma.AdminAuditLogCreateNestedManyWithoutActorInput
+}
+
+export type UserUncheckedCreateWithoutPayoutDestinationsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletUncheckedCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutReviewedByInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedCreateNestedManyWithoutActorInput
+}
+
+export type UserCreateOrConnectWithoutPayoutDestinationsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutPayoutDestinationsInput, Prisma.UserUncheckedCreateWithoutPayoutDestinationsInput>
+}
+
+export type UserUpsertWithoutPayoutDestinationsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutPayoutDestinationsInput, Prisma.UserUncheckedUpdateWithoutPayoutDestinationsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutPayoutDestinationsInput, Prisma.UserUncheckedCreateWithoutPayoutDestinationsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutPayoutDestinationsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutPayoutDestinationsInput, Prisma.UserUncheckedUpdateWithoutPayoutDestinationsInput>
+}
+
+export type UserUpdateWithoutPayoutDestinationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUpdateManyWithoutReviewedByNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUpdateManyWithoutActorNestedInput
+}
+
+export type UserUncheckedUpdateWithoutPayoutDestinationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUncheckedUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutReviewedByNestedInput
+  adminAuditEvents?: Prisma.AdminAuditLogUncheckedUpdateManyWithoutActorNestedInput
+}
+
+export type UserCreateWithoutAdminAuditEventsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutAdminAuditEventsInput = {
+  id?: string
+  name?: string | null
+  email: string
+  phone?: string | null
+  emailVerified?: Date | string | null
+  image?: string | null
+  role?: $Enums.UserRole
+  status?: $Enums.UserStatus
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  registrations?: Prisma.RegistrationUncheckedCreateNestedManyWithoutUserInput
+  wallet?: Prisma.WalletUncheckedCreateNestedOneWithoutUserInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutUserInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedCreateNestedManyWithoutReviewedByInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutAdminAuditEventsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutAdminAuditEventsInput, Prisma.UserUncheckedCreateWithoutAdminAuditEventsInput>
+}
+
+export type UserUpsertWithoutAdminAuditEventsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutAdminAuditEventsInput, Prisma.UserUncheckedUpdateWithoutAdminAuditEventsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutAdminAuditEventsInput, Prisma.UserUncheckedCreateWithoutAdminAuditEventsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutAdminAuditEventsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutAdminAuditEventsInput, Prisma.UserUncheckedUpdateWithoutAdminAuditEventsInput>
+}
+
+export type UserUpdateWithoutAdminAuditEventsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutAdminAuditEventsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  role?: Prisma.EnumUserRoleFieldUpdateOperationsInput | $Enums.UserRole
+  status?: Prisma.EnumUserStatusFieldUpdateOperationsInput | $Enums.UserStatus
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  registrations?: Prisma.RegistrationUncheckedUpdateManyWithoutUserNestedInput
+  wallet?: Prisma.WalletUncheckedUpdateOneWithoutUserNestedInput
+  withdrawalRequests?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutUserNestedInput
+  reviewedWithdrawals?: Prisma.WithdrawalRequestUncheckedUpdateManyWithoutReviewedByNestedInput
+  payoutDestinations?: Prisma.PayoutDestinationUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -608,11 +1395,21 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
 export type UserCountOutputType = {
   accounts: number
   sessions: number
+  registrations: number
+  withdrawalRequests: number
+  reviewedWithdrawals: number
+  payoutDestinations: number
+  adminAuditEvents: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   accounts?: boolean | UserCountOutputTypeCountAccountsArgs
   sessions?: boolean | UserCountOutputTypeCountSessionsArgs
+  registrations?: boolean | UserCountOutputTypeCountRegistrationsArgs
+  withdrawalRequests?: boolean | UserCountOutputTypeCountWithdrawalRequestsArgs
+  reviewedWithdrawals?: boolean | UserCountOutputTypeCountReviewedWithdrawalsArgs
+  payoutDestinations?: boolean | UserCountOutputTypeCountPayoutDestinationsArgs
+  adminAuditEvents?: boolean | UserCountOutputTypeCountAdminAuditEventsArgs
 }
 
 /**
@@ -639,11 +1436,47 @@ export type UserCountOutputTypeCountSessionsArgs<ExtArgs extends runtime.Types.E
   where?: Prisma.SessionWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountRegistrationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.RegistrationWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountWithdrawalRequestsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.WithdrawalRequestWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountReviewedWithdrawalsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.WithdrawalRequestWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountPayoutDestinationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.PayoutDestinationWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountAdminAuditEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.AdminAuditLogWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   name?: boolean
   email?: boolean
+  phone?: boolean
   emailVerified?: boolean
   image?: boolean
   role?: boolean
@@ -652,6 +1485,12 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   updatedAt?: boolean
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
+  registrations?: boolean | Prisma.User$registrationsArgs<ExtArgs>
+  wallet?: boolean | Prisma.User$walletArgs<ExtArgs>
+  withdrawalRequests?: boolean | Prisma.User$withdrawalRequestsArgs<ExtArgs>
+  reviewedWithdrawals?: boolean | Prisma.User$reviewedWithdrawalsArgs<ExtArgs>
+  payoutDestinations?: boolean | Prisma.User$payoutDestinationsArgs<ExtArgs>
+  adminAuditEvents?: boolean | Prisma.User$adminAuditEventsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -659,6 +1498,7 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   name?: boolean
   email?: boolean
+  phone?: boolean
   emailVerified?: boolean
   image?: boolean
   role?: boolean
@@ -671,6 +1511,7 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   name?: boolean
   email?: boolean
+  phone?: boolean
   emailVerified?: boolean
   image?: boolean
   role?: boolean
@@ -683,6 +1524,7 @@ export type UserSelectScalar = {
   id?: boolean
   name?: boolean
   email?: boolean
+  phone?: boolean
   emailVerified?: boolean
   image?: boolean
   role?: boolean
@@ -691,10 +1533,16 @@ export type UserSelectScalar = {
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "image" | "role" | "status" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "phone" | "emailVerified" | "image" | "role" | "status" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
+  registrations?: boolean | Prisma.User$registrationsArgs<ExtArgs>
+  wallet?: boolean | Prisma.User$walletArgs<ExtArgs>
+  withdrawalRequests?: boolean | Prisma.User$withdrawalRequestsArgs<ExtArgs>
+  reviewedWithdrawals?: boolean | Prisma.User$reviewedWithdrawalsArgs<ExtArgs>
+  payoutDestinations?: boolean | Prisma.User$payoutDestinationsArgs<ExtArgs>
+  adminAuditEvents?: boolean | Prisma.User$adminAuditEventsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -705,11 +1553,18 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   objects: {
     accounts: Prisma.$AccountPayload<ExtArgs>[]
     sessions: Prisma.$SessionPayload<ExtArgs>[]
+    registrations: Prisma.$RegistrationPayload<ExtArgs>[]
+    wallet: Prisma.$WalletPayload<ExtArgs> | null
+    withdrawalRequests: Prisma.$WithdrawalRequestPayload<ExtArgs>[]
+    reviewedWithdrawals: Prisma.$WithdrawalRequestPayload<ExtArgs>[]
+    payoutDestinations: Prisma.$PayoutDestinationPayload<ExtArgs>[]
+    adminAuditEvents: Prisma.$AdminAuditLogPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     name: string | null
     email: string
+    phone: string | null
     emailVerified: Date | null
     image: string | null
     role: $Enums.UserRole
@@ -1112,6 +1967,12 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   readonly [Symbol.toStringTag]: "PrismaPromise"
   accounts<T extends Prisma.User$accountsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$accountsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AccountPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   sessions<T extends Prisma.User$sessionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$sessionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SessionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  registrations<T extends Prisma.User$registrationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$registrationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$RegistrationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  wallet<T extends Prisma.User$walletArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$walletArgs<ExtArgs>>): Prisma.Prisma__WalletClient<runtime.Types.Result.GetResult<Prisma.$WalletPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  withdrawalRequests<T extends Prisma.User$withdrawalRequestsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$withdrawalRequestsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WithdrawalRequestPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  reviewedWithdrawals<T extends Prisma.User$reviewedWithdrawalsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$reviewedWithdrawalsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WithdrawalRequestPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  payoutDestinations<T extends Prisma.User$payoutDestinationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$payoutDestinationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PayoutDestinationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  adminAuditEvents<T extends Prisma.User$adminAuditEventsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$adminAuditEventsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AdminAuditLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1144,6 +2005,7 @@ export interface UserFieldRefs {
   readonly id: Prisma.FieldRef<"User", 'String'>
   readonly name: Prisma.FieldRef<"User", 'String'>
   readonly email: Prisma.FieldRef<"User", 'String'>
+  readonly phone: Prisma.FieldRef<"User", 'String'>
   readonly emailVerified: Prisma.FieldRef<"User", 'DateTime'>
   readonly image: Prisma.FieldRef<"User", 'String'>
   readonly role: Prisma.FieldRef<"User", 'UserRole'>
@@ -1588,6 +2450,145 @@ export type User$sessionsArgs<ExtArgs extends runtime.Types.Extensions.InternalA
   take?: number
   skip?: number
   distinct?: Prisma.SessionScalarFieldEnum | Prisma.SessionScalarFieldEnum[]
+}
+
+/**
+ * User.registrations
+ */
+export type User$registrationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Registration
+   */
+  select?: Prisma.RegistrationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Registration
+   */
+  omit?: Prisma.RegistrationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.RegistrationInclude<ExtArgs> | null
+  where?: Prisma.RegistrationWhereInput
+  orderBy?: Prisma.RegistrationOrderByWithRelationInput | Prisma.RegistrationOrderByWithRelationInput[]
+  cursor?: Prisma.RegistrationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.RegistrationScalarFieldEnum | Prisma.RegistrationScalarFieldEnum[]
+}
+
+/**
+ * User.wallet
+ */
+export type User$walletArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Wallet
+   */
+  select?: Prisma.WalletSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Wallet
+   */
+  omit?: Prisma.WalletOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.WalletInclude<ExtArgs> | null
+  where?: Prisma.WalletWhereInput
+}
+
+/**
+ * User.withdrawalRequests
+ */
+export type User$withdrawalRequestsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the WithdrawalRequest
+   */
+  select?: Prisma.WithdrawalRequestSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the WithdrawalRequest
+   */
+  omit?: Prisma.WithdrawalRequestOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.WithdrawalRequestInclude<ExtArgs> | null
+  where?: Prisma.WithdrawalRequestWhereInput
+  orderBy?: Prisma.WithdrawalRequestOrderByWithRelationInput | Prisma.WithdrawalRequestOrderByWithRelationInput[]
+  cursor?: Prisma.WithdrawalRequestWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.WithdrawalRequestScalarFieldEnum | Prisma.WithdrawalRequestScalarFieldEnum[]
+}
+
+/**
+ * User.reviewedWithdrawals
+ */
+export type User$reviewedWithdrawalsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the WithdrawalRequest
+   */
+  select?: Prisma.WithdrawalRequestSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the WithdrawalRequest
+   */
+  omit?: Prisma.WithdrawalRequestOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.WithdrawalRequestInclude<ExtArgs> | null
+  where?: Prisma.WithdrawalRequestWhereInput
+  orderBy?: Prisma.WithdrawalRequestOrderByWithRelationInput | Prisma.WithdrawalRequestOrderByWithRelationInput[]
+  cursor?: Prisma.WithdrawalRequestWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.WithdrawalRequestScalarFieldEnum | Prisma.WithdrawalRequestScalarFieldEnum[]
+}
+
+/**
+ * User.payoutDestinations
+ */
+export type User$payoutDestinationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the PayoutDestination
+   */
+  select?: Prisma.PayoutDestinationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the PayoutDestination
+   */
+  omit?: Prisma.PayoutDestinationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PayoutDestinationInclude<ExtArgs> | null
+  where?: Prisma.PayoutDestinationWhereInput
+  orderBy?: Prisma.PayoutDestinationOrderByWithRelationInput | Prisma.PayoutDestinationOrderByWithRelationInput[]
+  cursor?: Prisma.PayoutDestinationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.PayoutDestinationScalarFieldEnum | Prisma.PayoutDestinationScalarFieldEnum[]
+}
+
+/**
+ * User.adminAuditEvents
+ */
+export type User$adminAuditEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the AdminAuditLog
+   */
+  select?: Prisma.AdminAuditLogSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the AdminAuditLog
+   */
+  omit?: Prisma.AdminAuditLogOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.AdminAuditLogInclude<ExtArgs> | null
+  where?: Prisma.AdminAuditLogWhereInput
+  orderBy?: Prisma.AdminAuditLogOrderByWithRelationInput | Prisma.AdminAuditLogOrderByWithRelationInput[]
+  cursor?: Prisma.AdminAuditLogWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.AdminAuditLogScalarFieldEnum | Prisma.AdminAuditLogScalarFieldEnum[]
 }
 
 /**

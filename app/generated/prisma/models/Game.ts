@@ -205,7 +205,7 @@ export type GameWhereInput = {
   AND?: Prisma.GameWhereInput | Prisma.GameWhereInput[]
   OR?: Prisma.GameWhereInput[]
   NOT?: Prisma.GameWhereInput | Prisma.GameWhereInput[]
-  id?: Prisma.UuidFilter<"Game"> | string
+  id?: Prisma.StringFilter<"Game"> | string
   name?: Prisma.StringFilter<"Game"> | string
   slug?: Prisma.StringFilter<"Game"> | string
   code?: Prisma.StringFilter<"Game"> | string
@@ -265,7 +265,7 @@ export type GameScalarWhereWithAggregatesInput = {
   AND?: Prisma.GameScalarWhereWithAggregatesInput | Prisma.GameScalarWhereWithAggregatesInput[]
   OR?: Prisma.GameScalarWhereWithAggregatesInput[]
   NOT?: Prisma.GameScalarWhereWithAggregatesInput | Prisma.GameScalarWhereWithAggregatesInput[]
-  id?: Prisma.UuidWithAggregatesFilter<"Game"> | string
+  id?: Prisma.StringWithAggregatesFilter<"Game"> | string
   name?: Prisma.StringWithAggregatesFilter<"Game"> | string
   slug?: Prisma.StringWithAggregatesFilter<"Game"> | string
   code?: Prisma.StringWithAggregatesFilter<"Game"> | string
