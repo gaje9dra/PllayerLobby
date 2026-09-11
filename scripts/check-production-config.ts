@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { validateServerEnvironment } from "../lib/env";
+import { validateServerEnvironment } from "../lib/env-core";
 
 try {
   const result = validateServerEnvironment({ requireProduction: process.argv.includes("--production") });
