@@ -19,15 +19,16 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "next": "16.3.3",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@auth/prisma-adapter": "2.11.3",
     "dotenv": "17.2.2",
-    "pg": "8.16.3",
+    "next": "16.3.3",
     "next-auth": "5.0.0-beta.32",
-    "@auth/prisma-adapter": "2.11.3"
+    "pg": "8.16.3",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "server-only": "0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.13",
@@ -35,7 +36,6 @@
     "@types/node": "24.3.0",
     "@types/react": "19.1.12",
     "@types/react-dom": "19.1.9",
-    "typescript": "5.9.2",
     "@types/pg": "8.15.5",
     "prisma": "7.10.0",
     "tsx": "4.20.5",
