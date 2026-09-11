@@ -22,9 +22,10 @@ Copy `.env.example` to `.env.local`:
 cp .env.example .env.local
 ```
 
-Set the following values:
+Set the following values for local development:
 
 ```env
+APP_ENVIRONMENT=development
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 APP_TIMEZONE=Asia/Kolkata
 DATABASE_URL="postgresql://USERNAME:PASSWORD@HOST:PORT/DATABASE?schema=public"
@@ -34,9 +35,27 @@ GOOGLE_CLIENT_SECRET="your-google-client-secret"
 PAYU_MERCHANT_KEY="your-payu-merchant-key"
 PAYU_MERCHANT_SALT="your-payu-merchant-salt"
 PAYU_ENVIRONMENT="test"
+PAYU_PAYOUT_ENVIRONMENT="TEST"
+PAYU_PAYOUT_MERCHANT_ID="your-test-payout-merchant-id"
+PAYU_PAYOUT_CLIENT_ID="your-test-payout-client-id"
+PAYU_PAYOUT_CLIENT_SECRET="your-test-payout-client-secret"
+PAYU_PAYOUT_WEBHOOK_SECRET="your-test-payout-webhook-secret"
+PAYOUT_ENCRYPTION_KEY="base64-encoded-32-byte-key"
+PAYOUTS_ENABLED=true
 ```
 
-Never commit `.env`, `.env.local`, or real credentials. The PayU merchant salt is server-only and must never be exposed to the browser.
+Never commit `.env`, `.env.local`, `.env.production`, or real credentials. Server secrets must never use `NEXT_PUBLIC_*`. The PayU merchant salt, payout credentials, OAuth secret, database URL, encryption key, and webhook secret are server-only.
+
+For production, set `APP_ENVIRONMENT=production`, use the real HTTPS application URL, production Google OAuth configuration, production database, production PayU payment/payout environments, and `PAYU_PAYOUT_PRODUCTION_ENABLED=true` only after payout launch approval. Production also requires `PAYOUTS_ENABLED=true` for new payout initiation.
+
+Run the safe configuration checker with:
+
+```bash
+npm run config:check
+npm run config:check:production
+```
+
+The production checker reports only configuration status; it never prints secret values.
 
 Generate a strong Auth.js secret with:
 
@@ -71,6 +90,8 @@ For production/staging deployments with committed migrations:
 ```bash
 npm run db:migrate:deploy
 ```
+
+Never use `prisma migrate reset` against production.
 
 Check migration status:
 
@@ -143,6 +164,18 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Production infrastructure
+
+Phase 6.2 production hardening is documented in:
+
+- `PRODUCTION_DEPLOYMENT_CHECKLIST.md`
+- `docs/PRODUCTION_RECOVERY.md`
+- `docs/production-infrastructure-phase-6.2.md`
+
+The safe health endpoint is `/api/health` and returns only an application health status. The repository does not claim external backups, monitoring, TLS, DNS, secret-manager configuration, Google production OAuth settings, or PayU provider activation are configured; those require hosting/provider setup.
+
+The application uses request correlation IDs through the Next.js Proxy and production security headers including CSP, HSTS, frame protection, referrer policy, and permissions policy.
+
 ## Application timezone
 
 Tournament scheduling uses one explicit application timezone. The default is `Asia/Kolkata` for the India-focused platform and can be changed with `APP_TIMEZONE`.
@@ -150,6 +183,10 @@ Tournament scheduling uses one explicit application timezone. The default is `As
 Admin date/time inputs are interpreted as wall-clock times in this timezone and converted to JavaScript `Date` values before persistence. PostgreSQL stores the resulting timestamps in the timezone-aware `DateTime` representation used by Prisma. Tournament lists convert stored timestamps back to the application timezone for display.
 
 Do not treat browser-local date/time strings as UTC. Keep all tournament scheduling on this explicit conversion path.
+
+## CI verification
+
+GitHub Actions verifies the application with Node 22, Prisma generation/validation/migrations, typecheck, lint, tests, and a production build against an ephemeral PostgreSQL service. Production deployment is intentionally not automatic.
 
 ## Phase 2.1 — Tournament database architecture
 
