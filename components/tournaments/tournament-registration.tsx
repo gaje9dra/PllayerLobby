@@ -58,32 +58,29 @@ export function TournamentRegistration({
   loginHref,
   initialPhone,
   existingRegistrationId,
+  walletBalance,
+  entryFee,
 }: {
   tournamentId: string;
   availability: RegistrationAvailability;
   loginHref: string;
   initialPhone: string | null;
   existingRegistrationId: string | null;
+  walletBalance: string | null;
+  entryFee: string;
 }) {
   const [state, action, pending] = useActionState(registerForTournament, INITIAL_STATE);
+  const displayedBalance = state.ok ? state.walletBalance : walletBalance;
 
   if (state.ok) {
-    if (state.paymentRequired && state.registrationId) {
-      return (
-        <div className="space-y-3">
-          <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4" role="status">
-            <p className="text-sm font-bold text-amber-200">Registration created — payment required</p>
-            <p className="mt-1 text-xs leading-5 text-amber-100/70">Your registration is pending until the payment is verified. No payment has been confirmed yet.</p>
-          </div>
-          <TournamentPayment registrationId={state.registrationId} initialPhone={initialPhone} />
-        </div>
-      );
-    }
-
+    const paid = state.entryFee !== "0.00";
     return (
       <div className="rounded-2xl border border-lime-300/20 bg-lime-300/10 p-4" role="status">
-        <p className="text-sm font-bold text-lime-200">Registration Confirmed</p>
-        <p className="mt-1 text-xs leading-5 text-lime-100/70">You are registered for this free tournament.</p>
+        <p className="text-sm font-bold text-lime-200">You&apos;re registered.</p>
+        <p className="mt-1 text-xs leading-5 text-lime-100/70">
+          {paid ? `Entry fee ${state.entryFee === entryFee ? `₹${state.entryFee}` : `₹${state.entryFee}`} was paid from your wallet.` : "This tournament is free."}
+        </p>
+        {paid ? <p className="mt-2 text-xs font-semibold text-white">Remaining wallet balance: ₹{state.walletBalance}</p> : null}
         {state.registrationCode ? <RegistrationCode code={state.registrationCode} /> : null}
       </div>
     );
@@ -94,7 +91,7 @@ export function TournamentRegistration({
       <div className="space-y-3">
         <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4" role="status">
           <p className="text-sm font-bold text-amber-200">Payment Pending</p>
-          <p className="mt-1 text-xs leading-5 text-amber-100/70">This paid registration is waiting for payment. You can continue to the hosted PayU checkout.</p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/70">This older paid registration is waiting for its existing payment flow to complete.</p>
         </div>
         <TournamentPayment registrationId={existingRegistrationId} initialPhone={initialPhone} />
       </div>
@@ -115,13 +112,36 @@ export function TournamentRegistration({
     );
   }
 
+  const isFree = entryFee === "0.00";
   return (
-    <form action={action}>
-      <input type="hidden" name="tournamentId" value={tournamentId} />
-      <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>
-        {pending ? "Registering..." : "Register"}
-      </Button>
-      {state.message ? <p className="mt-3 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-2 text-xs leading-5 text-red-200" role="alert">{state.message}</p> : null}
-    </form>
+    <div>
+      {!isFree ? (
+        <div className="mb-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Wallet balance</p>
+              <p className="mt-1 text-lg font-black text-white">₹{displayedBalance ?? "0.00"}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Entry fee</p>
+              <p className="mt-1 text-lg font-black text-lime-200">₹{entryFee}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <form action={action}>
+        <input type="hidden" name="tournamentId" value={tournamentId} />
+        <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>
+          {pending ? "Joining..." : isFree ? "Join Free Tournament" : `Join for ₹${entryFee}`}
+        </Button>
+        {state.message ? (
+          <div className="mt-3 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-3 text-xs leading-5 text-red-200" role="alert">
+            <p>{state.message}</p>
+            {state.code === "INSUFFICIENT_BALANCE" ? <Button href="/dashboard/wallet/add-money" variant="secondary" className="mt-3 w-full">Add Money</Button> : null}
+          </div>
+        ) : null}
+      </form>
+    </div>
   );
 }
