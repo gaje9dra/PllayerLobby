@@ -34,9 +34,12 @@ export async function consumeSecurityRateLimit(input: {
   const windowMs = input.windowSeconds * 1000;
 
   return prisma.$transaction(async (tx) => {
-    // pg_advisory_xact_lock returns void. Selecting a scalar value from the
-    // same advisory-lock function keeps Prisma's $queryRaw deserializer happy
-    // while retaining transaction-scoped serialization for this rate-limit key.
+    // Serialize requests for the same logical rate-limit key. The advisory
+    // transaction lock is sufficient for correctness here, including the
+    // first-request case where the SecurityRateLimit row does not yet exist.
+    // Keep this transaction at READ COMMITTED: SERIALIZABLE was causing
+    // PostgreSQL 40001 write-dependency failures when concurrent requests hit
+    // the same key, even though the advisory lock already serialized them.
     await tx.$queryRaw<{ locked: boolean }[]>(Prisma.sql`
       SELECT pg_advisory_xact_lock(hashtextextended(${keyHash}, 0)) IS NULL AS locked
     `);
@@ -85,5 +88,5 @@ export async function consumeSecurityRateLimit(input: {
       remaining: Math.max(0, input.limit - existing.requestCount - 1),
       retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (now.getTime() - existing.windowStartedAt.getTime())) / 1000)),
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }
