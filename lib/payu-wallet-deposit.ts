@@ -4,7 +4,7 @@ import { Prisma, WalletDepositStatus } from "@/app/generated/prisma/client";
 import { requireActiveUser } from "@/lib/auth";
 import { getPayUConfig, generatePayURequestHash, validatePayUResponseHash, type PayURequestFields, type PayUResponseFields } from "@/lib/payu";
 import { verifyPayUTransaction, type PayUVerificationResult } from "@/lib/payu-verification";
-import { getOrCreateWalletForUser, creditVerifiedDepositInTransaction } from "@/lib/wallet";
+import { creditVerifiedDepositInTransaction } from "@/lib/wallet";
 import { prisma } from "@/lib/prisma";
 import { normalizePaymentAmount } from "@/lib/payment-verification-rules";
 import { isValidUuid } from "@/lib/wallet-rules";
