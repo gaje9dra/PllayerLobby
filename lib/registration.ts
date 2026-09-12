@@ -1,7 +1,7 @@
 import "server-only";
 
 import { Prisma, RegistrationStatus, WalletTransactionType } from "@/app/generated/prisma/client";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refreshTournamentLifecycle } from "@/lib/tournament-lifecycle";
 import { createRegistrationCodeData } from "@/lib/registration-code";
@@ -42,6 +42,8 @@ export type RegistrationCreationResult =
       message: string;
     };
 
+type RegistrationUser = Pick<CurrentUser, "id" | "role" | "status">;
+
 const ERROR_MESSAGES: Record<RegistrationEligibilityReason, string> = {
   UNAUTHENTICATED: "Please sign in with Google to register for this tournament.",
   USER_NOT_ACTIVE: "Your account is not currently eligible to register.",
@@ -64,16 +66,12 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "";
 }
 
-export async function createTournamentRegistration(
+export async function createTournamentRegistrationForUser(
+  user: RegistrationUser,
   tournamentId: string,
 ): Promise<RegistrationCreationResult> {
   if (!UUID_PATTERN.test(tournamentId)) {
     return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
-  }
-
-  const user = await getCurrentUser();
-  if (!user) {
-    return { ok: false, code: REGISTRATION_RESULT_CODES.UNAUTHENTICATED, message: ERROR_MESSAGES.UNAUTHENTICATED };
   }
 
   const rateLimit = await consumeSecurityRateLimit({
@@ -109,13 +107,7 @@ export async function createTournamentRegistration(
         tx.registration.count({ where: { tournamentId, status: RegistrationStatus.CONFIRMED } }),
       ]);
 
-      const eligibility = evaluateRegistrationEligibility({
-        user,
-        tournament,
-        registration,
-        confirmedParticipants,
-        now: new Date(),
-      });
+      const eligibility = evaluateRegistrationEligibility({ user, tournament, registration, confirmedParticipants, now: new Date() });
       if (!eligibility.allowed) {
         return { ok: false, code: eligibility.reason, message: ERROR_MESSAGES[eligibility.reason] };
       }
@@ -126,20 +118,11 @@ export async function createTournamentRegistration(
 
       if (registration?.status === RegistrationStatus.CANCELLED && !isFree) {
         const priorEntryDebit = await tx.walletTransaction.findFirst({
-          where: {
-            referenceType: "ENTRY_PAYMENT",
-            referenceId: registration.id,
-            type: WalletTransactionType.DEBIT,
-            category: "ENTRY_FEE",
-          },
+          where: { referenceType: "ENTRY_PAYMENT", referenceId: registration.id, type: WalletTransactionType.DEBIT, category: "ENTRY_FEE" },
           select: { id: true },
         });
         if (priorEntryDebit) {
-          return {
-            ok: false,
-            code: REGISTRATION_RESULT_CODES.REGISTRATION_NOT_REOPENABLE,
-            message: "This cancelled paid registration cannot be reactivated without the existing refund workflow.",
-          };
+          return { ok: false, code: REGISTRATION_RESULT_CODES.REGISTRATION_NOT_REOPENABLE, message: "This cancelled paid registration cannot be reactivated without the existing refund workflow." };
         }
       }
 
@@ -200,16 +183,16 @@ export async function createTournamentRegistration(
     if (isUniqueConstraintError(error)) {
       return { ok: false, code: REGISTRATION_RESULT_CODES.ALREADY_REGISTERED, message: ERROR_MESSAGES.ALREADY_REGISTERED };
     }
-
     const message = errorMessage(error);
-    if (message === "Insufficient wallet balance.") {
-      return { ok: false, code: REGISTRATION_RESULT_CODES.INSUFFICIENT_BALANCE, message: "Insufficient wallet balance." };
-    }
-    if (message === "Wallet unavailable.") {
-      return { ok: false, code: REGISTRATION_RESULT_CODES.WALLET_UNAVAILABLE, message: "Your wallet is currently unavailable. Please try again." };
-    }
-
+    if (message === "Insufficient wallet balance.") return { ok: false, code: REGISTRATION_RESULT_CODES.INSUFFICIENT_BALANCE, message: "Insufficient wallet balance." };
+    if (message === "Wallet unavailable.") return { ok: false, code: REGISTRATION_RESULT_CODES.WALLET_UNAVAILABLE, message: "Your wallet is currently unavailable. Please try again." };
     console.error("Tournament registration failed:", error);
     return { ok: false, code: REGISTRATION_RESULT_CODES.REGISTRATION_FAILED, message: "Unable to register for this tournament right now. Please try again." };
   }
+}
+
+export async function createTournamentRegistration(tournamentId: string): Promise<RegistrationCreationResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, code: REGISTRATION_RESULT_CODES.UNAUTHENTICATED, message: ERROR_MESSAGES.UNAUTHENTICATED };
+  return createTournamentRegistrationForUser(user, tournamentId);
 }
