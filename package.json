@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "prisma migrate deploy && prisma generate && next dev",
     "build": "next build",
     "start": "next start",
     "test": "node --import ./scripts/test-bootstrap.mjs --import tsx/esm --test",
@@ -39,7 +39,6 @@
     "prisma": "7.10.0",
     "tsx": "4.20.5",
     "eslint": "^9.0.0",
-    "@eslint/eslintrc": "^3.0.0",
     "eslint-config-next": "16.3.3"
   },
   "engines": {
