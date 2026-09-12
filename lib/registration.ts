@@ -188,7 +188,7 @@ export async function createTournamentRegistrationForUser(
             entryFee,
             registrationCode: codeData.code,
           };
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
       } catch (error) {
         if (!isTransactionConflict(error) || attempt === SERIALIZABLE_RETRY_LIMIT) throw error;
         await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
