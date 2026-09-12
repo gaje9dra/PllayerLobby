@@ -1,0 +1,11 @@
+[build]
+  command = "npm run prisma:generate && npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22.16.0"
+
+# Next.js is automatically handled by Netlify's OpenNext adapter.
+# Database migrations are intentionally not run during builds; apply committed
+# migrations to the production/test database separately with:
+#   npm run db:migrate:deploy
