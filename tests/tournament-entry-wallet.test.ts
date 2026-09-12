@@ -35,8 +35,6 @@ async function createFixture({ balance = "500.00", entryFee = "100.00", maxParti
 
 async function deleteTournamentFixture(tournamentId: string, gameId: string) {
   await prisma.$transaction(async (tx) => {
-    // Registration transactions lock Tournament first, then Wallet. Teardown
-    // must acquire parent locks in the same order to avoid a test-only deadlock.
     const locked = await tx.$queryRaw<{ id: string }[]>`
       SELECT "id" FROM "Tournament" WHERE "id" = CAST(${tournamentId} AS UUID) FOR UPDATE
     `;
@@ -59,8 +57,6 @@ async function deleteTournamentFixture(tournamentId: string, gameId: string) {
 }
 
 async function deleteWalletFixture(walletId: string) {
-  // Wallet entry transactions also hold the Tournament lock before acquiring
-  // this lock. This helper is safe for standalone wallet cleanup only.
   await prisma.$transaction(async (tx) => {
     const locked = await tx.$queryRaw<{ id: string }[]>`
       SELECT "id" FROM "Wallet" WHERE "id" = CAST(${walletId} AS UUID) FOR UPDATE
@@ -72,9 +68,6 @@ async function deleteWalletFixture(walletId: string) {
 }
 
 async function deleteWalletAndTournamentFixture(walletId: string, tournamentId: string, gameId: string) {
-  // Acquire locks in the same order as createTournamentRegistrationForUser:
-  // Tournament -> Wallet. This prevents teardown from deadlocking with an
-  // in-flight registration transaction.
   await prisma.$transaction(async (tx) => {
     const tournamentRows = await tx.$queryRaw<{ id: string }[]>`
       SELECT "id" FROM "Tournament" WHERE "id" = CAST(${tournamentId} AS UUID) FOR UPDATE
@@ -224,9 +217,13 @@ test("capacity race allows only the final available slot and rolls back the lose
     assert.equal(balances.filter((wallet) => wallet.balance.toString() === "0").length, 1);
     assert.equal(balances.filter((wallet) => wallet.balance.toString() === "100").length, 1);
   } finally {
+    // Registration rows reference the tournament, and wallet transactions
+    // reference the wallets. Remove the tournament/registrations first, then
+    // delete both wallet ledgers. Doing this in the reverse order caused the
+    // FK failures seen during the concurrent capacity test cleanup.
+    await deleteTournamentFixture(fixture.tournament.id, fixture.game.id);
     await deleteWalletFixture(fixture.wallet.id);
     await deleteWalletFixture(secondWallet.id);
-    await deleteTournamentFixture(fixture.tournament.id, fixture.game.id);
     await prisma.user.deleteMany({ where: { id: { in: [fixture.user.id, secondUser.id] } } });
   }
 });
