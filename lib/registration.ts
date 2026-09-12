@@ -57,7 +57,7 @@ const ERROR_MESSAGES: Record<RegistrationEligibilityReason, string> = {
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SERIALIZABLE_RETRY_LIMIT = 3;
+const SERIALIZABLE_RETRY_LIMIT = 8;
 
 function isUniqueConstraintError(error: unknown) {
   return error && typeof error === "object" && "code" in error && error.code === "P2002";
@@ -191,7 +191,7 @@ export async function createTournamentRegistrationForUser(
         }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
       } catch (error) {
         if (!isTransactionConflict(error) || attempt === SERIALIZABLE_RETRY_LIMIT) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
       }
     }
 
