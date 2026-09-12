@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { generatePayURequestHash, validatePayUResponseHash } from "@/lib/payu-hash";
 import { parsePayUWalletCallback } from "@/lib/payu-wallet-deposit";
 
@@ -19,14 +20,44 @@ const fields = {
   udf5: "",
 };
 
-test("PayU wallet request hash validates with the established SHA-512 scheme", () => {
+function generatePayUResponseHash(status = "success") {
+  const hashString = [
+    salt,
+    status,
+    "",
+    "",
+    "",
+    "",
+    "",
+    fields.udf5,
+    fields.udf4,
+    fields.udf3,
+    fields.udf2,
+    fields.udf1,
+    fields.email,
+    fields.firstname,
+    fields.productinfo,
+    fields.amount,
+    fields.txnid,
+    fields.key,
+  ].join("|");
+
+  return createHash("sha512").update(hashString, "utf8").digest("hex");
+}
+
+test("PayU wallet request hash uses the established SHA-512 scheme", () => {
   const hash = generatePayURequestHash({ ...fields, salt });
+  assert.equal(hash.length, 128);
+});
+
+test("PayU wallet response hash validates with the established SHA-512 scheme", () => {
+  const hash = generatePayUResponseHash();
   assert.equal(hash.length, 128);
   assert.equal(validatePayUResponseHash({ ...fields, status: "success", hash }, salt), true);
 });
 
 test("tampered PayU response hash is rejected", () => {
-  const hash = generatePayURequestHash({ ...fields, salt });
+  const hash = generatePayUResponseHash();
   const tampered = `${hash.slice(0, -1)}${hash.endsWith("0") ? "1" : "0"}`;
   assert.equal(validatePayUResponseHash({ ...fields, status: "success", hash: tampered }, salt), false);
 });
