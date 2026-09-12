@@ -57,9 +57,17 @@ const ERROR_MESSAGES: Record<RegistrationEligibilityReason, string> = {
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SERIALIZABLE_RETRY_LIMIT = 3;
 
 function isUniqueConstraintError(error: unknown) {
   return error && typeof error === "object" && "code" in error && error.code === "P2002";
+}
+
+function isTransactionConflict(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  if ("code" in error && error.code === "P2034") return true;
+  const message = error instanceof Error ? error.message : "";
+  return /TransactionWriteConflict|could not serialize access|serialization failure/i.test(message);
 }
 
 function errorMessage(error: unknown) {
@@ -87,98 +95,107 @@ export async function createTournamentRegistrationForUser(
   try {
     await refreshTournamentLifecycle(tournamentId);
 
-    return await prisma.$transaction(async (tx) => {
-      const lockedRows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT "id" FROM "Tournament" WHERE "id" = CAST(${tournamentId} AS UUID) FOR UPDATE
-      `;
-      if (lockedRows.length === 0) {
-        return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
+    for (let attempt = 1; attempt <= SERIALIZABLE_RETRY_LIMIT; attempt += 1) {
+      try {
+        return await prisma.$transaction(async (tx) => {
+          const lockedRows = await tx.$queryRaw<{ id: string }[]>`
+            SELECT "id" FROM "Tournament" WHERE "id" = CAST(${tournamentId} AS UUID) FOR UPDATE
+          `;
+          if (lockedRows.length === 0) {
+            return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
+          }
+
+          const [tournament, registration, confirmedParticipants] = await Promise.all([
+            tx.tournament.findUnique({
+              where: { id: tournamentId },
+              select: { id: true, entryFee: true, status: true, registrationStartTime: true, registrationEndTime: true, maxParticipants: true },
+            }),
+            tx.registration.findUnique({
+              where: { userId_tournamentId: { userId: user.id, tournamentId } },
+              select: { id: true, status: true },
+            }),
+            tx.registration.count({ where: { tournamentId, status: RegistrationStatus.CONFIRMED } }),
+          ]);
+
+          const eligibility = evaluateRegistrationEligibility({ user, tournament, registration, confirmedParticipants, now: new Date() });
+          if (!eligibility.allowed) {
+            return { ok: false, code: eligibility.reason, message: ERROR_MESSAGES[eligibility.reason] };
+          }
+
+          const entryFee = normalizeMoney(tournament!.entryFee.toFixed(2));
+          if (!entryFee) throw new Error("Invalid tournament entry fee.");
+          const isFree = entryFee === "0.00";
+
+          if (registration?.status === RegistrationStatus.CANCELLED && !isFree) {
+            const priorEntryDebit = await tx.walletTransaction.findFirst({
+              where: { referenceType: "ENTRY_PAYMENT", referenceId: registration.id, type: WalletTransactionType.DEBIT, category: "ENTRY_FEE" },
+              select: { id: true },
+            });
+            if (priorEntryDebit) {
+              return { ok: false, code: REGISTRATION_RESULT_CODES.REGISTRATION_NOT_REOPENABLE, message: "This cancelled paid registration cannot be reactivated without the existing refund workflow." };
+            }
+          }
+
+          let registrationId: string;
+          if (registration?.status === RegistrationStatus.CANCELLED) {
+            const updated = await tx.registration.update({
+              where: { userId_tournamentId: { userId: user.id, tournamentId } },
+              data: { status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING },
+              select: { id: true },
+            });
+            registrationId = updated.id;
+          } else {
+            const created = await tx.registration.create({
+              data: { tournamentId, userId: user.id, status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING },
+              select: { id: true },
+            });
+            registrationId = created.id;
+          }
+
+          if (!isFree) {
+            const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
+            if (!wallet) throw new Error("Wallet unavailable.");
+
+            await recordWalletTransactionInTransaction(tx, {
+              walletId: wallet.id,
+              type: "DEBIT",
+              category: "ENTRY_FEE",
+              amount: entryFee,
+              currency: "INR",
+              referenceType: "ENTRY_PAYMENT",
+              referenceId: registrationId,
+              description: `Tournament entry ${tournamentId}`,
+            });
+
+            await tx.registration.update({ where: { id: registrationId }, data: { status: RegistrationStatus.CONFIRMED } });
+          }
+
+          const codeData = createRegistrationCodeData();
+          await tx.registrationCode.upsert({
+            where: { registrationId },
+            create: { registrationId, codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted },
+            update: { codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted, revokedAt: null },
+          });
+
+          const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { balance: true } });
+
+          return {
+            ok: true,
+            registrationId,
+            registrationStatus: RegistrationStatus.CONFIRMED,
+            paymentRequired: false,
+            walletBalance: wallet?.balance.toString() ?? "0.00",
+            entryFee,
+            registrationCode: codeData.code,
+          };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      } catch (error) {
+        if (!isTransactionConflict(error) || attempt === SERIALIZABLE_RETRY_LIMIT) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
       }
+    }
 
-      const [tournament, registration, confirmedParticipants] = await Promise.all([
-        tx.tournament.findUnique({
-          where: { id: tournamentId },
-          select: { id: true, entryFee: true, status: true, registrationStartTime: true, registrationEndTime: true, maxParticipants: true },
-        }),
-        tx.registration.findUnique({
-          where: { userId_tournamentId: { userId: user.id, tournamentId } },
-          select: { id: true, status: true },
-        }),
-        tx.registration.count({ where: { tournamentId, status: RegistrationStatus.CONFIRMED } }),
-      ]);
-
-      const eligibility = evaluateRegistrationEligibility({ user, tournament, registration, confirmedParticipants, now: new Date() });
-      if (!eligibility.allowed) {
-        return { ok: false, code: eligibility.reason, message: ERROR_MESSAGES[eligibility.reason] };
-      }
-
-      const entryFee = normalizeMoney(tournament!.entryFee.toFixed(2));
-      if (!entryFee) throw new Error("Invalid tournament entry fee.");
-      const isFree = entryFee === "0.00";
-
-      if (registration?.status === RegistrationStatus.CANCELLED && !isFree) {
-        const priorEntryDebit = await tx.walletTransaction.findFirst({
-          where: { referenceType: "ENTRY_PAYMENT", referenceId: registration.id, type: WalletTransactionType.DEBIT, category: "ENTRY_FEE" },
-          select: { id: true },
-        });
-        if (priorEntryDebit) {
-          return { ok: false, code: REGISTRATION_RESULT_CODES.REGISTRATION_NOT_REOPENABLE, message: "This cancelled paid registration cannot be reactivated without the existing refund workflow." };
-        }
-      }
-
-      let registrationId: string;
-      if (registration?.status === RegistrationStatus.CANCELLED) {
-        const updated = await tx.registration.update({
-          where: { userId_tournamentId: { userId: user.id, tournamentId } },
-          data: { status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING },
-          select: { id: true },
-        });
-        registrationId = updated.id;
-      } else {
-        const created = await tx.registration.create({
-          data: { tournamentId, userId: user.id, status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING },
-          select: { id: true },
-        });
-        registrationId = created.id;
-      }
-
-      if (!isFree) {
-        const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
-        if (!wallet) throw new Error("Wallet unavailable.");
-
-        await recordWalletTransactionInTransaction(tx, {
-          walletId: wallet.id,
-          type: "DEBIT",
-          category: "ENTRY_FEE",
-          amount: entryFee,
-          currency: "INR",
-          referenceType: "ENTRY_PAYMENT",
-          referenceId: registrationId,
-          description: `Tournament entry ${tournamentId}`,
-        });
-
-        await tx.registration.update({ where: { id: registrationId }, data: { status: RegistrationStatus.CONFIRMED } });
-      }
-
-      const codeData = createRegistrationCodeData();
-      await tx.registrationCode.upsert({
-        where: { registrationId },
-        create: { registrationId, codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted },
-        update: { codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted, revokedAt: null },
-      });
-
-      const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { balance: true } });
-
-      return {
-        ok: true,
-        registrationId,
-        registrationStatus: RegistrationStatus.CONFIRMED,
-        paymentRequired: false,
-        walletBalance: wallet?.balance.toString() ?? "0.00",
-        entryFee,
-        registrationCode: codeData.code,
-      };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    throw new Error("Registration transaction retry limit reached.");
   } catch (error) {
     if (isUniqueConstraintError(error)) {
       return { ok: false, code: REGISTRATION_RESULT_CODES.ALREADY_REGISTERED, message: ERROR_MESSAGES.ALREADY_REGISTERED };
