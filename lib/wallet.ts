@@ -80,7 +80,7 @@ async function recordWalletTransaction(input: { walletId: string; type: Directio
     const wallet = await lockWallet(tx, input.walletId);
     if (wallet.currency !== currency) throw new Error("Wallet currency mismatch.");
 
-    const existing = await tx.walletTransaction.findFirst({ where: { walletId: input.walletId, referenceType: input.referenceType, referenceId: input.referenceId, type: input.type, category: input.category }, select: { id: true, walletId: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true } });
+    const existing = await tx.walletTransaction.findFirst({ where: { walletId: input.walletId, referenceType: input.referenceType as never, referenceId: input.referenceId, type: input.type as never, category: input.category as never }, select: { id: true, walletId: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true } });
     if (existing) {
       if (existing.amount.toString() !== amount || existing.currency !== currency) throw new Error("Financial reference already exists with different transaction terms.");
       return existing;
@@ -90,7 +90,7 @@ async function recordWalletTransaction(input: { walletId: string; type: Directio
     const next = input.type === WalletTransactionType.CREDIT ? addMoney(current, amount) : compareMoney(current, amount) < 0 ? null : subtractMoneySafe(current, amount);
     if (next === null) throw new Error("Insufficient wallet balance.");
 
-    const entry = await tx.walletTransaction.create({ data: { walletId: input.walletId, type: input.type, category: input.category, amount, currency, referenceType: input.referenceType, referenceId: input.referenceId, description }, select: { id: true, walletId: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true } });
+    const entry = await tx.walletTransaction.create({ data: { walletId: input.walletId, type: input.type, category: input.category as never, amount, currency, referenceType: input.referenceType as never, referenceId: input.referenceId, description }, select: { id: true, walletId: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true } });
     await tx.wallet.update({ where: { id: input.walletId }, data: { balance: next } });
     return entry;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

@@ -5,8 +5,8 @@ const MONEY_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const WALLET_TRANSACTION_TYPES = ["CREDIT", "DEBIT"] as const;
-export const WALLET_TRANSACTION_CATEGORIES = ["PRIZE", "REFUND", "WITHDRAWAL", "ENTRY_FEE", "ADJUSTMENT"] as const;
-export const WALLET_REFERENCE_TYPES = ["PRIZE_SETTLEMENT", "REFUND", "WITHDRAWAL", "ENTRY_PAYMENT", "ADJUSTMENT"] as const;
+export const WALLET_TRANSACTION_CATEGORIES = ["PRIZE", "REFUND", "WITHDRAWAL", "ENTRY_FEE", "ADJUSTMENT", "DEPOSIT"] as const;
+export const WALLET_REFERENCE_TYPES = ["PRIZE_SETTLEMENT", "REFUND", "WITHDRAWAL", "WITHDRAWAL_PAYOUT", "ENTRY_PAYMENT", "ADJUSTMENT", "DEPOSIT"] as const;
 
 export type WalletTransactionType = (typeof WALLET_TRANSACTION_TYPES)[number];
 export type WalletTransactionCategory = (typeof WALLET_TRANSACTION_CATEGORIES)[number];
