@@ -78,6 +78,7 @@ enum WalletTransactionCategory {
   WITHDRAWAL
   ENTRY_FEE
   ADJUSTMENT
+  DEPOSIT
 }
 
 enum WalletReferenceType {
@@ -87,6 +88,14 @@ enum WalletReferenceType {
   WITHDRAWAL_PAYOUT
   ENTRY_PAYMENT
   ADJUSTMENT
+  DEPOSIT
+}
+
+enum WalletDepositStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
 }
 
 enum WithdrawalRequestStatus {
@@ -158,6 +167,7 @@ model User {
   sessions Session[]
   registrations Registration[]
   wallet Wallet?
+  walletDeposits WalletDeposit[]
   withdrawalRequests WithdrawalRequest[]
   reviewedWithdrawals WithdrawalRequest[] @relation("WithdrawalReviewer")
   payoutDestinations PayoutDestination[]
@@ -366,6 +376,7 @@ model Wallet {
   updatedAt DateTime @updatedAt
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   transactions WalletTransaction[]
+  deposits WalletDeposit[]
   withdrawalRequests WithdrawalRequest[]
   @@index([createdAt])
 }
@@ -386,6 +397,27 @@ model WalletTransaction {
   @@index([walletId])
   @@index([createdAt])
   @@index([referenceType, referenceId])
+}
+
+model WalletDeposit {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  walletId String @db.Uuid
+  amount Decimal @db.Decimal(20, 2)
+  currency String @default("INR") @db.VarChar(3)
+  status WalletDepositStatus @default(PENDING)
+  reference String @unique @db.VarChar(40)
+  providerReference String? @unique @db.VarChar(128)
+  idempotencyKey String @db.VarChar(128)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  @@unique([userId, idempotencyKey])
+  @@index([userId, status])
+  @@index([walletId, createdAt])
+  @@index([status, createdAt])
+  @@index([amount, createdAt])
 }
 
 model WithdrawalRequest {
