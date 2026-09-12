@@ -62,10 +62,26 @@ async function deleteTournamentFixture(tournamentId: string, gameId: string) {
   await prisma.game.deleteMany({ where: { id: gameId } });
 }
 
+async function deleteWalletFixture(walletId: string) {
+  // Wallet entry transactions lock the wallet row before creating/updating the
+  // ledger. Teardown must acquire that same lock before deleting the ledger;
+  // otherwise a concurrent registration can commit a WalletTransaction after
+  // deleteMany() has already completed and make the parent delete fail with a
+  // foreign-key violation.
+  await prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "Wallet" WHERE "id" = CAST(${walletId} AS UUID) FOR UPDATE
+    `;
+    if (locked.length === 0) return;
+
+    await tx.walletTransaction.deleteMany({ where: { walletId } });
+    await tx.wallet.deleteMany({ where: { id: walletId } });
+  });
+}
+
 async function cleanup(fixture: Awaited<ReturnType<typeof createFixture>>, extraUsers: string[] = []) {
   const userIds = [fixture.user.id, ...extraUsers];
-  await prisma.walletTransaction.deleteMany({ where: { walletId: fixture.wallet.id } });
-  await prisma.wallet.deleteMany({ where: { id: fixture.wallet.id } });
+  await deleteWalletFixture(fixture.wallet.id);
   await deleteTournamentFixture(fixture.tournament.id, fixture.game.id);
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 }
@@ -161,8 +177,7 @@ test("concurrent spending from one wallet cannot overspend it", async () => {
     assert.equal((await prisma.wallet.findUniqueOrThrow({ where: { id: fixture.wallet.id } })).balance.toString(), "0");
   } finally {
     await deleteTournamentFixture(secondTournament.id, secondGame.id);
-    await prisma.walletTransaction.deleteMany({ where: { walletId: fixture.wallet.id } });
-    await prisma.wallet.deleteMany({ where: { id: fixture.wallet.id } });
+    await deleteWalletFixture(fixture.wallet.id);
     await deleteTournamentFixture(fixture.tournament.id, fixture.game.id);
     await prisma.user.deleteMany({ where: { id: fixture.user.id } });
   }
@@ -186,8 +201,8 @@ test("capacity race allows only the final available slot and rolls back the lose
     ]);
     assert.equal(balances.filter((wallet) => wallet.balance.toString() === "100").length, 1);
   } finally {
-    await prisma.walletTransaction.deleteMany({ where: { walletId: { in: [fixture.wallet.id, secondWallet.id] } } });
-    await prisma.wallet.deleteMany({ where: { id: { in: [fixture.wallet.id, secondWallet.id] } } });
+    await deleteWalletFixture(fixture.wallet.id);
+    await deleteWalletFixture(secondWallet.id);
     await deleteTournamentFixture(fixture.tournament.id, fixture.game.id);
     await prisma.user.deleteMany({ where: { id: { in: [fixture.user.id, secondUser.id] } } });
   }
