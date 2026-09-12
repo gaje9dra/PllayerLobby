@@ -35,13 +35,14 @@ async function createFixture({ balance = "500.00", entryFee = "100.00", maxParti
 
 async function cleanup(fixture: Awaited<ReturnType<typeof createFixture>>, extraUsers: string[] = []) {
   const userIds = [fixture.user.id, ...extraUsers];
+  // Delete wallet transactions before registrations/wallets so WalletTransaction.walletId_fkey
+  // can never block fixture teardown, including transactions created for concurrent entries.
+  await prisma.walletTransaction.deleteMany({ where: { walletId: fixture.wallet.id } });
   const registrations = await prisma.registration.findMany({ where: { tournamentId: fixture.tournament.id }, select: { id: true } });
   if (registrations.length) {
     await prisma.registrationCode.deleteMany({ where: { registrationId: { in: registrations.map((row) => row.id) } } });
-    await prisma.walletTransaction.deleteMany({ where: { referenceType: "ENTRY_PAYMENT", referenceId: { in: registrations.map((row) => row.id) } } });
   }
   await prisma.registration.deleteMany({ where: { tournamentId: fixture.tournament.id } });
-  await prisma.walletTransaction.deleteMany({ where: { walletId: fixture.wallet.id } });
   await prisma.wallet.deleteMany({ where: { id: fixture.wallet.id } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   await prisma.tournament.deleteMany({ where: { id: fixture.tournament.id } });
