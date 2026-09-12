@@ -1,10 +1,10 @@
-# PayU Wallet Deposit — Phase 8.3
+# PayU Wallet Deposit — Phase 8.4
 
 ## Scope
 
-Phase 8.3 connects the Phase 8.2 `WalletDeposit` flow to the repository's existing PayU hosted-checkout and server-side verification implementation. It does not alter tournament entry, prize settlement, withdrawals, payouts, or the wallet/ledger architecture.
+Phase 8.4 hardens the existing Phase 8.3 PayU wallet-deposit integration. It keeps the existing wallet, immutable ledger, `WalletDeposit` state machine, hosted checkout, and PayU integration and adds authoritative verification and exactly-once settlement protections.
 
-## Flow
+## Authoritative flow
 
 ```text
 Wallet → Add Money
@@ -12,171 +12,157 @@ Wallet → Add Money
       → server builds PayU request
       → browser POSTs hosted-checkout fields to PayU
       → PayU POST callback to /api/payu/wallet-deposit/callback
-      → validate merchant key + reverse hash
+      → validate merchant key + reverse SHA-512 response hash
+      → load persisted WalletDeposit by unique reference
+      → validate transaction + amount + currency + customer/product fields
       → call PayU Verify Payment API
-      → validate transaction ID + amount + customer/product fields
-      → SUCCESS / FAILED / PENDING
-      → on verified SUCCESS only:
-           WalletDeposit SUCCESS
-           + one DEPOSIT WalletTransaction CREDIT
-           + wallet balance update
+      → validate verified txnid + amount + provider state
+      → lock deposit
+      → verified SUCCESS only:
+           wallet credit + DEPOSIT ledger entry + WalletDeposit SUCCESS
+           all in one serializable transaction
 ```
+
+A browser redirect, frontend success state, query parameter, or localStorage value never credits the wallet.
 
 ## Existing PayU integration reused
 
-The application already had:
+The implementation continues to use:
 
-- `lib/payu.ts` for PayU environment configuration, checkout/verification URLs and shared hash utilities;
-- `lib/payu-hash.ts` for the established SHA-512 request and reverse-response hashing;
-- `lib/payu-verification.ts` for server-side `verify_payment` calls and provider status mapping;
-- the existing `/api/payu/callback` and tournament payment verification flow.
+- `lib/payu.ts` for server-side PayU configuration and endpoints;
+- `lib/payu-hash.ts` for SHA-512 request and reverse-response validation;
+- `lib/payu-verification.ts` for the PayU `verify_payment` request;
+- `lib/payu-verification-rules.ts` for provider-state mapping and exact decimal normalization;
+- `lib/payu-wallet-deposit.ts` for wallet-deposit checkout and authoritative finalization.
 
-The wallet deposit integration reuses those utilities instead of introducing another PayU hash or HTTP client implementation.
+No second wallet, ledger, payment gateway, or PayU implementation was introduced.
 
 ## Environment
 
-The existing PayU variables are server-side only:
+Server-side variables:
 
 - `PAYU_MERCHANT_KEY`
 - `PAYU_MERCHANT_SALT`
 - `PAYU_ENVIRONMENT` (`test` or `production`)
-- `NEXT_PUBLIC_APP_URL` for callback URL construction
+- `NEXT_PUBLIC_APP_URL` for the callback URL
 
-Never expose the merchant salt or other provider secrets through `NEXT_PUBLIC_*`, client JavaScript, logs, or source control. Keep sandbox and production credentials separate.
+The merchant salt and other private credentials must never be exposed through `NEXT_PUBLIC_*`, client JavaScript, logs, or source control. Development/testing uses PayU sandbox credentials.
 
-The existing PayU helper selects:
+## Verification rules
 
-- test checkout: `https://test.payu.in/_payment`
-- production checkout: `https://secure.payu.in/_payment`
-- test verification: `https://test.payu.in/merchant/postservice.php?form=2`
-- production verification: `https://info.payu.in/merchant/postservice.php?form=2`
+The callback is accepted for financial processing only when:
 
-## Deposit reference and PayU transaction
+1. the transaction reference matches an existing `WalletDeposit.reference`;
+2. the callback merchant key matches the configured merchant key;
+3. the callback reverse hash validates with the server-side merchant salt;
+4. the callback amount exactly matches the persisted deposit amount;
+5. the callback product information and customer identity match the persisted deposit/user;
+6. PayU `verify_payment` confirms the same transaction ID;
+7. the verified amount and transaction amount match the persisted deposit amount;
+8. the provider state is successful (`success` with `captured`/`auth` unmapped state);
+9. a provider transaction ID (`mihpayid`) is available for successful settlement;
+10. that provider transaction ID is not already attached to another deposit.
 
-`WalletDeposit.reference` is the unique user-facing internal reference and is used as the PayU `txnid`. It has the form `DEP-XXXXXXXXXXXX` and is unique at the database level.
+Provider-reported amounts are never used as the source of truth. The persisted server-side deposit amount is authoritative.
 
-The PayU provider transaction ID (`mihpayid`) is stored separately in `WalletDeposit.providerReference` after server-side verification. This provides an explicit internal-to-provider reconciliation path without using the wallet ID as a payment transaction ID.
+## Exact monetary comparison
 
-## Amount authority
-
-The server reads the amount from the persisted `WalletDeposit` and generates the PayU request from that amount. Callback amounts are normalized and compared against the stored amount. The PayU Verify Payment result is independently compared against the same stored amount.
-
-An amount mismatch rejects the financial operation. No wallet credit is performed.
-
-## Hash/signature validation
-
-The PayU callback must contain the required response fields. The server checks:
-
-1. `key` equals the configured merchant key;
-2. transaction ID equals the persisted deposit reference;
-3. amount equals the persisted deposit amount;
-4. product information equals the generated wallet-deposit description;
-5. customer identity fields match the persisted user where present;
-6. the established PayU reverse response hash validates with the server-side merchant salt;
-7. PayU's server-side Verify Payment response exists and matches the same transaction and amount.
-
-A browser redirect or a `status=success` parameter without a valid provider response/hash cannot credit a wallet.
+PayU amounts are normalized as decimal strings rather than converted through JavaScript floating-point `Number` arithmetic. This prevents precision loss at the payment-verification boundary.
 
 ## Deposit states
 
-- `PENDING`: created or payment state cannot yet be authoritatively finalized. No wallet credit.
-- `SUCCESS`: PayU success has been authoritatively verified and the wallet credit/ledger entry committed atomically.
-- `FAILED`: PayU failure has been authoritatively verified. No wallet credit.
-- `CANCELLED`: user cancelled a pending request. No wallet credit.
+- `PENDING`: payment has not been authoritatively finalized. No wallet credit.
+- `SUCCESS`: authoritative PayU success has been verified and the wallet/ledger/deposit update committed atomically.
+- `FAILED`: authoritative PayU failure has been verified. Wallet remains unchanged.
+- `CANCELLED`: user cancelled a pending deposit. Wallet remains unchanged.
 
-If PayU verification is unavailable or uncertain, the deposit remains `PENDING`.
+Uncertain PayU verification remains `PENDING` and is safe for later provider retry/reconciliation.
 
 ## Atomic wallet credit
 
-Verified success uses `creditVerifiedDepositInTransaction()` from the existing wallet module. It executes in the same Prisma serializable transaction that locks the deposit and updates the deposit state.
+Verified success calls `creditVerifiedDepositInTransaction()` from the existing wallet service. The operation runs inside a serializable Prisma transaction and locks the `WalletDeposit` row before settlement.
 
-The wallet service:
+The wallet service then:
 
 - locks the wallet row;
-- validates currency and amount;
-- checks the existing ledger reference;
-- creates exactly one `CREDIT / DEPOSIT` ledger entry;
+- validates currency and exact money amount;
+- enforces the existing financial-reference idempotency rule;
+- creates exactly one immutable `CREDIT / DEPOSIT` ledger transaction;
 - updates the wallet balance.
 
-The deposit is then changed to `SUCCESS` in that same database transaction. If any step fails, the entire transaction rolls back.
+The `WalletDeposit` is marked `SUCCESS` in the same database transaction. Any database error rolls back the complete financial operation.
 
-The ledger business reference is:
-
-- `referenceType = DEPOSIT`
-- `referenceId = WalletDeposit.reference`
-
-This is idempotent under the Phase 8.1 wallet transaction uniqueness constraint.
+The ledger reference uses the `WalletDeposit.id` UUID, not the user-facing `DEP-...` string. The existing unique wallet-transaction constraint therefore prevents duplicate successful deposit credits.
 
 ## Duplicate and concurrent callbacks
 
-A repeated callback for an already-successful deposit returns success without creating another wallet movement.
+A repeated valid callback for an already-successful deposit returns an idempotent success result and performs no second credit.
 
-Concurrent callbacks lock the same `WalletDeposit` row before applying the financial outcome. The wallet is separately row-locked by the wallet transaction boundary. Serializable transactions and the unique ledger reference prevent a second credit.
+Concurrent valid callbacks lock the same deposit before settlement. The existing wallet row lock and unique ledger reference provide a second protection boundary. The final wallet balance can therefore increase by the deposit amount only once.
 
-If a serializable conflict occurs, the callback returns a safe pending result rather than creating a partial financial outcome. A later provider callback/retry can finalize the deposit.
+If a serializable conflict or provider verification failure makes the result uncertain, no partial credit is committed and the deposit remains safe for retry/reconciliation.
 
-## Failure handling
+## Provider transaction reuse
 
-The callback does not expose stack traces or database/provider secrets. Rejected responses return a generic verification error. Internal logs use the deposit/transaction reference and safe error names rather than secrets.
+`WalletDeposit.providerReference` is unique. Before a successful settlement, the service checks whether the PayU `mihpayid` is already associated with another deposit. Such a callback is rejected rather than allowing one provider payment to fund two deposits.
 
-## User experience
+## Callback endpoint
 
-For a pending deposit the user sees:
+`POST /api/payu/wallet-deposit/callback` accepts the provider callback and processes it server-side. `GET` is rejected.
 
-- amount;
-- deposit reference;
-- PENDING state;
-- `Continue to PayU` checkout action;
-- optional mobile number if the account does not yet have one;
-- explicit statement that only server verification credits the wallet.
+After processing, the browser is redirected to the server-backed deposit status page. The page reads the current `WalletDeposit` state from the database; the redirect itself does not create financial state.
 
-After callback processing, the user is returned to the server-backed deposit page. Refreshing the page reads the current `WalletDeposit` state from the server.
+Callback failures expose only safe generic responses. Merchant salts, SQL errors, stack traces, and provider secrets are not returned.
+
+## Security invariants
+
+The implementation must reject without wallet credit when:
+
+- the callback hash/signature is invalid;
+- the merchant key is wrong;
+- the deposit reference is unknown;
+- the transaction reference is mismatched;
+- the amount is tampered;
+- the currency is unexpected;
+- customer/product information is inconsistent;
+- PayU verification does not confirm the transaction;
+- the provider transaction is already associated with another deposit;
+- PayU reports failure;
+- PayU verification is pending/unknown.
 
 ## Testing
 
-Tests cover the shared PayU hash boundary and fake-success rejection. Database-backed integration tests should run against the configured test database for full payment-state and wallet invariants.
+Phase 8.4 adds coverage for:
 
-Required scenarios:
+- exact decimal normalization for large monetary values;
+- valid verified success;
+- duplicate success callback;
+- invalid response hash;
+- amount tampering;
+- provider transaction reuse;
+- failed provider result with no wallet credit;
+- concurrent verified callbacks with one final wallet credit.
 
-- valid request hash;
-- invalid/tampered response hash;
-- fake success without a valid hash;
-- transaction mismatch;
-- amount mismatch;
-- verified success;
-- duplicate callback;
-- concurrent callback;
-- failed payment;
-- pending/unknown verification;
-- no premature wallet credit;
-- exactly one DEPOSIT ledger credit;
-- reconciliation after success;
-- ownership and unauthorized access;
-- refresh/retry;
-- abandoned pending payment.
+Run the repository CI sequence with PayU test credentials only:
 
-## Sandbox / production safety
-
-Use PayU's sandbox/test environment for development and integration testing. Do not use real money for tests.
-
-Production configuration must use:
-
-- `APP_ENVIRONMENT=production`;
-- the real HTTPS application URL;
-- production PayU environment and credentials;
-- provider callback URLs that resolve to the deployed HTTPS application.
-
-Never commit real credentials. Do not point production at test credentials or localhost callbacks, and do not point development at production secrets.
+```text
+npm ci
+npm run prisma:generate
+npm run db:validate
+npm run db:migrate:deploy
+npx tsc --noEmit
+npm run lint
+npm test
+npm run build
+```
 
 ## Financial invariant
-
-The critical invariant is:
 
 ```text
 PENDING deposit  -> wallet unchanged
 FAILED deposit   -> wallet unchanged
-verified SUCCESS -> exactly one wallet credit
+verified SUCCESS -> exactly one wallet credit + one DEPOSIT ledger entry
 repeat SUCCESS   -> zero additional wallet credit
 ```
 
-Creating a deposit or returning from a PayU browser page is never sufficient to create money. Only authoritative server-side PayU verification may trigger the wallet credit.
+No production money is used for tests. No Phase 8.5 functionality is included here.
