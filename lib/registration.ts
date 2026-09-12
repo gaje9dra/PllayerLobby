@@ -57,17 +57,45 @@ const ERROR_MESSAGES: Record<RegistrationEligibilityReason, string> = {
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SERIALIZABLE_RETRY_LIMIT = 8;
+const TRANSACTION_RETRY_LIMIT = 8;
 
 function isUniqueConstraintError(error: unknown) {
   return error && typeof error === "object" && "code" in error && error.code === "P2002";
 }
 
-function isTransactionConflict(error: unknown) {
-  if (!error || typeof error !== "object") return false;
-  if ("code" in error && error.code === "P2034") return true;
-  const message = error instanceof Error ? error.message : "";
-  return /TransactionWriteConflict|could not serialize access|serialization failure/i.test(message);
+function isTransactionConflict(error: unknown): boolean {
+  const seen = new Set<object>();
+  let current: unknown = error;
+
+  // Prisma 7's PostgreSQL driver adapter can expose serialization failures as
+  // DriverAdapterError -> cause -> originalCode=40001 instead of P2034.
+  // Walk the causal chain so transient concurrency failures are retried rather
+  // than escaping the registration operation.
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (typeof current !== "object") {
+      const text = String(current);
+      if (/TransactionWriteConflict|could not serialize access|serialization failure/i.test(text)) return true;
+      break;
+    }
+
+    if (seen.has(current)) break;
+    seen.add(current);
+
+    if ("code" in current && current.code === "P2034") return true;
+    if ("originalCode" in current && current.originalCode === "40001") return true;
+    if ("originalCode" in current && current.originalCode === 40001) return true;
+
+    const message = "message" in current && typeof current.message === "string" ? current.message : "";
+    if (/TransactionWriteConflict|could not serialize access|serialization failure/i.test(message)) return true;
+
+    if ("cause" in current) {
+      current = current.cause;
+      continue;
+    }
+    break;
+  }
+
+  return false;
 }
 
 function errorMessage(error: unknown) {
@@ -93,9 +121,19 @@ export async function createTournamentRegistrationForUser(
   }
 
   try {
-    await refreshTournamentLifecycle(tournamentId);
+    // Lifecycle refresh is intentionally outside the financial transaction.
+    // It is conditional and safe to retry if another request updates status.
+    for (let lifecycleAttempt = 1; lifecycleAttempt <= TRANSACTION_RETRY_LIMIT; lifecycleAttempt += 1) {
+      try {
+        await refreshTournamentLifecycle(tournamentId);
+        break;
+      } catch (error) {
+        if (!isTransactionConflict(error) || lifecycleAttempt === TRANSACTION_RETRY_LIMIT) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 25 * lifecycleAttempt));
+      }
+    }
 
-    for (let attempt = 1; attempt <= SERIALIZABLE_RETRY_LIMIT; attempt += 1) {
+    for (let attempt = 1; attempt <= TRANSACTION_RETRY_LIMIT; attempt += 1) {
       try {
         return await prisma.$transaction(async (tx) => {
           const lockedRows = await tx.$queryRaw<{ id: string }[]>`
@@ -190,7 +228,7 @@ export async function createTournamentRegistrationForUser(
           };
         }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
       } catch (error) {
-        if (!isTransactionConflict(error) || attempt === SERIALIZABLE_RETRY_LIMIT) throw error;
+        if (!isTransactionConflict(error) || attempt === TRANSACTION_RETRY_LIMIT) throw error;
         await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
       }
     }
