@@ -238,9 +238,9 @@ export async function debitWallet(input: Omit<WalletTransactionInput, "type">) {
 
 export async function creditVerifiedDepositInTransaction(
   tx: Prisma.TransactionClient,
-  input: { walletId: string; amount: string; currency: string; depositReference: string },
+  input: { walletId: string; amount: string; currency: string; depositId: string },
 ) {
-  if (!/^DEP-[A-Z0-9]{12}$/.test(input.depositReference)) throw new Error("Invalid deposit reference.");
+  if (!isValidUuid(input.depositId)) throw new Error("Invalid wallet deposit ID.");
   return recordWalletTransactionInTransaction(tx, {
     walletId: input.walletId,
     type: "CREDIT" as Direction,
@@ -248,8 +248,8 @@ export async function creditVerifiedDepositInTransaction(
     amount: input.amount,
     currency: input.currency,
     referenceType: "DEPOSIT" as WalletReferenceType,
-    referenceId: input.depositReference,
-    description: `Wallet deposit ${input.depositReference}`,
+    referenceId: input.depositId,
+    description: `Wallet deposit ${input.depositId}`,
   });
 }
 
