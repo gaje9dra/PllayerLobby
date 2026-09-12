@@ -16,7 +16,7 @@ test("pending deposit persistence leaves wallet balance unchanged", async () => 
     assert.equal(deposit.status, WalletDepositStatus.PENDING);
 
     const unchanged = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id }, select: { balance: true } });
-    assert.equal(unchanged.balance.toString(), "500.00");
+    assert.equal(unchanged.balance.toString(), "500");
 
     const ledgerCount = await prisma.walletTransaction.count({ where: { walletId: wallet.id } });
     assert.equal(ledgerCount, 0);
