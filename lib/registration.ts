@@ -1,6 +1,6 @@
 import "server-only";
 
-import { RegistrationStatus } from "@/app/generated/prisma/client";
+import { Prisma, RegistrationStatus, WalletTransactionType } from "@/app/generated/prisma/client";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refreshTournamentLifecycle } from "@/lib/tournament-lifecycle";
@@ -10,10 +10,14 @@ import {
   REGISTRATION_ELIGIBILITY_REASONS,
   type RegistrationEligibilityReason,
 } from "@/lib/registration-eligibility-rules";
-import { getRegistrationCreationStatus } from "@/lib/registration-workflow-rules";
+import { normalizeMoney } from "@/lib/wallet-rules";
+import { recordWalletTransactionInTransaction } from "@/lib/wallet";
 
 export const REGISTRATION_RESULT_CODES = {
   ...REGISTRATION_ELIGIBILITY_REASONS,
+  INSUFFICIENT_BALANCE: "INSUFFICIENT_BALANCE",
+  WALLET_UNAVAILABLE: "WALLET_UNAVAILABLE",
+  REGISTRATION_NOT_REOPENABLE: "REGISTRATION_NOT_REOPENABLE",
   REGISTRATION_FAILED: "REGISTRATION_FAILED",
 } as const;
 
@@ -25,7 +29,9 @@ export type RegistrationCreationResult =
       ok: true;
       registrationId: string;
       registrationStatus: RegistrationStatus;
-      paymentRequired: boolean;
+      paymentRequired: false;
+      walletBalance: string;
+      entryFee: string;
       registrationCode?: string;
     }
   | {
@@ -52,25 +58,20 @@ function isUniqueConstraintError(error: unknown) {
   return error && typeof error === "object" && "code" in error && error.code === "P2002";
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "";
+}
+
 export async function createTournamentRegistration(
   tournamentId: string,
 ): Promise<RegistrationCreationResult> {
   if (!UUID_PATTERN.test(tournamentId)) {
-    return {
-      ok: false,
-      code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND,
-      message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND,
-    };
+    return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
   }
 
   const user = await getCurrentUser();
-
   if (!user) {
-    return {
-      ok: false,
-      code: REGISTRATION_RESULT_CODES.UNAUTHENTICATED,
-      message: ERROR_MESSAGES.UNAUTHENTICATED,
-    };
+    return { ok: false, code: REGISTRATION_RESULT_CODES.UNAUTHENTICATED, message: ERROR_MESSAGES.UNAUTHENTICATED };
   }
 
   try {
@@ -78,47 +79,22 @@ export async function createTournamentRegistration(
 
     return await prisma.$transaction(async (tx) => {
       const lockedRows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT "id"
-        FROM "Tournament"
-        WHERE "id" = CAST(${tournamentId} AS UUID)
-        FOR UPDATE
+        SELECT "id" FROM "Tournament" WHERE "id" = CAST(${tournamentId} AS UUID) FOR UPDATE
       `;
-
       if (lockedRows.length === 0) {
-        return {
-          ok: false,
-          code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND,
-          message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND,
-        };
+        return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
       }
 
       const [tournament, registration, confirmedParticipants] = await Promise.all([
         tx.tournament.findUnique({
           where: { id: tournamentId },
-          select: {
-            id: true,
-            entryFee: true,
-            status: true,
-            registrationStartTime: true,
-            registrationEndTime: true,
-            maxParticipants: true,
-          },
+          select: { id: true, entryFee: true, status: true, registrationStartTime: true, registrationEndTime: true, maxParticipants: true },
         }),
         tx.registration.findUnique({
-          where: {
-            userId_tournamentId: {
-              userId: user.id,
-              tournamentId,
-            },
-          },
+          where: { userId_tournamentId: { userId: user.id, tournamentId } },
           select: { id: true, status: true },
         }),
-        tx.registration.count({
-          where: {
-            tournamentId,
-            status: RegistrationStatus.CONFIRMED,
-          },
-        }),
+        tx.registration.count({ where: { tournamentId, status: RegistrationStatus.CONFIRMED } }),
       ]);
 
       const eligibility = evaluateRegistrationEligibility({
@@ -128,82 +104,101 @@ export async function createTournamentRegistration(
         confirmedParticipants,
         now: new Date(),
       });
-
       if (!eligibility.allowed) {
-        return {
-          ok: false,
-          code: eligibility.reason,
-          message: ERROR_MESSAGES[eligibility.reason],
-        };
+        return { ok: false, code: eligibility.reason, message: ERROR_MESSAGES[eligibility.reason] };
       }
 
-      const creation = getRegistrationCreationStatus(tournament!.entryFee);
-      let registrationId: string;
-      let registrationCode: string | undefined;
+      const entryFee = normalizeMoney(tournament!.entryFee.toFixed(2));
+      if (!entryFee) throw new Error("Invalid tournament entry fee.");
+      const isFree = entryFee === "0.00";
 
-      if (registration?.status === RegistrationStatus.CANCELLED) {
-        await tx.registration.update({
+      if (registration?.status === RegistrationStatus.CANCELLED && !isFree) {
+        const priorEntryDebit = await tx.walletTransaction.findFirst({
           where: {
-            userId_tournamentId: {
-              userId: user.id,
-              tournamentId,
-            },
+            referenceType: "ENTRY_PAYMENT",
+            referenceId: registration.id,
+            type: WalletTransactionType.DEBIT,
+            category: "ENTRY_FEE",
           },
-          data: { status: creation.status },
+          select: { id: true },
         });
-        registrationId = registration.id;
+        if (priorEntryDebit) {
+          return {
+            ok: false,
+            code: REGISTRATION_RESULT_CODES.REGISTRATION_NOT_REOPENABLE,
+            message: "This cancelled paid registration cannot be reactivated without the existing refund workflow.",
+          };
+        }
+      }
+
+      let registrationId: string;
+      if (registration?.status === RegistrationStatus.CANCELLED) {
+        const updated = await tx.registration.update({
+          where: { userId_tournamentId: { userId: user.id, tournamentId } },
+          data: { status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING },
+          select: { id: true },
+        });
+        registrationId = updated.id;
       } else {
         const created = await tx.registration.create({
-          data: {
-            tournamentId,
-            userId: user.id,
-            status: creation.status,
-          },
+          data: { tournamentId, userId: user.id, status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING },
           select: { id: true },
         });
         registrationId = created.id;
       }
 
-      if (creation.status === RegistrationStatus.CONFIRMED) {
-        const codeData = createRegistrationCodeData();
-        await tx.registrationCode.upsert({
-          where: { registrationId },
-          create: {
-            registrationId,
-            codeHash: codeData.codeHash,
-            codeEncrypted: codeData.codeEncrypted,
-          },
-          update: {
-            codeHash: codeData.codeHash,
-            codeEncrypted: codeData.codeEncrypted,
-            revokedAt: null,
-          },
+      if (!isFree) {
+        const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
+        if (!wallet) throw new Error("Wallet unavailable.");
+
+        await recordWalletTransactionInTransaction(tx, {
+          walletId: wallet.id,
+          type: "DEBIT",
+          category: "ENTRY_FEE",
+          amount: entryFee,
+          currency: "INR",
+          referenceType: "ENTRY_PAYMENT",
+          referenceId: registrationId,
+          description: `Tournament entry ${tournamentId}`,
         });
-        registrationCode = codeData.code;
+
+        await tx.registration.update({ where: { id: registrationId }, data: { status: RegistrationStatus.CONFIRMED } });
       }
+
+      const codeData = createRegistrationCodeData();
+      await tx.registrationCode.upsert({
+        where: { registrationId },
+        create: { registrationId, codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted },
+        update: { codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted, revokedAt: null },
+      });
+
+      const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { balance: true } });
+      if (!wallet) throw new Error("Wallet unavailable.");
 
       return {
         ok: true,
         registrationId,
-        registrationStatus: creation.status,
-        paymentRequired: creation.paymentRequired,
-        registrationCode,
+        registrationStatus: RegistrationStatus.CONFIRMED,
+        paymentRequired: false,
+        walletBalance: wallet.balance.toString(),
+        entryFee,
+        registrationCode: codeData.code,
       };
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
     if (isUniqueConstraintError(error)) {
-      return {
-        ok: false,
-        code: REGISTRATION_RESULT_CODES.ALREADY_REGISTERED,
-        message: ERROR_MESSAGES.ALREADY_REGISTERED,
-      };
+      return { ok: false, code: REGISTRATION_RESULT_CODES.ALREADY_REGISTERED, message: ERROR_MESSAGES.ALREADY_REGISTERED };
+    }
+
+    const message = errorMessage(error);
+    if (message === "Insufficient wallet balance.") {
+      return { ok: false, code: REGISTRATION_RESULT_CODES.INSUFFICIENT_BALANCE, message: "Insufficient wallet balance." };
+    }
+    if (message === "Wallet unavailable.") {
+      return { ok: false, code: REGISTRATION_RESULT_CODES.WALLET_UNAVAILABLE, message: "Your wallet is currently unavailable. Please try again." };
     }
 
     console.error("Tournament registration failed:", error);
-    return {
-      ok: false,
-      code: REGISTRATION_RESULT_CODES.REGISTRATION_FAILED,
-      message: "Unable to register for this tournament right now. Please try again.",
-    };
+    return { ok: false, code: REGISTRATION_RESULT_CODES.REGISTRATION_FAILED, message: "Unable to register for this tournament right now. Please try again." };
   }
 }
