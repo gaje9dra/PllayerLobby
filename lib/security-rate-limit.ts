@@ -34,7 +34,12 @@ export async function consumeSecurityRateLimit(input: {
   const windowMs = input.windowSeconds * 1000;
 
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${keyHash}, 0))`);
+    // pg_advisory_xact_lock returns void. Selecting a scalar value from the
+    // same advisory-lock function keeps Prisma's $queryRaw deserializer happy
+    // while retaining transaction-scoped serialization for this rate-limit key.
+    await tx.$queryRaw<{ locked: boolean }[]>(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${keyHash}, 0)) IS NULL AS locked
+    `);
 
     const rows = await tx.$queryRaw<RateLimitRow[]>(Prisma.sql`
       SELECT "id", "windowStartedAt", "requestCount"
