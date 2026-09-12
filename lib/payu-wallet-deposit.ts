@@ -38,7 +38,11 @@ export async function createPayUWalletDepositPayment(depositId: string, phoneInp
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (!appUrl) return invalid("Payment is temporarily unavailable. Please try again later.");
   let callbackUrl: string;
-  try { callbackUrl = new URL("/api/payu/wallet-deposit/callback", appUrl).toString(); } catch { return invalid("Payment is temporarily unavailable. Please try again later."); }
+  try {
+    const parsedAppUrl = new URL(appUrl);
+    if (config.environment === "production" && (parsedAppUrl.protocol !== "https:" || parsedAppUrl.hostname === "localhost" || parsedAppUrl.hostname === "127.0.0.1")) return invalid("Payment is temporarily unavailable. Please try again later.");
+    callbackUrl = new URL("/api/payu/wallet-deposit/callback", parsedAppUrl).toString();
+  } catch { return invalid("Payment is temporarily unavailable. Please try again later."); }
   const suppliedPhone = phoneInput.replace(/\s+/g, "");
 
   return prisma.$transaction(async (tx) => {
