@@ -54,10 +54,16 @@ async function createContext(amount = "500.00"): Promise<DepositContext> {
 }
 
 async function cleanup(context: DepositContext) {
-  await prisma.walletTransaction.deleteMany({ where: { walletId: context.walletId } });
-  await prisma.walletDeposit.deleteMany({ where: { id: context.depositId } });
-  await prisma.wallet.delete({ where: { id: context.walletId } });
-  await prisma.user.delete({ where: { id: context.userId } });
+  await prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "Wallet" WHERE "id" = CAST(${context.walletId} AS UUID) FOR UPDATE
+    `;
+    if (locked.length === 0) return;
+    await tx.walletTransaction.deleteMany({ where: { walletId: context.walletId } });
+    await tx.walletDeposit.deleteMany({ where: { id: context.depositId } });
+    await tx.wallet.deleteMany({ where: { id: context.walletId } });
+  });
+  await prisma.user.deleteMany({ where: { id: context.userId } });
 }
 
 function callback(context: DepositContext, status = "success", mihpayid = `mih-${crypto.randomUUID()}`) {
