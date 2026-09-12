@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const isProduction = process.env.NODE_ENV === "production";
 
+const scriptSrc = [
+  "'self'",
+  "'unsafe-inline'",
+  ...(!isProduction ? ["'unsafe-eval'"] : []),
+  "https://accounts.google.com",
+  "https://*.payu.in",
+  "https://*.payumoney.com",
+].join(" ");
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
@@ -14,7 +23,7 @@ const securityHeaders = [
       "base-uri 'self'",
       "object-src 'none'",
       "frame-ancestors 'self'",
-      "script-src 'self' 'unsafe-inline' https://accounts.google.com https://*.payu.in https://*.payumoney.com",
+      `script-src ${scriptSrc}`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https:",
