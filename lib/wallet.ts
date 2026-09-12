@@ -209,7 +209,7 @@ export async function recordWalletTransactionInTransaction(
   return entry;
 }
 
-async function recordWalletTransaction(input: Omit<WalletTransactionInput, "type"> & { type: Direction }) {
+async function recordWalletTransaction(input: WalletTransactionInput) {
   return prisma.$transaction(
     (tx) => recordWalletTransactionInTransaction(tx, input),
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -236,36 +236,113 @@ export async function debitWallet(input: Omit<WalletTransactionInput, "type">) {
   return recordWalletTransaction({ ...input, type: WalletTransactionType.DEBIT });
 }
 
-export async function getWalletTransactionsForAdmin(page = 1) {
-  const user = await requireAdmin();
-  void user;
+export async function creditVerifiedDepositInTransaction(
+  tx: Prisma.TransactionClient,
+  input: { walletId: string; amount: string; currency: string; depositReference: string },
+) {
+  if (!/^DEP-[A-Z0-9]{12}$/.test(input.depositReference)) throw new Error("Invalid deposit reference.");
+  return recordWalletTransactionInTransaction(tx, {
+    walletId: input.walletId,
+    type: "CREDIT" as Direction,
+    category: "DEPOSIT" as Category,
+    amount: input.amount,
+    currency: input.currency,
+    referenceType: "DEPOSIT" as WalletReferenceType,
+    referenceId: input.depositReference,
+    description: `Wallet deposit ${input.depositReference}`,
+  });
+}
+
+async function reconcileWalletInternal(walletId: string) {
+  if (!isValidUuid(walletId)) throw new Error("Invalid wallet ID.");
+  const wallet = await prisma.wallet.findUnique({
+    where: { id: walletId },
+    select: { id: true, userId: true, currency: true, balance: true },
+  });
+  if (!wallet) throw new Error("Wallet not found.");
+  const rows = await prisma.walletTransaction.groupBy({
+    by: ["type"],
+    where: { walletId },
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
+  const credits = rows.find((r) => r.type === WalletTransactionType.CREDIT)?._sum.amount?.toString() ?? "0.00";
+  const debits = rows.find((r) => r.type === WalletTransactionType.DEBIT)?._sum.amount?.toString() ?? "0.00";
+  const expected = subtractMoneySafe(addMoney("0.00", credits), debits);
+  const recorded = wallet.balance.toString();
+  return {
+    wallet,
+    expectedBalance: expected,
+    recordedBalance: recorded,
+    difference: subtractSigned(recorded, expected),
+    transactionCount: rows.reduce((sum, row) => sum + row._count._all, 0),
+    status: compareMoney(expected, recorded) === 0 ? "CONSISTENT" as const : "MISMATCH" as const,
+  };
+}
+
+function subtractSigned(a: string, b: string) {
+  const aa = BigInt(normalizeMoney(a)!.replace(".", ""));
+  const bb = BigInt(normalizeMoney(b)!.replace(".", ""));
+  const diff = aa - bb;
+  const sign = diff < ZERO_CENTS ? "-" : "";
+  const absolute = diff < ZERO_CENTS ? -diff : diff;
+  return `${sign}${absolute / HUNDRED_CENTS}.${(absolute % HUNDRED_CENTS).toString().padStart(2, "0")}`;
+}
+
+export async function reconcileWallet(walletId: string) {
+  await requireAdmin();
+  return reconcileWalletInternal(walletId);
+}
+
+export async function getAdminWallets(page = 1) {
+  await requireAdmin();
   const safePage = Number.isSafeInteger(page) && page > 0 ? page : 1;
   const skip = (safePage - 1) * WALLET_PAGE_SIZE;
-  const [items, total] = await Promise.all([
-    prisma.walletTransaction.findMany({
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  const [wallets, total] = await Promise.all([
+    prisma.wallet.findMany({
+      orderBy: { createdAt: "desc" },
       skip,
       take: WALLET_PAGE_SIZE,
       select: {
         id: true,
-        walletId: true,
-        type: true,
-        category: true,
-        amount: true,
+        userId: true,
         currency: true,
-        description: true,
+        balance: true,
         createdAt: true,
-        referenceType: true,
-        referenceId: true,
-        wallet: { select: { userId: true } },
+        user: { select: { name: true, email: true, status: true } },
       },
     }),
-    prisma.walletTransaction.count(),
+    prisma.wallet.count(),
   ]);
-  return {
-    items,
-    page: safePage,
-    total,
-    totalPages: Math.max(1, Math.ceil(total / WALLET_PAGE_SIZE)),
-  };
+  const reconciled = await Promise.all(wallets.map(async (wallet) => ({ ...wallet, reconciliation: await reconcileWalletInternal(wallet.id) })));
+  return { wallets: reconciled, page: safePage, total, totalPages: Math.max(1, Math.ceil(total / WALLET_PAGE_SIZE)) };
+}
+
+export async function getAdminWalletTransactions(walletId: string, page = 1) {
+  await requireAdmin();
+  if (!isValidUuid(walletId)) throw new Error("Invalid wallet ID.");
+  const safePage = Number.isSafeInteger(page) && page > 0 ? page : 1;
+  const skip = (safePage - 1) * WALLET_PAGE_SIZE;
+  const [wallet, items, total] = await Promise.all([
+    prisma.wallet.findUnique({
+      where: { id: walletId },
+      select: { id: true, userId: true, currency: true, balance: true, user: { select: { name: true, email: true, status: true } } },
+    }),
+    prisma.walletTransaction.findMany({
+      where: { walletId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip,
+      take: WALLET_PAGE_SIZE,
+      select: { id: true, type: true, category: true, amount: true, currency: true, referenceType: true, description: true, createdAt: true },
+    }),
+    prisma.walletTransaction.count({ where: { walletId } }),
+  ]);
+  if (!wallet) throw new Error("Wallet not found.");
+  return { wallet, items, page: safePage, total, totalPages: Math.max(1, Math.ceil(total / WALLET_PAGE_SIZE)), reconciliation: await reconcileWalletInternal(walletId) };
+}
+
+export async function getCurrentUserWalletSummary() {
+  const user = await getCurrentUser();
+  if (!user || user.status !== "ACTIVE") return null;
+  return getOrCreateWalletForUser(user.id);
 }
