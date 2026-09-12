@@ -84,6 +84,12 @@ async function applyVerifiedWalletDeposit(verification: PayUVerificationResult, 
       if (deposit.status !== WalletDepositStatus.PENDING) return { outcome: "REJECTED", depositId: deposit.id, message: safeMessage("REJECTED") };
       if (!providerTransactionId) return { outcome: "PENDING", depositId: deposit.id, message: safeMessage("PENDING") };
 
+      const providerOwner = await tx.walletDeposit.findUnique({ where: { providerReference: providerTransactionId }, select: { id: true } });
+      if (providerOwner && providerOwner.id !== deposit.id) {
+        console.error("PayU provider transaction is already associated with another deposit", { merchantTransactionId, providerTransactionId });
+        return { outcome: "REJECTED", depositId: deposit.id, message: safeMessage("REJECTED") };
+      }
+
       await creditVerifiedDepositInTransaction(tx, { walletId: deposit.walletId, amount: deposit.amount.toFixed(2), currency: deposit.currency, depositId: deposit.id });
       await tx.walletDeposit.update({ where: { id: deposit.id }, data: { status: WalletDepositStatus.SUCCESS, providerReference: providerTransactionId } });
       return { outcome: "SUCCESS", depositId: deposit.id, message: safeMessage("SUCCESS") };
