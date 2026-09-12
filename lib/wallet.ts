@@ -165,7 +165,10 @@ export async function recordWalletTransactionInTransaction(
   });
 
   if (existing) {
-    if (existing.amount.toString() !== amount || existing.currency !== currency) {
+    // Prisma Decimal normalizes numeric values, so `500.00` may come back as
+    // `500`. Compare canonical money strings instead of Decimal.toString().
+    const existingAmount = normalizeMoney(existing.amount.toString());
+    if (existingAmount !== amount || existing.currency !== currency) {
       throw new Error("Financial reference already exists with different transaction terms.");
     }
     return existing;
