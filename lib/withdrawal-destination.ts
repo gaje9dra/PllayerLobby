@@ -4,7 +4,7 @@ import { Prisma, PayoutDestinationStatus, PayoutDestinationType, WithdrawalReque
 import { requireActiveUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptPayoutData, encryptPayoutData } from "@/lib/payout-crypto";
-import { compareMoney } from "@/lib/wallet-rules";
+import { compareMoney, normalizeMoney } from "@/lib/wallet-rules";
 import { evaluateWithdrawalAmount, getAvailableWithdrawalBalance, validateWithdrawalAmount, WITHDRAWAL_CURRENCY } from "@/lib/withdrawal-rules";
 
 const RESERVED_STATUSES = "'PENDING','APPROVED','PAYOUT_INITIATED','PROCESSING'";
@@ -34,7 +34,7 @@ export async function createWithdrawalRequestWithDestination(amountInput: string
   return prisma.$transaction(async (tx) => {
     const existing = await tx.withdrawalRequest.findUnique({ where: { userId_idempotencyKey: { userId: user.id, idempotencyKey } } });
     if (existing) {
-      if (existing.amount.toString() !== amount || existing.payoutDestinationId !== destinationIdInput) throw new Error("IDEMPOTENCY_KEY_REUSED");
+      if (normalizeMoney(existing.amount.toString()) !== normalizeMoney(amount) || existing.payoutDestinationId !== destinationIdInput) throw new Error("IDEMPOTENCY_KEY_REUSED");
       return { request: existing, idempotent: true };
     }
     const walletRecord = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
