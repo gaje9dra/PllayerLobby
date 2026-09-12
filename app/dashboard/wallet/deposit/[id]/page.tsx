@@ -4,12 +4,11 @@ import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
 import { formatDepositStatus } from "@/lib/deposit-rules";
 import { getCurrentUserDeposit } from "@/lib/wallet-deposit";
+import { getCurrentUser } from "@/lib/auth";
 import { cancelDepositAction } from "@/app/dashboard/wallet/deposit/[id]/actions";
+import { PayUWalletCheckout } from "@/app/dashboard/wallet/deposit/[id]/pay-button";
 
-function statusLabel(status: string) {
-  return status.replaceAll("_", " ");
-}
-
+function statusLabel(status: string) { return status.replaceAll("_", " "); }
 function statusClass(status: string) {
   if (status === "SUCCESS") return "border-lime-300/20 bg-lime-300/10 text-lime-200";
   if (status === "FAILED" || status === "CANCELLED") return "border-rose-300/20 bg-rose-300/5 text-rose-200";
@@ -18,15 +17,15 @@ function statusClass(status: string) {
 
 export default async function DepositPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const deposit = await getCurrentUserDeposit(id);
-  if (!deposit) notFound();
+  const [deposit, user] = await Promise.all([getCurrentUserDeposit(id), getCurrentUser()]);
+  if (!deposit || !user || user.status !== "ACTIVE") notFound();
 
   return <SectionContainer className="py-10 sm:py-14">
     <Link href="/dashboard/wallet" className="text-sm font-semibold text-lime-300 hover:text-lime-200">← Wallet</Link>
     <div className="mt-5 max-w-2xl">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-lime-300">Deposit</p>
       <h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Add money status</h1>
-      <p className="mt-2 text-sm leading-6 text-slate-400">This page reads the deposit state from the server. Refreshing it never assumes that payment succeeded.</p>
+      <p className="mt-2 text-sm leading-6 text-slate-400">Payment is confirmed only by the server after PayU verification. Browser redirects never credit your wallet.</p>
     </div>
 
     <section className="mt-8 max-w-2xl rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-7">
@@ -41,8 +40,13 @@ export default async function DepositPage({ params }: { params: Promise<{ id: st
         <div className="sm:col-span-2"><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Current state</dt><dd className="mt-1 text-sm leading-6 text-slate-300">{formatDepositStatus(deposit.status)}</dd></div>
       </dl>
 
-      {deposit.status === "PENDING" ? <div className="mt-7 flex flex-col gap-3 border-t border-white/5 pt-6 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-slate-500">Payment checkout is not enabled in this phase. You may safely leave or cancel this pending request.</p><form action={cancelDepositAction}><input type="hidden" name="depositId" value={deposit.id} /><Button type="submit" variant="secondary">Cancel deposit</Button></form></div> : null}
-      {deposit.status === "SUCCESS" ? <div className="mt-7 rounded-xl border border-lime-300/15 bg-lime-300/5 p-4 text-sm font-semibold text-lime-200">A later verified payment flow can credit the wallet exactly once for this deposit. This phase does not perform that credit.</div> : null}
+      {deposit.status === "PENDING" ? <>
+        <PayUWalletCheckout depositId={deposit.id} hasPhone={Boolean(user.phone)} />
+        <div className="mt-5 flex items-center justify-between border-t border-white/5 pt-5"><p className="text-xs leading-5 text-slate-500">You can cancel before payment completes. Cancellation never creates a debit or wallet credit.</p><form action={cancelDepositAction}><input type="hidden" name="depositId" value={deposit.id} /><Button type="submit" variant="secondary">Cancel</Button></form></div>
+      </> : null}
+      {deposit.status === "SUCCESS" ? <div className="mt-7 rounded-xl border border-lime-300/15 bg-lime-300/5 p-4 text-sm font-semibold text-lime-200">Payment verified. The wallet balance reflects the single DEPOSIT ledger credit for this reference.</div> : null}
+      {deposit.status === "FAILED" ? <div className="mt-7 rounded-xl border border-rose-300/15 bg-rose-300/5 p-4 text-sm font-semibold text-rose-200">Payment was unsuccessful. Your wallet was not credited by this deposit.</div> : null}
+      {deposit.status === "CANCELLED" ? <div className="mt-7 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm font-semibold text-slate-300">This deposit was cancelled and did not credit your wallet.</div> : null}
     </section>
   </SectionContainer>;
 }
