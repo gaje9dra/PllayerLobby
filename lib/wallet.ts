@@ -2,7 +2,6 @@ import "server-only";
 
 import { Prisma, WalletTransactionType } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireActiveUser, requireAdmin } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { addMoney, compareMoney, isPositiveMoney, isSupportedCurrency, isValidReferenceType, isValidTransactionCategory, isValidTransactionType, isValidUuid, normalizeMoney, WALLET_CURRENCY, WALLET_PAGE_SIZE, type WalletReferenceType, type WalletTransactionCategory as Category, type WalletTransactionType as Direction } from "@/lib/wallet-rules";
 
 const MAX_REFERENCE_LENGTH = 128;
@@ -36,12 +35,7 @@ function validateDescription(description: string | undefined) {
 
 export async function getOrCreateWalletForUser(userId: string) {
   if (!isValidUuid(userId)) throw new Error("Invalid user ID.");
-  return prisma.wallet.upsert({
-    where: { userId },
-    create: { userId, currency: WALLET_CURRENCY, balance: "0.00" },
-    update: {},
-    select: { id: true, userId: true, currency: true, balance: true, createdAt: true, updatedAt: true },
-  });
+  return prisma.wallet.upsert({ where: { userId }, create: { userId, currency: WALLET_CURRENCY, balance: "0.00" }, update: {}, select: { id: true, userId: true, currency: true, balance: true, createdAt: true, updatedAt: true } });
 }
 
 export async function getCurrentUserWallet() {
@@ -68,7 +62,7 @@ async function lockWallet(tx: Prisma.TransactionClient, walletId: string) {
   return wallet;
 }
 
-async function recordWalletTransaction(input: { walletId: string; type: Direction; category: Category; amount: string; currency: string; referenceType: WalletReferenceType; referenceId: string; description?: string }) {
+export async function recordWalletTransactionInTransaction(tx: Prisma.TransactionClient, input: { walletId: string; type: Direction; category: Category; amount: string; currency: string; referenceType: WalletReferenceType; referenceId: string; description?: string }) {
   if (!isValidUuid(input.walletId)) throw new Error("Invalid wallet ID.");
   const amount = validateMoney(input.amount);
   const currency = validateCurrency(input.currency);
@@ -76,24 +70,26 @@ async function recordWalletTransaction(input: { walletId: string; type: Directio
   if (!isValidTransactionType(input.type) || !isValidTransactionCategory(input.category)) throw new Error("Invalid wallet transaction type or category.");
   const description = validateDescription(input.description);
 
-  return prisma.$transaction(async (tx) => {
-    const wallet = await lockWallet(tx, input.walletId);
-    if (wallet.currency !== currency) throw new Error("Wallet currency mismatch.");
+  const wallet = await lockWallet(tx, input.walletId);
+  if (wallet.currency !== currency) throw new Error("Wallet currency mismatch.");
 
-    const existing = await tx.walletTransaction.findFirst({ where: { walletId: input.walletId, referenceType: input.referenceType as never, referenceId: input.referenceId, type: input.type as never, category: input.category as never }, select: { id: true, walletId: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true } });
-    if (existing) {
-      if (existing.amount.toString() !== amount || existing.currency !== currency) throw new Error("Financial reference already exists with different transaction terms.");
-      return existing;
-    }
+  const existing = await tx.walletTransaction.findFirst({ where: { walletId: input.walletId, referenceType: input.referenceType as never, referenceId: input.referenceId, type: input.type as never, category: input.category as never }, select: { id: true, walletId: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true } });
+  if (existing) {
+    if (existing.amount.toString() !== amount || existing.currency !== currency) throw new Error("Financial reference already exists with different transaction terms.");
+    return existing;
+  }
 
-    const current = wallet.balance;
-    const next = input.type === WalletTransactionType.CREDIT ? addMoney(current, amount) : compareMoney(current, amount) < 0 ? null : subtractMoneySafe(current, amount);
-    if (next === null) throw new Error("Insufficient wallet balance.");
+  const current = wallet.balance;
+  const next = input.type === WalletTransactionType.CREDIT ? addMoney(current, amount) : compareMoney(current, amount) < 0 ? null : subtractMoneySafe(current, amount);
+  if (next === null) throw new Error("Insufficient wallet balance.");
 
-    const entry = await tx.walletTransaction.create({ data: { walletId: input.walletId, type: input.type, category: input.category as never, amount, currency, referenceType: input.referenceType as never, referenceId: input.referenceId, description }, select: { id: true, walletId: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true } });
-    await tx.wallet.update({ where: { id: input.walletId }, data: { balance: next } });
-    return entry;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  const entry = await tx.walletTransaction.create({ data: { walletId: input.walletId, type: input.type, category: input.category as never, amount, currency, referenceType: input.referenceType as never, referenceId: input.referenceId, description }, select: { id: true, walletId: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true } });
+  await tx.wallet.update({ where: { id: input.walletId }, data: { balance: next } });
+  return entry;
+}
+
+async function recordWalletTransaction(input: { walletId: string; type: Direction; category: Category; amount: string; currency: string; referenceType: WalletReferenceType; referenceId: string; description?: string }) {
+  return prisma.$transaction((tx) => recordWalletTransactionInTransaction(tx, input), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 function subtractMoneySafe(a: string, b: string) {
@@ -107,6 +103,11 @@ function subtractMoneySafe(a: string, b: string) {
 export async function creditWallet(input: { walletId: string; amount: string; currency: string; referenceType: WalletReferenceType; referenceId: string; category: Category; description?: string }) {
   await requireAdmin();
   return recordWalletTransaction({ ...input, type: WalletTransactionType.CREDIT });
+}
+
+/** Server-only financial boundary for an already authenticated and PayU-verified deposit. */
+export async function creditVerifiedDepositInTransaction(tx: Prisma.TransactionClient, input: { walletId: string; amount: string; currency: string; depositReference: string; description?: string }) {
+  return recordWalletTransactionInTransaction(tx, { walletId: input.walletId, type: WalletTransactionType.CREDIT, category: "DEPOSIT" as Category, amount: input.amount, currency: input.currency, referenceType: "DEPOSIT", referenceId: input.depositReference, description: input.description ?? `Wallet deposit ${input.depositReference}` });
 }
 
 export async function debitWallet(input: { walletId: string; amount: string; currency: string; referenceType: WalletReferenceType; referenceId: string; category: Category; description?: string }) {
@@ -141,7 +142,7 @@ export async function getAdminWallets(page = 1) {
   const safePage = Number.isSafeInteger(page) && page > 0 ? page : 1;
   const skip = (safePage - 1) * WALLET_PAGE_SIZE;
   const [wallets, total] = await Promise.all([
-    prisma.wallet.findMany({ orderBy: { createdAt: "desc" }, skip, take: WALLET_PAGE_SIZE, select: { id: true, userId: true, currency: true, balance: true, createdAt: true, user: { select: { name: true, email: true, status: true } } } }),
+    prisma.wallet.findMany({ orderBy: { createdAt: "desc" }, skip, take: WALLET_PAGE_SIZE, select: { id: true, userId: true, currency: true, balance: true, createdAt: true, user: { select: { name: true, email: true, status: true } } }),
     prisma.wallet.count(),
   ]);
   const reconciled = await Promise.all(wallets.map(async (wallet) => ({ ...wallet, reconciliation: await reconcileWallet(wallet.id) })));
@@ -154,7 +155,7 @@ export async function getAdminWalletTransactions(walletId: string, page = 1) {
   const safePage = Number.isSafeInteger(page) && page > 0 ? page : 1;
   const skip = (safePage - 1) * WALLET_PAGE_SIZE;
   const [wallet, items, total] = await Promise.all([
-    prisma.wallet.findUnique({ where: { id: walletId }, select: { id: true, userId: true, currency: true, balance: true, user: { select: { name: true, email: true, status: true } } } }),
+    prisma.wallet.findUnique({ where: { id: walletId }, select: { id: true, userId: true, currency: true, balance: true, user: { select: { name: true, email: true, status: true } } }),
     prisma.walletTransaction.findMany({ where: { walletId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WALLET_PAGE_SIZE, select: { id: true, type: true, category: true, amount: true, currency: true, referenceType: true, description: true, createdAt: true } }),
     prisma.walletTransaction.count({ where: { walletId } }),
   ]);

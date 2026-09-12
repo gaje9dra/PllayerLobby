@@ -1,0 +1,24 @@
+# Phase 8.3 verification checklist
+
+- [x] Reuse existing PayU config and SHA-512 hash utilities
+- [x] Create PayU hosted checkout request from persisted WalletDeposit amount
+- [x] Use WalletDeposit.reference as unique PayU txnid
+- [x] Store provider mihpayid separately
+- [x] POST provider callback endpoint without browser session dependency
+- [x] Validate merchant key and reverse response hash
+- [x] Independently call PayU Verify Payment API
+- [x] Compare verified transaction ID and amount to persisted deposit
+- [x] Keep uncertain provider state PENDING
+- [x] Process SUCCESS only after authoritative verification
+- [x] Atomically credit wallet, create DEPOSIT ledger entry, and mark deposit SUCCESS
+- [x] Prevent duplicate credit through existing ledger reference uniqueness
+- [x] Prevent ownership changes by deriving deposit from server-side authenticated user at checkout
+- [x] Reject callback transaction/amount/customer mismatches
+- [x] Failed payment leaves wallet unchanged
+- [x] Refresh reads server-side deposit state
+- [x] No frontend redirect can credit wallet
+- [x] Sandbox/test environment remains configurable via existing environment variables
+- [x] Add hash/fake-success tests
+- [x] Add exactly-once wallet ledger integration test
+- [ ] Live PayU sandbox transaction: requires configured external PayU sandbox credentials and a reachable HTTPS callback environment
+- [ ] Production PayU activation: intentionally deferred until production provider configuration is supplied
