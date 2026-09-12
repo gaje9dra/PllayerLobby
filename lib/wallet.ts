@@ -106,8 +106,9 @@ export async function creditWallet(input: { walletId: string; amount: string; cu
 }
 
 /** Server-only financial boundary for an already authenticated and PayU-verified deposit. */
-export async function creditVerifiedDepositInTransaction(tx: Prisma.TransactionClient, input: { walletId: string; amount: string; currency: string; depositReference: string; description?: string }) {
-  return recordWalletTransactionInTransaction(tx, { walletId: input.walletId, type: WalletTransactionType.CREDIT, category: "DEPOSIT" as Category, amount: input.amount, currency: input.currency, referenceType: "DEPOSIT", referenceId: input.depositReference, description: input.description ?? `Wallet deposit ${input.depositReference}` });
+export async function creditVerifiedDepositInTransaction(tx: Prisma.TransactionClient, input: { walletId: string; amount: string; currency: string; depositId: string; description?: string }) {
+  if (!isValidUuid(input.depositId)) throw new Error("Invalid wallet deposit ID.");
+  return recordWalletTransactionInTransaction(tx, { walletId: input.walletId, type: WalletTransactionType.CREDIT, category: "DEPOSIT" as Category, amount: input.amount, currency: input.currency, referenceType: "DEPOSIT", referenceId: input.depositId, description: input.description ?? `Wallet deposit ${input.depositId}` });
 }
 
 export async function debitWallet(input: { walletId: string; amount: string; currency: string; referenceType: WalletReferenceType; referenceId: string; category: Category; description?: string }) {
