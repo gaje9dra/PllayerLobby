@@ -12,12 +12,14 @@ import {
 } from "@/lib/registration-eligibility-rules";
 import { normalizeMoney } from "@/lib/wallet-rules";
 import { recordWalletTransactionInTransaction } from "@/lib/wallet";
+import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 
 export const REGISTRATION_RESULT_CODES = {
   ...REGISTRATION_ELIGIBILITY_REASONS,
   INSUFFICIENT_BALANCE: "INSUFFICIENT_BALANCE",
   WALLET_UNAVAILABLE: "WALLET_UNAVAILABLE",
   REGISTRATION_NOT_REOPENABLE: "REGISTRATION_NOT_REOPENABLE",
+  RATE_LIMITED: "RATE_LIMITED",
   REGISTRATION_FAILED: "REGISTRATION_FAILED",
 } as const;
 
@@ -72,6 +74,16 @@ export async function createTournamentRegistration(
   const user = await getCurrentUser();
   if (!user) {
     return { ok: false, code: REGISTRATION_RESULT_CODES.UNAUTHENTICATED, message: ERROR_MESSAGES.UNAUTHENTICATED };
+  }
+
+  const rateLimit = await consumeSecurityRateLimit({
+    namespace: "tournament-entry",
+    key: `${user.id}:${tournamentId}`,
+    limit: 5,
+    windowSeconds: 60,
+  });
+  if (!rateLimit.allowed) {
+    return { ok: false, code: REGISTRATION_RESULT_CODES.RATE_LIMITED, message: "Too many join attempts. Please wait a moment and try again." };
   }
 
   try {
@@ -173,14 +185,13 @@ export async function createTournamentRegistration(
       });
 
       const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { balance: true } });
-      if (!wallet) throw new Error("Wallet unavailable.");
 
       return {
         ok: true,
         registrationId,
         registrationStatus: RegistrationStatus.CONFIRMED,
         paymentRequired: false,
-        walletBalance: wallet.balance.toString(),
+        walletBalance: wallet?.balance.toString() ?? "0.00",
         entryFee,
         registrationCode: codeData.code,
       };
