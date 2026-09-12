@@ -37,6 +37,10 @@ function isUniqueConstraint(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
+function sameDepositAmount(existingAmount: unknown, requestedAmount: string) {
+  return normalizeMoney(String(existingAmount)) === normalizeMoney(requestedAmount);
+}
+
 async function findDepositForUser(userId: string, id: string) {
   return prisma.walletDeposit.findFirst({
     where: { id, userId },
@@ -62,7 +66,7 @@ export async function createWalletDeposit(amountInput: string, idempotencyKeyInp
       return await prisma.$transaction(async (tx) => {
         const existing = await tx.walletDeposit.findUnique({ where: { userId_idempotencyKey: { userId: user.id, idempotencyKey } }, select: { id: true, userId: true, walletId: true, amount: true, currency: true, status: true, reference: true, providerReference: true, createdAt: true, updatedAt: true } });
         if (existing) {
-          if (existing.amount.toString() !== evaluation.amount || existing.currency !== DEPOSIT_CURRENCY) throw new Error("IDEMPOTENCY_KEY_REUSED");
+          if (!sameDepositAmount(existing.amount, evaluation.amount) || existing.currency !== DEPOSIT_CURRENCY) throw new Error("IDEMPOTENCY_KEY_REUSED");
           return { deposit: existing, idempotent: true };
         }
 
@@ -76,7 +80,7 @@ export async function createWalletDeposit(amountInput: string, idempotencyKeyInp
       if (isUniqueConstraint(error)) {
         const existing = await prisma.walletDeposit.findUnique({ where: { userId_idempotencyKey: { userId: user.id, idempotencyKey } }, select: { id: true, userId: true, walletId: true, amount: true, currency: true, status: true, reference: true, providerReference: true, createdAt: true, updatedAt: true } });
         if (existing) {
-          if (existing.amount.toString() !== evaluation.amount || existing.currency !== DEPOSIT_CURRENCY) throw new Error("IDEMPOTENCY_KEY_REUSED");
+          if (!sameDepositAmount(existing.amount, evaluation.amount) || existing.currency !== DEPOSIT_CURRENCY) throw new Error("IDEMPOTENCY_KEY_REUSED");
           return { deposit: existing, idempotent: true };
         }
         continue;
