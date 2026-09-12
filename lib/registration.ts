@@ -67,11 +67,7 @@ function isTransactionConflict(error: unknown): boolean {
   const seen = new Set<object>();
   let current: unknown = error;
 
-  // Prisma 7's PostgreSQL driver adapter can expose serialization failures as
-  // DriverAdapterError -> cause -> originalCode=40001 instead of P2034.
-  // Walk the causal chain so transient concurrency failures are retried rather
-  // than escaping the registration operation.
-  for (let depth = 0; depth < 6 && current; depth += 1) {
+  for (let depth = 0; depth < 8 && current; depth += 1) {
     if (typeof current !== "object") {
       const text = String(current);
       if (/TransactionWriteConflict|could not serialize access|serialization failure/i.test(text)) return true;
@@ -82,8 +78,7 @@ function isTransactionConflict(error: unknown): boolean {
     seen.add(current);
 
     if ("code" in current && current.code === "P2034") return true;
-    if ("originalCode" in current && current.originalCode === "40001") return true;
-    if ("originalCode" in current && current.originalCode === 40001) return true;
+    if ("originalCode" in current && (current.originalCode === "40001" || current.originalCode === 40001)) return true;
 
     const message = "message" in current && typeof current.message === "string" ? current.message : "";
     if (/TransactionWriteConflict|could not serialize access|serialization failure/i.test(message)) return true;
@@ -121,8 +116,6 @@ export async function createTournamentRegistrationForUser(
   }
 
   try {
-    // Lifecycle refresh is intentionally outside the financial transaction.
-    // It is conditional and safe to retry if another request updates status.
     for (let lifecycleAttempt = 1; lifecycleAttempt <= TRANSACTION_RETRY_LIMIT; lifecycleAttempt += 1) {
       try {
         await refreshTournamentLifecycle(tournamentId);
@@ -136,6 +129,36 @@ export async function createTournamentRegistrationForUser(
     for (let attempt = 1; attempt <= TRANSACTION_RETRY_LIMIT; attempt += 1) {
       try {
         return await prisma.$transaction(async (tx) => {
+          // Establish a single lock ordering for paid entries:
+          // wallet -> tournament. This prevents two requests spending the same
+          // wallet from simultaneously holding different tournament locks and
+          // then colliding when they reach the shared wallet row.
+          const walletRef = await tx.wallet.findUnique({
+            where: { userId: user.id },
+            select: { id: true },
+          });
+
+          const initialTournament = await tx.tournament.findUnique({
+            where: { id: tournamentId },
+            select: { id: true, entryFee: true },
+          });
+
+          if (!initialTournament) {
+            return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
+          }
+
+          const initialEntryFee = normalizeMoney(initialTournament.entryFee.toFixed(2));
+          if (!initialEntryFee) throw new Error("Invalid tournament entry fee.");
+
+          if (initialEntryFee !== "0.00") {
+            if (!walletRef) throw new Error("Wallet unavailable.");
+
+            const lockedWallet = await tx.$queryRaw<Array<{ id: string }>>`
+              SELECT "id" FROM "Wallet" WHERE "id" = CAST(${walletRef.id} AS UUID) FOR UPDATE
+            `;
+            if (lockedWallet.length === 0) throw new Error("Wallet unavailable.");
+          }
+
           const lockedRows = await tx.$queryRaw<{ id: string }[]>`
             SELECT "id" FROM "Tournament" WHERE "id" = CAST(${tournamentId} AS UUID) FOR UPDATE
           `;
@@ -143,17 +166,19 @@ export async function createTournamentRegistrationForUser(
             return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
           }
 
-          const [tournament, registration, confirmedParticipants] = await Promise.all([
-            tx.tournament.findUnique({
-              where: { id: tournamentId },
-              select: { id: true, entryFee: true, status: true, registrationStartTime: true, registrationEndTime: true, maxParticipants: true },
-            }),
-            tx.registration.findUnique({
-              where: { userId_tournamentId: { userId: user.id, tournamentId } },
-              select: { id: true, status: true },
-            }),
-            tx.registration.count({ where: { tournamentId, status: RegistrationStatus.CONFIRMED } }),
-          ]);
+          // Do not issue concurrent queries on the same Prisma transaction.
+          // adapter-pg uses one pg client for an interactive transaction.
+          const tournament = await tx.tournament.findUnique({
+            where: { id: tournamentId },
+            select: { id: true, entryFee: true, status: true, registrationStartTime: true, registrationEndTime: true, maxParticipants: true },
+          });
+          const registration = await tx.registration.findUnique({
+            where: { userId_tournamentId: { userId: user.id, tournamentId } },
+            select: { id: true, status: true },
+          });
+          const confirmedParticipants = await tx.registration.count({
+            where: { tournamentId, status: RegistrationStatus.CONFIRMED },
+          });
 
           const eligibility = evaluateRegistrationEligibility({ user, tournament, registration, confirmedParticipants, now: new Date() });
           if (!eligibility.allowed) {
@@ -191,11 +216,8 @@ export async function createTournamentRegistrationForUser(
           }
 
           if (!isFree) {
-            const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
-            if (!wallet) throw new Error("Wallet unavailable.");
-
             await recordWalletTransactionInTransaction(tx, {
-              walletId: wallet.id,
+              walletId: walletRef!.id,
               type: "DEBIT",
               category: "ENTRY_FEE",
               amount: entryFee,
