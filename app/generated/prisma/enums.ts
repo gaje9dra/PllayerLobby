@@ -109,7 +109,8 @@ export const WalletTransactionCategory = {
   REFUND: 'REFUND',
   WITHDRAWAL: 'WITHDRAWAL',
   ENTRY_FEE: 'ENTRY_FEE',
-  ADJUSTMENT: 'ADJUSTMENT'
+  ADJUSTMENT: 'ADJUSTMENT',
+  DEPOSIT: 'DEPOSIT'
 } as const
 
 export type WalletTransactionCategory = (typeof WalletTransactionCategory)[keyof typeof WalletTransactionCategory]
@@ -121,10 +122,21 @@ export const WalletReferenceType = {
   WITHDRAWAL: 'WITHDRAWAL',
   WITHDRAWAL_PAYOUT: 'WITHDRAWAL_PAYOUT',
   ENTRY_PAYMENT: 'ENTRY_PAYMENT',
-  ADJUSTMENT: 'ADJUSTMENT'
+  ADJUSTMENT: 'ADJUSTMENT',
+  DEPOSIT: 'DEPOSIT'
 } as const
 
 export type WalletReferenceType = (typeof WalletReferenceType)[keyof typeof WalletReferenceType]
+
+
+export const WalletDepositStatus = {
+  PENDING: 'PENDING',
+  SUCCESS: 'SUCCESS',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED'
+} as const
+
+export type WalletDepositStatus = (typeof WalletDepositStatus)[keyof typeof WalletDepositStatus]
 
 
 export const WithdrawalRequestStatus = {

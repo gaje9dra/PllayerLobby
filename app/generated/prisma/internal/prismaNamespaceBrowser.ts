@@ -66,6 +66,7 @@ export const ModelName = {
   TournamentPrizeSettlement: 'TournamentPrizeSettlement',
   Wallet: 'Wallet',
   WalletTransaction: 'WalletTransaction',
+  WalletDeposit: 'WalletDeposit',
   WithdrawalRequest: 'WithdrawalRequest',
   PayoutDestination: 'PayoutDestination',
   PayoutBeneficiary: 'PayoutBeneficiary',
@@ -308,6 +309,23 @@ export const WalletTransactionScalarFieldEnum = {
 } as const
 
 export type WalletTransactionScalarFieldEnum = (typeof WalletTransactionScalarFieldEnum)[keyof typeof WalletTransactionScalarFieldEnum]
+
+
+export const WalletDepositScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  walletId: 'walletId',
+  amount: 'amount',
+  currency: 'currency',
+  status: 'status',
+  reference: 'reference',
+  providerReference: 'providerReference',
+  idempotencyKey: 'idempotencyKey',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type WalletDepositScalarFieldEnum = (typeof WalletDepositScalarFieldEnum)[keyof typeof WalletDepositScalarFieldEnum]
 
 
 export const WithdrawalRequestScalarFieldEnum = {

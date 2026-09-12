@@ -412,6 +412,7 @@ export const ModelName = {
   TournamentPrizeSettlement: 'TournamentPrizeSettlement',
   Wallet: 'Wallet',
   WalletTransaction: 'WalletTransaction',
+  WalletDeposit: 'WalletDeposit',
   WithdrawalRequest: 'WithdrawalRequest',
   PayoutDestination: 'PayoutDestination',
   PayoutBeneficiary: 'PayoutBeneficiary',
@@ -434,7 +435,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "account" | "session" | "verificationToken" | "game" | "tournament" | "registration" | "registrationCode" | "tournamentRoom" | "payment" | "tournamentResult" | "tournamentPrize" | "tournamentPrizeSettlement" | "wallet" | "walletTransaction" | "withdrawalRequest" | "payoutDestination" | "payoutBeneficiary" | "payout" | "payoutWebhookEvent" | "securityRateLimit" | "adminAuditLog"
+    modelProps: "user" | "account" | "session" | "verificationToken" | "game" | "tournament" | "registration" | "registrationCode" | "tournamentRoom" | "payment" | "tournamentResult" | "tournamentPrize" | "tournamentPrizeSettlement" | "wallet" | "walletTransaction" | "walletDeposit" | "withdrawalRequest" | "payoutDestination" | "payoutBeneficiary" | "payout" | "payoutWebhookEvent" | "securityRateLimit" | "adminAuditLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1548,6 +1549,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    WalletDeposit: {
+      payload: Prisma.$WalletDepositPayload<ExtArgs>
+      fields: Prisma.WalletDepositFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.WalletDepositFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.WalletDepositFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>
+        }
+        findFirst: {
+          args: Prisma.WalletDepositFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.WalletDepositFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>
+        }
+        findMany: {
+          args: Prisma.WalletDepositFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>[]
+        }
+        create: {
+          args: Prisma.WalletDepositCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>
+        }
+        createMany: {
+          args: Prisma.WalletDepositCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.WalletDepositCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>[]
+        }
+        delete: {
+          args: Prisma.WalletDepositDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>
+        }
+        update: {
+          args: Prisma.WalletDepositUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>
+        }
+        deleteMany: {
+          args: Prisma.WalletDepositDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.WalletDepositUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.WalletDepositUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>[]
+        }
+        upsert: {
+          args: Prisma.WalletDepositUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$WalletDepositPayload>
+        }
+        aggregate: {
+          args: Prisma.WalletDepositAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateWalletDeposit>
+        }
+        groupBy: {
+          args: Prisma.WalletDepositGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.WalletDepositGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.WalletDepositCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.WalletDepositCountAggregateOutputType> | number
+        }
+      }
+    }
     WithdrawalRequest: {
       payload: Prisma.$WithdrawalRequestPayload<ExtArgs>
       fields: Prisma.WithdrawalRequestFieldRefs
@@ -2324,6 +2399,23 @@ export const WalletTransactionScalarFieldEnum = {
 export type WalletTransactionScalarFieldEnum = (typeof WalletTransactionScalarFieldEnum)[keyof typeof WalletTransactionScalarFieldEnum]
 
 
+export const WalletDepositScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  walletId: 'walletId',
+  amount: 'amount',
+  currency: 'currency',
+  status: 'status',
+  reference: 'reference',
+  providerReference: 'providerReference',
+  idempotencyKey: 'idempotencyKey',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type WalletDepositScalarFieldEnum = (typeof WalletDepositScalarFieldEnum)[keyof typeof WalletDepositScalarFieldEnum]
+
+
 export const WithdrawalRequestScalarFieldEnum = {
   id: 'id',
   userId: 'userId',
@@ -2705,6 +2797,20 @@ export type ListEnumWalletReferenceTypeFieldRefInput<$PrismaModel> = FieldRefInp
 
 
 /**
+ * Reference to a field of type 'WalletDepositStatus'
+ */
+export type EnumWalletDepositStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'WalletDepositStatus'>
+    
+
+
+/**
+ * Reference to a field of type 'WalletDepositStatus[]'
+ */
+export type ListEnumWalletDepositStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'WalletDepositStatus[]'>
+    
+
+
+/**
  * Reference to a field of type 'PayoutDestinationType'
  */
 export type EnumPayoutDestinationTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PayoutDestinationType'>
@@ -2981,6 +3087,7 @@ export type GlobalOmitConfig = {
   tournamentPrizeSettlement?: Prisma.TournamentPrizeSettlementOmit
   wallet?: Prisma.WalletOmit
   walletTransaction?: Prisma.WalletTransactionOmit
+  walletDeposit?: Prisma.WalletDepositOmit
   withdrawalRequest?: Prisma.WithdrawalRequestOmit
   payoutDestination?: Prisma.PayoutDestinationOmit
   payoutBeneficiary?: Prisma.PayoutBeneficiaryOmit
