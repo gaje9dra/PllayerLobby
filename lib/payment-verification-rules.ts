@@ -17,7 +17,10 @@ export function matchesAuthoritativePaymentFields(actual: PayUPaymentFieldSet, e
 }
 
 export function normalizePaymentAmount(value: string | null | undefined) {
-  if (value == null || !/^\d+(?:\.\d{1,2})?$/.test(value.trim())) return null;
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number.toFixed(2) : null;
+  if (value == null) return null;
+  const normalized = value.trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const [whole, fraction = ""] = normalized.split(".");
+  const canonicalWhole = whole.replace(/^0+(?=\d)/, "");
+  return `${canonicalWhole}.${fraction.padEnd(2, "0")}`;
 }
