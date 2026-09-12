@@ -11,6 +11,8 @@ export type RegistrationActionState = {
   registrationId?: string;
   registrationStatus?: RegistrationStatus;
   paymentRequired?: boolean;
+  walletBalance?: string;
+  entryFee?: string;
   registrationCode?: string;
 };
 
@@ -36,6 +38,7 @@ export async function registerForTournament(
 
   revalidatePath("/tournaments");
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/wallet");
 
   return result;
 }
