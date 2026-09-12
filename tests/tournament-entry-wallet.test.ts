@@ -44,8 +44,8 @@ async function cleanup(fixture: Awaited<ReturnType<typeof createFixture>>, extra
   await prisma.walletTransaction.deleteMany({ where: { walletId: fixture.wallet.id } });
   await prisma.wallet.deleteMany({ where: { id: fixture.wallet.id } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
-  await prisma.tournament.delete({ where: { id: fixture.tournament.id } });
-  await prisma.game.delete({ where: { id: fixture.game.id } });
+  await prisma.tournament.deleteMany({ where: { id: fixture.tournament.id } });
+  await prisma.game.deleteMany({ where: { id: fixture.game.id } });
 }
 
 function registrationUser(user: { id: string }) {
@@ -138,10 +138,15 @@ test("concurrent spending from one wallet cannot overspend it", async () => {
     assert.equal([first, second].filter((result) => result.ok).length, 1);
     assert.equal((await prisma.wallet.findUniqueOrThrow({ where: { id: fixture.wallet.id } })).balance.toString(), "0");
   } finally {
-    await prisma.registration.deleteMany({ where: { tournamentId: secondTournament.id } });
+    const secondRegistrations = await prisma.registration.findMany({ where: { tournamentId: secondTournament.id }, select: { id: true } });
+    if (secondRegistrations.length) {
+      await prisma.registrationCode.deleteMany({ where: { registrationId: { in: secondRegistrations.map((row) => row.id) } } });
+      await prisma.walletTransaction.deleteMany({ where: { referenceType: "ENTRY_PAYMENT", referenceId: { in: secondRegistrations.map((row) => row.id) } } });
+      await prisma.registration.deleteMany({ where: { id: { in: secondRegistrations.map((row) => row.id) } } });
+    }
     await prisma.walletTransaction.deleteMany({ where: { walletId: fixture.wallet.id } });
-    await prisma.tournament.delete({ where: { id: secondTournament.id } });
-    await prisma.game.delete({ where: { id: secondGame.id } });
+    await prisma.tournament.deleteMany({ where: { id: secondTournament.id } });
+    await prisma.game.deleteMany({ where: { id: secondGame.id } });
     await cleanup(fixture);
   }
 });
@@ -169,8 +174,8 @@ test("capacity race allows only the final available slot and rolls back the lose
     await prisma.registration.deleteMany({ where: { tournamentId: fixture.tournament.id } });
     await prisma.wallet.deleteMany({ where: { id: { in: [fixture.wallet.id, secondWallet.id] } } });
     await prisma.user.deleteMany({ where: { id: { in: [fixture.user.id, secondUser.id] } } });
-    await prisma.tournament.delete({ where: { id: fixture.tournament.id } });
-    await prisma.game.delete({ where: { id: fixture.game.id } });
+    await prisma.tournament.deleteMany({ where: { id: fixture.tournament.id } });
+    await prisma.game.deleteMany({ where: { id: fixture.game.id } });
   }
 });
 
