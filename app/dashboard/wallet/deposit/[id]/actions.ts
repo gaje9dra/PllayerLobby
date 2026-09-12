@@ -1,16 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { cancelCurrentUserDeposit, formatDepositError } from "@/lib/wallet-deposit";
+import { cancelCurrentUserDeposit } from "@/lib/wallet-deposit";
 
-export async function cancelDepositAction(formData: FormData) {
+export async function cancelDepositAction(formData: FormData): Promise<void> {
   const id = String(formData.get("depositId") ?? "");
   try {
-    const deposit = await cancelCurrentUserDeposit(id);
+    await cancelCurrentUserDeposit(id);
     revalidatePath("/dashboard/wallet");
     revalidatePath(`/dashboard/wallet/deposit/${id}`);
-    return { ok: true, message: `Deposit of ₹${deposit.amount.toFixed(2)} was cancelled.` };
-  } catch (error) {
-    return { ok: false, message: formatDepositError(error) };
+  } catch {
+    // A failed cancellation leaves the server-backed deposit state unchanged.
+    // The page can be refreshed to retrieve the authoritative state.
   }
 }
