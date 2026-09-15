@@ -11,19 +11,7 @@ function money(value: unknown) {
 export async function getAdminFinanceOverview() {
   await requireAdmin();
 
-  const [
-    walletCount,
-    walletBalance,
-    successfulDeposits,
-    entryDebits,
-    prizeCredits,
-    pendingPayments,
-    failedPayments,
-    pendingDeposits,
-    pendingSettlements,
-    reconciliationRows,
-    recentTransactions,
-  ] = await Promise.all([
+  const [walletCount, walletBalance, successfulDeposits, entryDebits, prizeCredits, pendingPayments, failedPayments, pendingDeposits, pendingSettlements, walletBalances, ledgerTotals, recentTransactions] = await Promise.all([
     prisma.wallet.count(),
     prisma.wallet.aggregate({ _sum: { balance: true } }),
     prisma.walletDeposit.aggregate({ where: { status: WalletDepositStatus.SUCCESS }, _sum: { amount: true }, _count: { _all: true } }),
@@ -33,18 +21,22 @@ export async function getAdminFinanceOverview() {
     prisma.payment.count({ where: { status: { in: [PaymentStatus.FAILED, PaymentStatus.CANCELLED] } } }),
     prisma.walletDeposit.count({ where: { status: WalletDepositStatus.PENDING } }),
     prisma.tournamentPrizeSettlement.count({ where: { status: { in: [TournamentPrizeSettlementStatus.PENDING, TournamentPrizeSettlementStatus.APPROVED] } } }),
-    prisma.wallet.findMany({ select: { id: true, balance: true, transactions: { select: { type: true, amount: true } } } }),
+    prisma.wallet.findMany({ select: { id: true, balance: true } }),
+    prisma.walletTransaction.groupBy({ by: ["walletId", "type"], _sum: { amount: true } }),
     prisma.walletTransaction.findMany({ orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 10, select: { id: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, createdAt: true, wallet: { select: { user: { select: { id: true, name: true, email: true } } } } } }),
   ]);
 
+  const totalsByWallet = new Map<string, { credit: number; debit: number }>();
+  for (const row of ledgerTotals) {
+    const current = totalsByWallet.get(row.walletId) ?? { credit: 0, debit: 0 };
+    current[row.type === WalletTransactionType.CREDIT ? "credit" : "debit"] = Number(row._sum.amount ?? 0);
+    totalsByWallet.set(row.walletId, current);
+  }
+
   let reconciliationIssues = 0;
-  for (const wallet of reconciliationRows) {
-    let expected = 0;
-    for (const transaction of wallet.transactions) {
-      const amount = Number(transaction.amount);
-      expected += transaction.type === WalletTransactionType.CREDIT ? amount : -amount;
-    }
-    if (Math.abs(Number(wallet.balance) - expected) > 0.005) reconciliationIssues += 1;
+  for (const wallet of walletBalances) {
+    const totals = totalsByWallet.get(wallet.id) ?? { credit: 0, debit: 0 };
+    if (Math.abs(Number(wallet.balance) - (totals.credit - totals.debit)) > 0.005) reconciliationIssues += 1;
   }
 
   return {
