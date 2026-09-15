@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { prisma } from "@/lib/prisma";
 import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
-import { addMoney, compareMoney, isPositiveMoney, isValidUuid, normalizeMoney, WALLET_CURRENCY, WALLET_PAGE_SIZE } from "@/lib/wallet-rules";
+import { compareMoney, isPositiveMoney, isValidUuid, normalizeMoney, WALLET_CURRENCY, WALLET_PAGE_SIZE } from "@/lib/wallet-rules";
 import { recordWalletTransactionInTransaction } from "@/lib/wallet";
 
 function cleanText(value: string, max: number) {
@@ -24,10 +24,18 @@ export async function getAdminWalletDirectory(input: { page?: number; query?: st
   await requireAdmin();
   const page = Number.isSafeInteger(input.page) && (input.page ?? 1) > 0 ? input.page! : 1;
   const query = input.query?.trim().slice(0, 120) ?? "";
-  const where: Prisma.WalletWhereInput = query
-    ? { user: { OR: [{ id: isValidUuid(query) ? query : undefined }, { email: { contains: query, mode: "insensitive" } }, { name: { contains: query, mode: "insensitive" } }, { phone: { contains: query, mode: "insensitive" } }] } }
-    : {};
-  if (input.status && ["ACTIVE", "SUSPENDED", "BANNED"].includes(input.status)) where.user = { ...(where.user as Prisma.UserWhereInput), status: input.status as any };
+  const userWhere: Prisma.UserWhereInput = {};
+  if (query) {
+    const matches: Prisma.UserWhereInput[] = [
+      { email: { contains: query, mode: "insensitive" } },
+      { name: { contains: query, mode: "insensitive" } },
+      { phone: { contains: query, mode: "insensitive" } },
+    ];
+    if (isValidUuid(query)) matches.unshift({ id: query });
+    userWhere.OR = matches;
+  }
+  if (input.status && ["ACTIVE", "SUSPENDED", "BANNED"].includes(input.status)) userWhere.status = input.status as any;
+  const where: Prisma.WalletWhereInput = Object.keys(userWhere).length ? { user: userWhere } : {};
   const skip = (page - 1) * WALLET_PAGE_SIZE;
   const [items, total] = await Promise.all([
     prisma.wallet.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WALLET_PAGE_SIZE, select: { id: true, userId: true, currency: true, balance: true, createdAt: true, user: { select: { id: true, name: true, email: true, phone: true, status: true, role: true } } } }),
@@ -41,9 +49,17 @@ export async function getAdminTransactions(input: { page?: number; query?: strin
   const page = Number.isSafeInteger(input.page) && (input.page ?? 1) > 0 ? input.page! : 1;
   const query = input.query?.trim().slice(0, 120) ?? "";
   const where: Prisma.WalletTransactionWhereInput = {};
-  if (type && Object.values(WalletTransactionType).includes(input.type as WalletTransactionType)) where.type = input.type as WalletTransactionType;
-  if (category && Object.values(WalletTransactionCategory).includes(input.category as WalletTransactionCategory)) where.category = input.category as WalletTransactionCategory;
-  if (query) where.OR = [{ referenceId: isValidUuid(query) ? query : undefined }, { wallet: { user: { OR: [{ email: { contains: query, mode: "insensitive" } }, { name: { contains: query, mode: "insensitive" } }] } } }];
+  if (input.type && Object.values(WalletTransactionType).includes(input.type as WalletTransactionType)) where.type = input.type as WalletTransactionType;
+  if (input.category && Object.values(WalletTransactionCategory).includes(input.category as WalletTransactionCategory)) where.category = input.category as WalletTransactionCategory;
+  if (query) {
+    const ors: Prisma.WalletTransactionWhereInput[] = [
+      { referenceId: { contains: query, mode: "insensitive" } },
+      { wallet: { user: { email: { contains: query, mode: "insensitive" } } } },
+      { wallet: { user: { name: { contains: query, mode: "insensitive" } } } },
+    ];
+    if (isValidUuid(query)) ors.unshift({ referenceId: query });
+    where.OR = ors;
+  }
   const skip = (page - 1) * WALLET_PAGE_SIZE;
   const [items, total] = await Promise.all([
     prisma.walletTransaction.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WALLET_PAGE_SIZE, select: { id: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, description: true, createdAt: true, wallet: { select: { id: true, user: { select: { id: true, name: true, email: true } } } } } }),
@@ -55,6 +71,7 @@ export async function getAdminTransactions(input: { page?: number; query?: strin
 export async function createAdminWalletAdjustment(input: { walletId: string; amount: string; direction: "CREDIT" | "DEBIT"; reason: string; idempotencyKey: string }) {
   const admin = await requireAdmin();
   if (!isValidUuid(input.walletId)) throw new Error("INVALID_WALLET");
+  if (input.direction !== "CREDIT" && input.direction !== "DEBIT") throw new Error("INVALID_DIRECTION");
   const amount = normalizeMoney(input.amount);
   if (!amount || !isPositiveMoney(amount)) throw new Error("INVALID_AMOUNT");
   const reason = cleanText(input.reason, 1000);
@@ -68,7 +85,7 @@ export async function createAdminWalletAdjustment(input: { walletId: string; amo
     if (!wallet || wallet.currency !== WALLET_CURRENCY) throw new Error("WALLET_NOT_FOUND");
     const existing = await tx.walletTransaction.findFirst({ where: { walletId: wallet.id, referenceType: WalletReferenceType.ADJUSTMENT, referenceId, category: WalletTransactionCategory.ADJUSTMENT }, select: { id: true, type: true, amount: true, description: true } });
     if (existing) {
-      if (existing.amount.toString() !== amount || existing.type !== input.direction || existing.description !== reason) throw new Error("IDEMPOTENCY_KEY_REUSED");
+      if (normalizeMoney(existing.amount.toString()) !== amount || existing.type !== input.direction || existing.description !== reason) throw new Error("IDEMPOTENCY_KEY_REUSED");
       return { transaction: existing, idempotent: true };
     }
     if (input.direction === "DEBIT" && compareMoney(wallet.balance.toString(), amount) < 0) throw new Error("INSUFFICIENT_BALANCE");
@@ -76,7 +93,7 @@ export async function createAdminWalletAdjustment(input: { walletId: string; amo
     return { transaction, idempotent: false };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-  if (!result.idempotent) await recordAdminAuditEvent({ action: "WALLET_ADJUSTMENT", targetType: "WALLET", targetId: input.walletId, metadata: { transactionId: result.transaction.id, amount, direction: input.direction, reason, idempotencyKey: key } });
+  if (!result.idempotent) await recordAdminAuditEvent({ action: "WALLET_ADJUSTMENT", targetType: "WALLET", targetId: input.walletId, metadata: { transactionId: result.transaction.id, amount, direction: input.direction, reason } });
   return result;
 }
 
