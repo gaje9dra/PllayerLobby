@@ -3,6 +3,12 @@ import { TournamentStatus } from "@/app/generated/prisma/client";
 import { siteConfig } from "@/config/site";
 import { prisma } from "@/lib/prisma";
 
+// Sitemap data comes from PostgreSQL, so this route must never be executed
+// during `next build` on Netlify. It is generated when requested at runtime.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 const PUBLIC_STATUSES = [
   TournamentStatus.UPCOMING,
   TournamentStatus.REGISTRATION_OPEN,
