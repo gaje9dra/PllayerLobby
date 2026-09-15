@@ -4,9 +4,17 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { UserStatus } from "@/app/generated/prisma/client";
 
+// Netlify + NextAuth v5: trust the deployment host and support both the
+// canonical AUTH_* names and the older NEXTAUTH_/GOOGLE_* names so a
+// correctly configured deployment does not fail only at /api/auth/*.
+const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+const googleClientId = process.env.AUTH_GOOGLE_ID || process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.AUTH_GOOGLE_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   adapter: PrismaAdapter(prisma),
-  secret: process.env.AUTH_SECRET,
+  secret: authSecret,
   session: {
     strategy: "database",
     maxAge: 30 * 24 * 60 * 60,
@@ -14,8 +22,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   providers: [
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      clientId: googleClientId ?? "",
+      clientSecret: googleClientSecret ?? "",
       authorization: {
         params: {
           prompt: "select_account",
