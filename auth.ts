@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
-import { UserStatus } from "@/app/generated/prisma/client";
+import { UserRole, UserStatus } from "@/app/generated/prisma/client";
 
 // Netlify + NextAuth v5: trust the deployment host and support both the
 // canonical AUTH_* names and the older NEXTAUTH_/GOOGLE_* names.
@@ -77,8 +77,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       if (session.user && token.id) {
         session.user.id = token.id;
-        session.user.role = token.role;
-        session.user.status = token.status;
+        if (token.role) {
+          session.user.role = token.role;
+        }
+        if (token.status) {
+          session.user.status = token.status;
+        }
       }
 
       return session;
