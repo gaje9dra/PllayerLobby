@@ -31,22 +31,35 @@ function safeMessage(outcome: WalletDepositVerificationOutcome) {
 }
 function invalid(message: string): WalletDepositPaymentResult { return { ok: false, code: "PAYMENT_UNAVAILABLE", message }; }
 
+function getPublicAppUrl() {
+  return process.env.NEXT_PUBLIC_APP_URL?.trim()
+    || process.env.URL?.trim()
+    || process.env.DEPLOY_PRIME_URL?.trim()
+    || "";
+}
+
 export async function createPayUWalletDepositPayment(depositId: string, phoneInput = ""): Promise<WalletDepositPaymentResult> {
   if (!isValidUuid(depositId)) return invalid("Deposit not found.");
   const user = await requireActiveUser();
-  const config = getPayUConfig();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (!appUrl) return invalid("Payment is temporarily unavailable. Please try again later.");
+  let config;
+  try {
+    config = getPayUConfig();
+  } catch (error) {
+    console.error("PayU configuration error", { error: error instanceof Error ? error.message : "unknown" });
+    return invalid("PayU is not configured correctly on the server. Please check the PayU environment variables.");
+  }
+
+  const appUrl = getPublicAppUrl();
+  if (!appUrl) return invalid("Payment is unavailable because the public app URL is not configured.");
   let callbackUrl: string;
   try {
     const parsedAppUrl = new URL(appUrl);
-    if (config.environment === "production" && (parsedAppUrl.protocol !== "https:" || parsedAppUrl.hostname === "localhost" || parsedAppUrl.hostname === "127.0.0.1")) return invalid("Payment is temporarily unavailable. Please try again later.");
+    if (config.environment === "production" && (parsedAppUrl.protocol !== "https:" || parsedAppUrl.hostname === "localhost" || parsedAppUrl.hostname === "127.0.0.1")) return invalid("Payment is unavailable because the production callback URL must use HTTPS.");
     callbackUrl = new URL("/api/payu/wallet-deposit/callback", parsedAppUrl).toString();
-  } catch { return invalid("Payment is temporarily unavailable. Please try again later."); }
+  } catch {
+    return invalid("Payment is unavailable because the public app URL is invalid.");
+  }
 
-  // PayU requires a phone number. Save it once to the authenticated account when
-  // the account does not have one yet. Existing stored numbers always win over
-  // browser input, so users are never asked for their number on every deposit.
   const storedPhone = user.phone?.replace(/\s+/g, "") ?? "";
   const suppliedPhone = phoneInput.replace(/\s+/g, "");
   const phone = storedPhone || suppliedPhone;
