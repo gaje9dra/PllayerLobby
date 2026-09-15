@@ -5,8 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { UserStatus } from "@/app/generated/prisma/client";
 
 // Netlify + NextAuth v5: trust the deployment host and support both the
-// canonical AUTH_* names and the older NEXTAUTH_/GOOGLE_* names so a
-// correctly configured deployment does not fail only at /api/auth/*.
+// canonical AUTH_* names and the older NEXTAUTH_/GOOGLE_* names.
 const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
 const googleClientId = process.env.AUTH_GOOGLE_ID || process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.AUTH_GOOGLE_SECRET || process.env.GOOGLE_CLIENT_SECRET;
@@ -15,11 +14,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
   adapter: PrismaAdapter(prisma),
   secret: authSecret,
+
+  // With PrismaAdapter, Auth.js otherwise defaults to database sessions.
+  // JWT sessions avoid an additional Session-table write/read on Netlify
+  // serverless requests while the adapter still persists users/accounts.
   session: {
-    strategy: "database",
+    strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60,
     updateAge: 24 * 60 * 60,
   },
+
   providers: [
     Google({
       clientId: googleClientId ?? "",
@@ -33,9 +37,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
+
   pages: {
     signIn: "/login",
   },
+
   callbacks: {
     async signIn({ user }) {
       if (!user.email) {
@@ -57,22 +63,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
       return true;
     },
-    async session({ session, user }) {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: user.id },
-        select: {
-          role: true,
-          status: true,
-        },
-      });
 
-      if (!dbUser || !session.user) {
-        return session;
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+        token.status = user.status;
       }
 
-      session.user.id = user.id;
-      session.user.role = dbUser.role;
-      session.user.status = dbUser.status;
+      return token;
+    },
+
+    async session({ session, token }) {
+      if (session.user && token.id) {
+        session.user.id = token.id;
+        session.user.role = token.role;
+        session.user.status = token.status;
+      }
 
       return session;
     },
