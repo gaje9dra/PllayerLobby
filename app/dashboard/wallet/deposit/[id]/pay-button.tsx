@@ -10,13 +10,18 @@ export function PayUWalletCheckout({ depositId, hasPhone }: { depositId: string;
 
   async function startCheckout() {
     setError("");
-    if (!hasPhone && !/^[6-9][0-9]{9}$/.test(phone.replace(/\s+/g, ""))) {
+    const normalizedPhone = phone.replace(/\s+/g, "");
+    if (!hasPhone && !/^[6-9][0-9]{9}$/.test(normalizedPhone)) {
       setError("Enter a valid 10-digit Indian mobile number.");
       return;
     }
     setLoading(true);
     try {
-      const response = await fetch(`/api/wallet/deposits/${depositId}/pay`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone }) });
+      const response = await fetch(`/api/wallet/deposits/${depositId}/pay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(hasPhone ? {} : { phone: normalizedPhone }),
+      });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.checkoutUrl || !data?.fields) {
         setError(typeof data?.error === "string" ? data.error : "Payment is temporarily unavailable. Please try again.");
