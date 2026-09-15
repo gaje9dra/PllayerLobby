@@ -1,7 +1,7 @@
 import "server-only";
 
 import crypto from "node:crypto";
-import { Prisma, WalletDepositStatus, WalletReferenceType, WalletTransactionCategory, WalletTransactionType } from "@/app/generated/prisma/client";
+import { Prisma, UserStatus, WalletDepositStatus, WalletReferenceType, WalletTransactionCategory, WalletTransactionType } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { prisma } from "@/lib/prisma";
@@ -14,7 +14,6 @@ function cleanText(value: string, max: number) {
   if (!v || v.length > max || /[\u0000-\u001f\u007f]/.test(v)) throw new Error("INVALID_INPUT");
   return v;
 }
-
 function adjustmentReference(idempotencyKey: string) {
   const hex = crypto.createHash("sha256").update(`wallet-adjustment:${idempotencyKey}`, "utf8").digest("hex").slice(0, 32);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20)}`;
@@ -26,15 +25,11 @@ export async function getAdminWalletDirectory(input: { page?: number; query?: st
   const query = input.query?.trim().slice(0, 120) ?? "";
   const userWhere: Prisma.UserWhereInput = {};
   if (query) {
-    const matches: Prisma.UserWhereInput[] = [
-      { email: { contains: query, mode: "insensitive" } },
-      { name: { contains: query, mode: "insensitive" } },
-      { phone: { contains: query, mode: "insensitive" } },
-    ];
+    const matches: Prisma.UserWhereInput[] = [{ email: { contains: query, mode: "insensitive" } }, { name: { contains: query, mode: "insensitive" } }, { phone: { contains: query, mode: "insensitive" } }];
     if (isValidUuid(query)) matches.unshift({ id: query });
     userWhere.OR = matches;
   }
-  if (input.status && ["ACTIVE", "SUSPENDED", "BANNED"].includes(input.status)) userWhere.status = input.status as any;
+  if (input.status && Object.values(UserStatus).includes(input.status as UserStatus)) userWhere.status = input.status as UserStatus;
   const where: Prisma.WalletWhereInput = Object.keys(userWhere).length ? { user: userWhere } : {};
   const skip = (page - 1) * WALLET_PAGE_SIZE;
   const [items, total] = await Promise.all([
@@ -52,11 +47,7 @@ export async function getAdminTransactions(input: { page?: number; query?: strin
   if (input.type && Object.values(WalletTransactionType).includes(input.type as WalletTransactionType)) where.type = input.type as WalletTransactionType;
   if (input.category && Object.values(WalletTransactionCategory).includes(input.category as WalletTransactionCategory)) where.category = input.category as WalletTransactionCategory;
   if (query) {
-    const ors: Prisma.WalletTransactionWhereInput[] = [
-      { referenceId: { contains: query, mode: "insensitive" } },
-      { wallet: { user: { email: { contains: query, mode: "insensitive" } } } },
-      { wallet: { user: { name: { contains: query, mode: "insensitive" } } } },
-    ];
+    const ors: Prisma.WalletTransactionWhereInput[] = [{ referenceId: { contains: query, mode: "insensitive" } }, { wallet: { user: { email: { contains: query, mode: "insensitive" } } } }, { wallet: { user: { name: { contains: query, mode: "insensitive" } } } }];
     if (isValidUuid(query)) ors.unshift({ referenceId: query });
     where.OR = ors;
   }
@@ -79,8 +70,7 @@ export async function createAdminWalletAdjustment(input: { walletId: string; amo
   const rate = await consumeSecurityRateLimit({ namespace: "admin-wallet-adjustment", key: admin.id, limit: 10, windowSeconds: 3600 });
   if (!rate.allowed) throw new Error("RATE_LIMITED");
   const referenceId = adjustmentReference(key);
-
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async tx => {
     const wallet = await tx.wallet.findUnique({ where: { id: input.walletId }, select: { id: true, userId: true, currency: true, balance: true } });
     if (!wallet || wallet.currency !== WALLET_CURRENCY) throw new Error("WALLET_NOT_FOUND");
     const existing = await tx.walletTransaction.findFirst({ where: { walletId: wallet.id, referenceType: WalletReferenceType.ADJUSTMENT, referenceId, category: WalletTransactionCategory.ADJUSTMENT }, select: { id: true, type: true, amount: true, description: true } });
@@ -92,7 +82,6 @@ export async function createAdminWalletAdjustment(input: { walletId: string; amo
     const transaction = await recordWalletTransactionInTransaction(tx, { walletId: wallet.id, type: input.direction, category: WalletTransactionCategory.ADJUSTMENT, amount, currency: wallet.currency, referenceType: WalletReferenceType.ADJUSTMENT, referenceId, description: reason });
     return { transaction, idempotent: false };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-
   if (!result.idempotent) await recordAdminAuditEvent({ action: "WALLET_ADJUSTMENT", targetType: "WALLET", targetId: input.walletId, metadata: { transactionId: result.transaction.id, amount, direction: input.direction, reason } });
   return result;
 }
@@ -114,11 +103,6 @@ export async function getAdminAuditEvents(input: { page?: number; action?: strin
 
 export async function getAdminDepositSummary() {
   await requireAdmin();
-  const [pending, successful, failed, cancelled] = await Promise.all([
-    prisma.walletDeposit.count({ where: { status: WalletDepositStatus.PENDING } }),
-    prisma.walletDeposit.count({ where: { status: WalletDepositStatus.SUCCESS } }),
-    prisma.walletDeposit.count({ where: { status: WalletDepositStatus.FAILED } }),
-    prisma.walletDeposit.count({ where: { status: WalletDepositStatus.CANCELLED } }),
-  ]);
+  const [pending, successful, failed, cancelled] = await Promise.all([prisma.walletDeposit.count({ where: { status: WalletDepositStatus.PENDING } }), prisma.walletDeposit.count({ where: { status: WalletDepositStatus.SUCCESS } }), prisma.walletDeposit.count({ where: { status: WalletDepositStatus.FAILED } }), prisma.walletDeposit.count({ where: { status: WalletDepositStatus.CANCELLED } })]);
   return { pending, successful, failed, cancelled };
 }
