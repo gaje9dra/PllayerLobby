@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Prisma, WalletDepositStatus } from "@/app/generated/prisma/client";
+import { WalletDepositStatus } from "@/app/generated/prisma/client";
 import { requireActiveUser } from "@/lib/auth";
 import { getPayUConfig, generatePayURequestHash, validatePayUResponseHash, type PayURequestFields, type PayUResponseFields } from "@/lib/payu";
 import { verifyPayUTransaction, type PayUVerificationResult } from "@/lib/payu-verification";
@@ -43,35 +43,37 @@ export async function createPayUWalletDepositPayment(depositId: string, phoneInp
     if (config.environment === "production" && (parsedAppUrl.protocol !== "https:" || parsedAppUrl.hostname === "localhost" || parsedAppUrl.hostname === "127.0.0.1")) return invalid("Payment is temporarily unavailable. Please try again later.");
     callbackUrl = new URL("/api/payu/wallet-deposit/callback", parsedAppUrl).toString();
   } catch { return invalid("Payment is temporarily unavailable. Please try again later."); }
-  const suppliedPhone = phoneInput.replace(/\s+/g, "");
 
-  return prisma.$transaction(async (tx) => {
-    const deposit = await tx.walletDeposit.findFirst({ where: { id: depositId, userId: user.id }, select: { id: true, walletId: true, amount: true, currency: true, status: true, reference: true } });
+  // PayU requires a phone number. Save it once to the authenticated account when
+  // the account does not have one yet. Existing stored numbers always win over
+  // browser input, so users are never asked for their number on every deposit.
+  const storedPhone = user.phone?.replace(/\s+/g, "") ?? "";
+  const suppliedPhone = phoneInput.replace(/\s+/g, "");
+  const phone = storedPhone || suppliedPhone;
+  if (!PHONE_PATTERN.test(phone)) return invalid("A valid 10-digit Indian mobile number is required for PayU checkout.");
+  if (!storedPhone) {
+    await prisma.user.update({ where: { id: user.id }, data: { phone } });
+  }
+
+  return prisma.walletDeposit.findFirst({ where: { id: depositId, userId: user.id }, select: { id: true, walletId: true, amount: true, currency: true, status: true, reference: true } }).then((deposit) => {
     if (!deposit) return invalid("Deposit not found.");
     if (deposit.status !== WalletDepositStatus.PENDING) return invalid("Only a pending deposit can be paid.");
     if (deposit.currency !== "INR") return invalid("This deposit uses an unsupported currency.");
-
-    const phone = user.phone || suppliedPhone;
-    if (!PHONE_PATTERN.test(phone)) return invalid("A valid 10-digit Indian mobile number is required for PayU checkout.");
-    if (!user.phone) await tx.user.update({ where: { id: user.id }, data: { phone } });
 
     const amount = deposit.amount.toFixed(2);
     const fieldsWithoutHash = { key: config.merchantKey, txnid: deposit.reference, amount, productinfo: productInfo(deposit.reference), firstname: firstNameFromUser(user.name), email: user.email, phone, udf1: "", udf2: "", udf3: "", udf4: "", udf5: "", surl: callbackUrl, furl: callbackUrl };
     const hash = generatePayURequestHash({ ...fieldsWithoutHash, salt: config.merchantSalt });
     return { ok: true, depositId: deposit.id, reference: deposit.reference, checkoutUrl: config.checkoutUrl, fields: { ...fieldsWithoutHash, hash } } satisfies WalletDepositPaymentResult;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }
 
 function responseValue(value: unknown) { return typeof value === "string" || typeof value === "number" ? String(value).trim() : ""; }
-function expectedCallbackFields(response: PayUResponseFields, deposit: { amount: Prisma.Decimal; reference: string }) {
+function expectedCallbackFields(response: PayUResponseFields, deposit: { amount: import("@/app/generated/prisma/client").Prisma.Decimal; reference: string }) {
   return response.txnid === deposit.reference && normalizePaymentAmount(response.amount) === deposit.amount.toFixed(2) && response.productinfo === productInfo(deposit.reference);
 }
 
 async function applyVerifiedWalletDeposit(verification: PayUVerificationResult, merchantTransactionId: string, response: PayUResponseFields): Promise<WalletDepositVerificationResult> {
   return prisma.$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "WalletDeposit" WHERE "reference" = ${merchantTransactionId} FOR UPDATE`);
-    if (locked.length === 0) return { outcome: "REJECTED", depositId: null, message: safeMessage("REJECTED") };
-
     const deposit = await tx.walletDeposit.findUnique({ where: { reference: merchantTransactionId }, select: { id: true, userId: true, walletId: true, amount: true, currency: true, status: true, reference: true, providerReference: true } });
     if (!deposit) return { outcome: "REJECTED", depositId: null, message: safeMessage("REJECTED") };
     if (deposit.currency !== "INR" || !expectedCallbackFields(response, deposit)) return { outcome: "REJECTED", depositId: deposit.id, message: safeMessage("REJECTED") };
@@ -107,7 +109,7 @@ async function applyVerifiedWalletDeposit(verification: PayUVerificationResult, 
     if (deposit.status !== WalletDepositStatus.PENDING) return { outcome: "REJECTED", depositId: deposit.id, message: safeMessage("REJECTED") };
     if (providerTransactionId) await tx.walletDeposit.update({ where: { id: deposit.id }, data: { providerReference: providerTransactionId } });
     return { outcome: "PENDING", depositId: deposit.id, message: safeMessage("PENDING") };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }
 
 export async function verifyAndFinalizePayUWalletDeposit(response: PayUResponseFields): Promise<WalletDepositVerificationResult> {
