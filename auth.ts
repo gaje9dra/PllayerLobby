@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
-import { UserRole, UserStatus } from "@/app/generated/prisma/client";
+import { UserStatus } from "@/app/generated/prisma/client";
 
 // Netlify + NextAuth v5: trust the deployment host and support both the
 // canonical AUTH_* names and the older NEXTAUTH_/GOOGLE_* names.
@@ -65,25 +65,42 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
 
     async jwt({ token, user }) {
-      if (user) {
+      // Only store the stable user id in the JWT. Do not read role/status
+      // from Auth.js's User | AdapterUser union because those custom Prisma
+      // fields are not part of the upstream callback type.
+      if (user?.id) {
         token.id = user.id;
-        token.role = user.role;
-        token.status = user.status;
       }
 
       return token;
     },
 
     async session({ session, token }) {
-      if (session.user && token.id) {
-        session.user.id = token.id;
-        if (token.role) {
-          session.user.role = token.role;
-        }
-        if (token.status) {
-          session.user.status = token.status;
-        }
+      const userId = typeof token.id === "string" ? token.id : null;
+
+      if (!session.user || !userId) {
+        return session;
       }
+
+      // Read role/status from Prisma instead of the loosely typed Auth.js JWT.
+      // This also ensures changes made by an admin take effect on the next
+      // session request without relying on stale token values.
+      const dbUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          role: true,
+          status: true,
+        },
+      });
+
+      if (!dbUser) {
+        return session;
+      }
+
+      session.user.id = dbUser.id;
+      session.user.role = dbUser.role;
+      session.user.status = dbUser.status;
 
       return session;
     },
