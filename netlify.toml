@@ -6,6 +6,7 @@
   NODE_VERSION = "22.16.0"
 
 # Next.js is automatically handled by Netlify's OpenNext adapter.
-# Database migrations are intentionally not run during builds; apply committed
-# migrations to the production database separately with:
-#   npm run db:migrate:deploy
+# The build runs `prisma migrate deploy` before generating Prisma Client so
+# Auth.js/Prisma tables are present in the production database before OAuth
+# callbacks are served. Prisma CLI uses DIRECT_URL when it is configured;
+# otherwise it falls back to DATABASE_URL via prisma.config.ts.
