@@ -3,9 +3,21 @@ import "server-only";
 import { PaymentStatus, TournamentPrizeSettlementStatus, WalletDepositStatus, WalletTransactionCategory, WalletTransactionType } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { addMoney, compareMoney, normalizeMoney } from "@/lib/wallet-rules";
 
 function money(value: unknown) {
-  return Number(value ?? 0).toFixed(2);
+  return normalizeMoney(String(value ?? "0")) ?? "0.00";
+}
+
+function ledgerDifference(credits: string, debits: string) {
+  const credit = normalizeMoney(credits) ?? "0.00";
+  const debit = normalizeMoney(debits) ?? "0.00";
+  const creditCents = BigInt(credit.replace(".", ""));
+  const debitCents = BigInt(debit.replace(".", ""));
+  const difference = creditCents - debitCents;
+  const sign = difference < 0n ? "-" : "";
+  const absolute = difference < 0n ? -difference : difference;
+  return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
 }
 
 export async function getAdminFinanceOverview() {
@@ -26,17 +38,24 @@ export async function getAdminFinanceOverview() {
     prisma.walletTransaction.findMany({ orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 10, select: { id: true, type: true, category: true, amount: true, currency: true, referenceType: true, referenceId: true, createdAt: true, wallet: { select: { user: { select: { id: true, name: true, email: true } } } } } }),
   ]);
 
-  const totalsByWallet = new Map<string, { credit: number; debit: number }>();
+  const totalsByWallet = new Map<string, { credit: string; debit: string }>();
   for (const row of ledgerTotals) {
-    const current = totalsByWallet.get(row.walletId) ?? { credit: 0, debit: 0 };
-    current[row.type === WalletTransactionType.CREDIT ? "credit" : "debit"] = Number(row._sum.amount ?? 0);
+    const current = totalsByWallet.get(row.walletId) ?? { credit: "0.00", debit: "0.00" };
+    const amount = normalizeMoney(row._sum.amount?.toString() ?? "0") ?? "0.00";
+    if (row.type === WalletTransactionType.CREDIT) {
+      current.credit = addMoney(current.credit, amount);
+    } else {
+      current.debit = addMoney(current.debit, amount);
+    }
     totalsByWallet.set(row.walletId, current);
   }
 
   let reconciliationIssues = 0;
   for (const wallet of walletBalances) {
-    const totals = totalsByWallet.get(wallet.id) ?? { credit: 0, debit: 0 };
-    if (Math.abs(Number(wallet.balance) - (totals.credit - totals.debit)) > 0.005) reconciliationIssues += 1;
+    const totals = totalsByWallet.get(wallet.id) ?? { credit: "0.00", debit: "0.00" };
+    const expected = ledgerDifference(totals.credit, totals.debit);
+    const recorded = money(wallet.balance);
+    if (expected.startsWith("-") || compareMoney(recorded, expected) !== 0) reconciliationIssues += 1;
   }
 
   return {
