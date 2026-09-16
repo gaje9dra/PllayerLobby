@@ -22,6 +22,7 @@ export function MatchRoomForm({ matchId }: { matchId: string }) {
       const data = await response.json();
       if (!response.ok || !data?.ok) throw new Error(data?.message || "Unable to load room credentials.");
       setState(data.data);
+      setPublished(Boolean(data.data?.published));
       if (reveal && data.data?.configured) {
         setRoomId(data.data.roomId || "");
         setRoomPassword(data.data.roomPassword || "");
@@ -41,11 +42,7 @@ export function MatchRoomForm({ matchId }: { matchId: string }) {
     setSaving(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/admin/matches/${encodeURIComponent(matchId)}/room`, {
-        method: state?.configured ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId, roomPassword, published }),
-      });
+      const response = await fetch(`/api/admin/matches/${encodeURIComponent(matchId)}/room`, { method: state?.configured ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ roomId, roomPassword, published }) });
       const data = await response.json();
       if (!response.ok || !data?.ok) throw new Error(data?.message || "Unable to update room credentials.");
       setMessage("Room credentials saved.");
