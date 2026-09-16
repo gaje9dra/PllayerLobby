@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
@@ -90,7 +91,7 @@ export async function upsertMatchRoom(input: { matchId: string; roomId: string; 
     const encryptedPassword = encryptMatchRoomSecret(roomPassword);
     const rows = await tx.$queryRaw<{ created: boolean }[]>(Prisma.sql`
       INSERT INTO "MatchRoomCredential" ("id", "matchId", "roomIdEncrypted", "roomPasswordEncrypted", "createdAt", "updatedAt", "publishedAt", "revokedAt", "updatedById")
-      VALUES (${cryptoRandomUuid()}::uuid, ${input.matchId}::uuid, ${encryptedId}, ${encryptedPassword}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${input.published ? Prisma.sql`CURRENT_TIMESTAMP` : Prisma.sql`NULL`}, ${input.published ? Prisma.sql`NULL` : Prisma.sql`CURRENT_TIMESTAMP`}, ${admin.id}::uuid)
+      VALUES (${randomUUID()}::uuid, ${input.matchId}::uuid, ${encryptedId}, ${encryptedPassword}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${input.published ? Prisma.sql`CURRENT_TIMESTAMP` : Prisma.sql`NULL`}, ${input.published ? Prisma.sql`NULL` : Prisma.sql`CURRENT_TIMESTAMP`}, ${admin.id}::uuid)
       ON CONFLICT ("matchId") DO UPDATE SET
         "roomIdEncrypted" = EXCLUDED."roomIdEncrypted",
         "roomPasswordEncrypted" = EXCLUDED."roomPasswordEncrypted",
@@ -175,8 +176,4 @@ export async function getParticipantMatchRoomAccess(matchId: string): Promise<Pa
   if (!room[0] || !room[0].publishedAt || room[0].revokedAt) return { ok: false, reason: "Room credentials are not available yet." };
 
   return { ok: true, roomId: decryptMatchRoomSecret(room[0].roomIdEncrypted), roomPassword: decryptMatchRoomSecret(room[0].roomPasswordEncrypted) };
-}
-
-function cryptoRandomUuid() {
-  return randomBytes(16).toString("hex").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
 }
