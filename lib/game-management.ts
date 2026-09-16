@@ -13,7 +13,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SAFE_TEXT_PATTERN = /[<>]/;
 
-export type GameInput = { name: unknown; slug?: unknown; description?: unknown; logoUrl?: unknown; isActive?: unknown };
+export type GameInput = { name?: unknown; slug?: unknown; description?: unknown; logoUrl?: unknown; isActive?: unknown };
 
 function text(value: unknown, maxLength: number, required = false) {
   const result = typeof value === "string" ? value.trim() : "";
@@ -47,9 +47,7 @@ function validateLogoUrl(value: unknown) {
   return url;
 }
 
-function gameCode(slug: string) {
-  return slug.replace(/-/g, "_").toUpperCase().slice(0, MAX_CODE_LENGTH) || "GAME";
-}
+function gameCode(slug: string) { return slug.replace(/-/g, "_").toUpperCase().slice(0, MAX_CODE_LENGTH) || "GAME"; }
 
 export class GameValidationError extends Error {
   constructor(message: string) { super(message); this.name = "GameValidationError"; }
@@ -67,10 +65,7 @@ export function normalizeGameInput(input: GameInput, defaultIsActive = true) {
 function isUuid(value: string) { return UUID_PATTERN.test(value); }
 
 async function assertUniqueGame(input: { name: string; slug: string; excludeId?: string }) {
-  const duplicate = await prisma.game.findFirst({
-    where: { ...(input.excludeId ? { id: { not: input.excludeId } } : {}), OR: [{ slug: input.slug }, { name: { equals: input.name, mode: "insensitive" } }] },
-    select: { id: true, name: true, slug: true },
-  });
+  const duplicate = await prisma.game.findFirst({ where: { ...(input.excludeId ? { id: { not: input.excludeId } } : {}), OR: [{ slug: input.slug }, { name: { equals: input.name, mode: "insensitive" } }] }, select: { id: true, name: true, slug: true } });
   if (duplicate) {
     if (duplicate.slug === input.slug) throw new GameValidationError("This game slug is already in use.");
     throw new GameValidationError("A game with this name already exists.");
@@ -81,11 +76,7 @@ export async function listGames(input: { search?: string; status?: string }) {
   await requireAdmin();
   const search = (input.search ?? "").trim().slice(0, 80);
   const status = input.status === "ACTIVE" || input.status === "INACTIVE" ? input.status : "ALL";
-  return prisma.game.findMany({
-    where: { ...(status === "ACTIVE" ? { isActive: true } : status === "INACTIVE" ? { isActive: false } : {}), ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { slug: { contains: search, mode: "insensitive" } }] } : {}) },
-    orderBy: [{ isActive: "desc" }, { name: "asc" }],
-    include: { _count: { select: { tournaments: true } } },
-  });
+  return prisma.game.findMany({ where: { ...(status === "ACTIVE" ? { isActive: true } : status === "INACTIVE" ? { isActive: false } : {}), ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { slug: { contains: search, mode: "insensitive" } }] } : {}) }, orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { _count: { select: { tournaments: true } } } });
 }
 
 export async function listActiveGames() {
