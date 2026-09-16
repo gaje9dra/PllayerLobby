@@ -3,13 +3,11 @@ import "server-only";
 import { Prisma, TournamentStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser } from "@/lib/auth";
 import { verifyTournamentAccessCode } from "@/lib/tournament-access-code";
-import { getJoiningWindowStart } from "@/lib/tournament-room-rules";
+import { getJoiningWindowStart, isParticipantMatchClosed, isParticipantMatchJoinable } from "@/lib/tournament-room-rules";
 import { decryptMatchRoomSecret } from "@/lib/match-room-crypto";
 import { prisma } from "@/lib/prisma";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ACTIVE_MATCH_STATUSES = new Set(["PENDING", "READY", "LIVE"]);
-const CLOSED_MATCH_STATUSES = new Set(["COMPLETED", "CANCELLED"]);
 
 export type TournamentAccessResult =
   | { ok: true; matchId: string; roundNumber: number; matchNumber: number; roomId: string; roomPassword: string }
@@ -71,12 +69,11 @@ export async function getParticipantTournamentAccess(tournamentId: string, acces
     return { ok: false, reason: "No active match is assigned to your confirmed registration." };
   }
 
-  if (CLOSED_MATCH_STATUSES.has(match.matchStatus)) {
+  if (isParticipantMatchClosed(match.matchStatus)) {
     await auditAccess(user.id, tournamentId, "TOURNAMENT_ACCESS_DENIED_MATCH", match.matchId);
     return { ok: false, reason: "Your match is no longer available for joining." };
   }
-
-  if (!ACTIVE_MATCH_STATUSES.has(match.matchStatus)) {
+  if (!isParticipantMatchJoinable(match.matchStatus)) {
     await auditAccess(user.id, tournamentId, "TOURNAMENT_ACCESS_DENIED_MATCH", match.matchId);
     return { ok: false, reason: "Your match is not currently available for joining." };
   }
