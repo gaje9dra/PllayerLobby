@@ -21,7 +21,7 @@ DRAFT is deliberately excluded from automatic transitions. An administrator must
 
 Lifecycle decisions use server-side `Date` values and database state. Browser clocks and countdown timers are never authoritative.
 
-The lifecycle updater is safe to run repeatedly. Each transition uses a conditional `updateMany` keyed by the observed status, so concurrent workers/admin requests cannot overwrite a newer state. If a scheduled execution is missed, the next execution selects overdue tournaments and catches them up through the required forward states.
+The lifecycle updater is safe to run repeatedly. Each transition uses a conditional `updateMany` keyed by the observed status, so concurrent workers/admin requests cannot overwrite a newer state. The status update and its lifecycle audit event are committed in the same database transaction. If a scheduled execution is missed, the next execution selects overdue tournaments and catches them up through the required forward states.
 
 There are no in-memory timers. Application restarts therefore do not lose scheduled transitions.
 
@@ -31,9 +31,9 @@ The production deployment uses the existing Netlify infrastructure. `netlify/fun
 
 `GET /api/admin/tournaments/lifecycle`
 
-The endpoint requires `Authorization: Bearer <CRON_SECRET>`. The scheduler uses Netlify's `URL` environment variable and the server-only `CRON_SECRET`; it does not expose either secret to the browser.
+The endpoint requires `Authorization: Bearer <CRON_SECRET>`. Automatic lifecycle auditing additionally requires `CRON_ACTOR_USER_ID`, which must be the UUID of a dedicated active administrator/service user used only as the database actor for system-generated audit records. Audit metadata explicitly records `actor: SYSTEM`; the service user is not presented as the human who initiated the transition.
 
-Netlify Scheduled Functions execute according to their cron schedule and continue independently of whether a user has the site open. The application also performs server-side lifecycle refreshes on relevant requests as a defense-in-depth mechanism.
+The scheduler uses Netlify's `URL` environment variable and server-only secrets. Neither secret is exposed to the browser.
 
 ## Registration safety
 
@@ -67,7 +67,7 @@ Deactivating a game does not delete or mutate its existing tournaments. The game
 
 ## Audit logging
 
-Administrative lifecycle actions and accepted schedule changes use the existing `AdminAuditLog` transaction path. Metadata records the tournament, old/new status and whether the schedule changed. Automatic lifecycle transitions are system operations and are emitted by the scheduler/application lifecycle path without attributing them to a human administrator.
+Administrative lifecycle actions and accepted schedule changes use the existing `AdminAuditLog` transaction path. Automatic lifecycle transitions use the same durable audit table and are written atomically with the status change, with metadata identifying the actor as `SYSTEM`, old/new status and the transition timestamp.
 
 ## Financial isolation
 
