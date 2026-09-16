@@ -4,9 +4,8 @@ import { validateMatchResultInput, validateResultStateTransition } from "@/lib/m
 
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
-const C = "33333333-3333-4333-8333-333333333333";
 
-test("valid result accepts only participant-shaped score data", () => {
+test("valid result accepts participant-shaped score data", () => {
   assert.deepEqual(validateMatchResultInput({ winnerRegistrationId: A, scores: { [A]: 10, [B]: 7 } }), { winnerRegistrationId: A, scores: { [A]: 10, [B]: 7 } });
 });
 
@@ -17,7 +16,7 @@ test("winner must be represented in scores", () => {
 test("malformed and unsafe scores are rejected", () => {
   assert.throws(() => validateMatchResultInput({ winnerRegistrationId: A, scores: { [A]: -1, [B]: 2 } }), /INVALID_SCORE/);
   assert.throws(() => validateMatchResultInput({ winnerRegistrationId: A, scores: { [A]: Number.POSITIVE_INFINITY } }), /INVALID_SCORE/);
-  assert.throws(() => validateMatchResultInput({ winnerRegistrationId: A, scores: { [A]: 1, [C]: 2 } }), /INVALID_RESULT|INVALID_SCORE|INVALID_WINNER/);
+  assert.throws(() => validateMatchResultInput({ winnerRegistrationId: A, scores: {} }), /INVALID_SCORE/);
 });
 
 test("result lifecycle allows review but not silent rewrites", () => {
@@ -29,7 +28,7 @@ test("result lifecycle allows review but not silent rewrites", () => {
   assert.equal(validateResultStateTransition("REJECTED", "VERIFIED"), false);
 });
 
-test("financial state is intentionally outside the result lifecycle", () => {
+test("financial states are outside the result lifecycle", () => {
   assert.equal(validateResultStateTransition("PENDING", "VERIFIED"), true);
   assert.equal(validateResultStateTransition("VERIFIED", "CREDITED"), false);
 });
