@@ -1,15 +1,15 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { validateGameSpecificConfig, type GameConfigCode, type GameSpecificConfig, type ValorantConfig, type StumbleGuysConfig } from "@/lib/game-specific-config";
 const defaults: Record<GameConfigCode, GameSpecificConfig> = { VALORANT: { version: 1, format: "5V5", teamSize: 5, gameMode: "COMPETITIVE", map: "ANY", rounds: 1, scoring: { win: 3, loss: 0 } }, STUMBLE_GUYS: { version: 1, format: "SOLO", participantStructure: "INDIVIDUAL", rounds: 3, gameMode: "RACE", scoring: { first: 10, second: 7, third: 5 } } };
 type Props = { gameCode?: string; initialConfig?: unknown };
 export function GameSpecificConfigFields({ gameCode, initialConfig }: Props) {
   const code = gameCode === "VALORANT" || gameCode === "STUMBLE_GUYS" ? gameCode as GameConfigCode : null;
   const initial = useMemo(() => { if (!code) return null; const result = validateGameSpecificConfig(code, initialConfig ?? defaults[code]); return result.ok ? result.config : defaults[code]; }, [code, initialConfig]);
-  const [config, setConfig] = useState<GameSpecificConfig | null>(initial);
-  useEffect(() => setConfig(initial), [initial]);
+  const [configs, setConfigs] = useState<Partial<Record<GameConfigCode, GameSpecificConfig>>>({});
+  const config = code ? configs[code] ?? initial : null;
   if (!code || !config) return <section className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-5 sm:p-7"><h2 className="text-lg font-bold text-white">Game-specific settings</h2><p className="mt-2 text-sm text-slate-500">This game does not have a dedicated configuration schema yet. Core tournament settings remain available.</p><input type="hidden" name="gameConfig" value="" /></section>;
-  const set = (patch: Partial<GameSpecificConfig>) => setConfig((current) => current ? ({ ...current, ...patch } as GameSpecificConfig) : current);
+  const set = (patch: Partial<GameSpecificConfig>) => setConfigs((current) => ({ ...current, [code]: { ...config, ...patch } as GameSpecificConfig }));
   const error = validateGameSpecificConfig(code, config);
   const numberInput = (value: number, onChange: (value: number) => void) => <input type="number" min="-1000" max="1000" step="1" value={value} onChange={(e) => onChange(Number(e.target.value))} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white" />;
   if (code === "VALORANT") {
