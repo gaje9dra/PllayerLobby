@@ -30,7 +30,7 @@ export async function publishTournamentNow(_previousState: PublishTournamentStat
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 120) return { ok: false, error: "Tournament slug is invalid." };
   if (!tournament.game.isActive) return { ok: false, error: "The selected game is inactive." };
   if (!MONEY_PATTERN.test(tournament.entryFee.toString()) || !MONEY_PATTERN.test(tournament.prizePool.toString())) return { ok: false, error: "Tournament monetary values are invalid." };
-  if (!Number.isSafeInteger(tournament.maxParticipants) || tournament.maxParticipants <= 0) return { ok: false, error: "Maximum participants must be greater than zero." };
+  if (tournament.maxParticipants === null || !Number.isSafeInteger(tournament.maxParticipants) || tournament.maxParticipants <= 0) return { ok: false, error: "Maximum participants must be greater than zero." };
   if (!tournament.registrationStartTime || !tournament.registrationEndTime) return { ok: false, error: "Registration opening and closing times are required." };
   if (!(tournament.registrationStartTime < tournament.registrationEndTime && tournament.registrationEndTime < tournament.startTime)) return { ok: false, error: "Registration must open before it closes, and registration must close before the tournament starts." };
   if (!Number.isSafeInteger(tournament.joiningWindowMinutes) || tournament.joiningWindowMinutes <= 0) return { ok: false, error: "Joining window is invalid." };
