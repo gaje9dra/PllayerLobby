@@ -85,7 +85,7 @@ export async function upsertMatchRoom(input: { matchId: string; roomId: string; 
     const context = contextRows[0];
     if (!context) return { ok: false, message: "Match not found." };
     if (context.tournamentStatus === "DRAFT" || context.tournamentStatus === "CANCELLED") return { ok: false, message: "Room credentials cannot be configured for this tournament state." };
-    if (context.matchStatus === "COMPLETED" || context.matchStatus === "CANCELLED") return { ok: false, message: "Room credentials cannot be changed for a completed or cancelled match." };
+    if (context.matchStatus === "COMPLETED" || context.matchStatus === "CANCELLED" || context.matchStatus === "ABANDONED") return { ok: false, message: "Room credentials cannot be changed for a completed or cancelled match." };
 
     const encryptedId = encryptMatchRoomSecret(roomId);
     const encryptedPassword = encryptMatchRoomSecret(roomPassword);
@@ -164,7 +164,14 @@ export async function getParticipantMatchRoomAccess(matchId: string): Promise<Pa
       AND r."status" = 'CONFIRMED'
     LIMIT 1
   `);
-  const eligibleRegistration = isEligibleMatchRegistration({ authenticated: true, userActive: user.status === "ACTIVE", registrationConfirmed: Boolean(eligible[0]), registrationBelongsToTournament: Boolean(eligible[0]), registrationOccupiesMatch: Boolean(eligible[0]) });
+  if (!eligible[0]) return { ok: false, reason: "You are not an eligible participant in this match." };
+  const noShow = await prisma.$queryRaw<Array<{ status: string }>>(Prisma.sql`
+    SELECT "status" FROM "TournamentMatchParticipantState"
+    WHERE "matchId" = ${matchId}::uuid AND "registrationId" = ${eligible[0].registrationId}::uuid
+    LIMIT 1
+  `);
+  if (noShow[0]?.status === "NO_SHOW" || noShow[0]?.status === "WITHDRAWN") return { ok: false, reason: "You are no longer eligible to access this match." };
+  const eligibleRegistration = isEligibleMatchRegistration({ authenticated: true, userActive: user.status === "ACTIVE", registrationConfirmed: true, registrationBelongsToTournament: true, registrationOccupiesMatch: true });
   if (!eligibleRegistration) return { ok: false, reason: "You are not an eligible participant in this match." };
 
   const room = await prisma.$queryRaw<Array<{ roomIdEncrypted: string; roomPasswordEncrypted: string; publishedAt: Date | null; revokedAt: Date | null }>>(Prisma.sql`
