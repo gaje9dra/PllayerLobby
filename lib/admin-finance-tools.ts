@@ -3,7 +3,7 @@ import "server-only";
 import crypto from "node:crypto";
 import { Prisma, UserStatus, WalletDepositStatus, WalletReferenceType, WalletTransactionCategory, WalletTransactionType } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
-import { recordAdminAuditEvent } from "@/lib/admin-audit";
+import { recordAdminAuditEvent, recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
 import { prisma } from "@/lib/prisma";
 import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 import { compareMoney, isPositiveMoney, isValidUuid, normalizeMoney, WALLET_CURRENCY, WALLET_PAGE_SIZE } from "@/lib/wallet-rules";
@@ -70,20 +70,20 @@ export async function createAdminWalletAdjustment(input: { walletId: string; amo
   const rate = await consumeSecurityRateLimit({ namespace: "admin-wallet-adjustment", key: admin.id, limit: 10, windowSeconds: 3600 });
   if (!rate.allowed) throw new Error("RATE_LIMITED");
   const referenceId = adjustmentReference(key);
-  const result = await prisma.$transaction(async tx => {
+
+  return prisma.$transaction(async tx => {
     const wallet = await tx.wallet.findUnique({ where: { id: input.walletId }, select: { id: true, userId: true, currency: true, balance: true } });
     if (!wallet || wallet.currency !== WALLET_CURRENCY) throw new Error("WALLET_NOT_FOUND");
     const existing = await tx.walletTransaction.findFirst({ where: { walletId: wallet.id, referenceType: WalletReferenceType.ADJUSTMENT, referenceId, category: WalletTransactionCategory.ADJUSTMENT }, select: { id: true, type: true, amount: true, description: true } });
     if (existing) {
       if (normalizeMoney(existing.amount.toString()) !== amount || existing.type !== input.direction || existing.description !== reason) throw new Error("IDEMPOTENCY_KEY_REUSED");
-      return { transaction: existing, idempotent: true };
+      return { transaction: existing, idempotent: true, auditId: null };
     }
     if (input.direction === "DEBIT" && compareMoney(wallet.balance.toString(), amount) < 0) throw new Error("INSUFFICIENT_BALANCE");
     const transaction = await recordWalletTransactionInTransaction(tx, { walletId: wallet.id, type: input.direction, category: WalletTransactionCategory.ADJUSTMENT, amount, currency: wallet.currency, referenceType: WalletReferenceType.ADJUSTMENT, referenceId, description: reason });
-    return { transaction, idempotent: false };
+    const audit = await recordAdminAuditEventInTransaction(tx, admin.id, { action: "WALLET_ADJUSTMENT", targetType: "WALLET", targetId: input.walletId, metadata: { transactionId: transaction.id, amount, direction: input.direction, reason } });
+    return { transaction, idempotent: false, auditId: audit.id };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  if (!result.idempotent) await recordAdminAuditEvent({ action: "WALLET_ADJUSTMENT", targetType: "WALLET", targetId: input.walletId, metadata: { transactionId: result.transaction.id, amount, direction: input.direction, reason } });
-  return result;
 }
 
 export async function getAdminAuditEvents(input: { page?: number; action?: string; targetType?: string; query?: string }) {
