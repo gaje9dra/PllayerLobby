@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { validateGameSpecificConfig, type GameConfigCode, type GameSpecificConfig, type ValorantConfig, type StumbleGuysConfig } from "@/lib/game-specific-config";
+import { validateGameSpecificConfig, type GameConfigCode, type GameSpecificConfig, type ValorantConfig, type StumbleGuysConfig } from "@/lib/game-specific-config-rules";
 const defaults: Record<GameConfigCode, GameSpecificConfig> = { VALORANT: { version: 1, format: "5V5", teamSize: 5, gameMode: "COMPETITIVE", map: "ANY", rounds: 1, scoring: { win: 3, loss: 0 } }, STUMBLE_GUYS: { version: 1, format: "SOLO", participantStructure: "INDIVIDUAL", rounds: 3, gameMode: "RACE", scoring: { first: 10, second: 7, third: 5 } } };
 type Props = { gameCode?: string; initialConfig?: unknown };
 export function GameSpecificConfigFields({ gameCode, initialConfig }: Props) {
