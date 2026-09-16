@@ -14,7 +14,8 @@ export default async function AdminTournamentBracketPage({ params }: { params: P
   const confirmed = await prisma.registration.count({ where: { tournamentId: id, status: "CONFIRMED" } });
   const data = await getTournamentBracket(id);
   const matchById = new Map(data?.matches.map((match) => [match.id, match]) ?? []);
-  const slotsByMatch = new Map<string, typeof data.slots>();
+  type BracketSlot = NonNullable<typeof data>["slots"][number];
+  const slotsByMatch = new Map<string, BracketSlot[]>();
   for (const slot of data?.slots ?? []) slotsByMatch.set(slot.matchId, [...(slotsByMatch.get(slot.matchId) ?? []), slot]);
 
   return (
