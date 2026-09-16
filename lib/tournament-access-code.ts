@@ -3,7 +3,7 @@ import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { TournamentAccessCodeStatus, TournamentStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
-import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
+import { recordAdminAuditEvent, recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
 import { prisma } from "@/lib/prisma";
 import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 
@@ -64,11 +64,16 @@ function isUsableTournament(status: TournamentStatus) {
 }
 
 export async function getTournamentAccessCodeAdmin(tournamentId: string, reveal = false) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   if (!UUID_PATTERN.test(tournamentId)) return null;
   const record = await prisma.tournamentAccessCode.findUnique({ where: { tournamentId }, select: { id: true, status: true, createdAt: true, updatedAt: true, revokedAt: true, expiresAt: true, codeEncrypted: true } });
   if (!record) return null;
-  return { id: record.id, status: record.status, createdAt: record.createdAt, updatedAt: record.updatedAt, revokedAt: record.revokedAt, expiresAt: record.expiresAt, code: reveal && record.status === TournamentAccessCodeStatus.ACTIVE ? decryptCode(record.codeEncrypted) : undefined };
+  if (reveal && record.status === TournamentAccessCodeStatus.ACTIVE) {
+    await recordAdminAuditEvent({ action: "TOURNAMENT_ACCESS_CODE_REVEALED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { credentialId: record.id } });
+    return { id: record.id, status: record.status, createdAt: record.createdAt, updatedAt: record.updatedAt, revokedAt: record.revokedAt, expiresAt: record.expiresAt, code: decryptCode(record.codeEncrypted) };
+  }
+  void admin;
+  return { id: record.id, status: record.status, createdAt: record.createdAt, updatedAt: record.updatedAt, revokedAt: record.revokedAt, expiresAt: record.expiresAt, code: undefined };
 }
 
 async function generateFreshCode(tournamentId: string, actorId: string) {
