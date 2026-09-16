@@ -68,3 +68,5 @@ export async function recordAdminAuditEvent(input: {
   const admin = await requireAdmin();
   return recordAdminAuditEventInTransaction(prisma, admin.id, input);
 }
+
+globalThis.recordAdminAuditEvent = recordAdminAuditEvent;
