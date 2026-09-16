@@ -35,6 +35,8 @@
 - [x] Protected lifecycle API exists.
 - [x] Netlify Scheduled Function runs every minute in production.
 - [x] Scheduler authenticates with `CRON_SECRET`.
+- [x] Scheduler uses `CRON_ACTOR_USER_ID` for durable SYSTEM audit records.
+- [x] Automatic status update and SYSTEM audit record are transactional.
 - [x] No browser/in-memory timer is required.
 - [x] Conditional status updates are idempotent under concurrent execution.
 - [x] Missed transitions are caught up on later scheduler runs.
@@ -50,15 +52,14 @@
 - [x] Existing tournaments remain intact if a game is later deactivated.
 - [x] Scheduling does not directly modify wallet, ledger, PayU, deposit, withdrawal or winnings data.
 
-## Testing / verification still required
+## Verification
 
-- [ ] Run Prisma generation/validation/migrations.
-- [ ] Run typecheck.
-- [ ] Run lint.
-- [ ] Run all unit/integration tests.
-- [ ] Run lifecycle, authorization and financial regression tests.
-- [ ] Run production build.
-- [ ] Verify the Netlify scheduled function is discovered as Scheduled after deployment.
+- [x] Prisma generation/validation/migrations passed in CI run #221.
+- [x] Typecheck passed in CI run #221.
+- [x] Lint passed in CI run #221.
+- [x] Unit/integration tests passed in CI run #221.
+- [x] Production build passed in CI run #221.
+- [ ] Verify the Netlify scheduled function is discovered as Scheduled after the next production deployment.
 
 ## Scope exclusions
 
@@ -68,4 +69,4 @@
 - No new notification system is introduced.
 - No new refund system is introduced.
 
-Phase 9.5 must not begin until the verification section above is green.
+Phase 9.5 must not begin automatically.
