@@ -62,6 +62,9 @@ jobs:
       - name: Prisma validate
         run: npm run db:validate
       - name: Prisma migrate
+        # Run the complete migration chain from an empty PostgreSQL database.
+        # Phase 9.11 MatchResult foreign keys are intentionally deferred until
+        # the MatchResult table has been created by its preceding migration.
         run: npm run db:migrate:deploy
       - name: Typecheck
         run: npx tsc --noEmit
