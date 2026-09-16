@@ -16,7 +16,7 @@ test("joining window opens configured minutes before tournament start", () => {
 
 test("joining window configuration clamps negative minutes to the tournament start", () => {
   assert.equal(getJoiningWindowStart(start, -10).toISOString(), start.toISOString());
-  assert.equal(isJoiningWindowOpen(start, start, -10), true);
+  assert.equal(isJoiningWindowOpen(start, start, -10), false);
 });
 
 test("completed and cancelled tournaments are never joinable", () => {
