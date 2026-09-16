@@ -36,10 +36,10 @@ export function validateResultStateTransition(current: string, next: string) {
   return false;
 }
 
-type Db = typeof prisma;
+type QueryDb = Pick<typeof prisma, "$queryRaw">;
 type MatchContext = { matchId: string; matchStatus: string; roundNumber: number; matchNumber: number; nextMatchId: string | null; nextSlot: number | null; tournamentId: string; tournamentStatus: string; tournamentName: string };
 
-async function matchContext(matchId: string, tx: Db | Prisma.TransactionClient = prisma): Promise<MatchContext> {
+async function matchContext(matchId: string, tx: QueryDb = prisma): Promise<MatchContext> {
   if (!UUID.test(matchId)) throw new Error("MATCH_NOT_FOUND");
   const rows = await tx.$queryRaw<MatchContext[]>(Prisma.sql`
     SELECT m."id" AS "matchId", m."status" AS "matchStatus", r."roundNumber", m."matchNumber", m."nextMatchId", m."nextSlot", b."tournamentId", t."status" AS "tournamentStatus", t."name" AS "tournamentName"
@@ -53,7 +53,7 @@ async function matchContext(matchId: string, tx: Db | Prisma.TransactionClient =
   return rows[0];
 }
 
-async function participants(matchId: string, tx: Db | Prisma.TransactionClient = prisma) {
+async function participants(matchId: string, tx: QueryDb = prisma) {
   return tx.$queryRaw<Array<{ slotNumber: number; registrationId: string | null; participantName: string | null }>>(Prisma.sql`
     SELECT s."slotNumber", s."registrationId", u."name" AS "participantName"
     FROM "TournamentBracketSlot" s LEFT JOIN "Registration" r ON r."id" = s."registrationId" LEFT JOIN "User" u ON u."id" = r."userId"
