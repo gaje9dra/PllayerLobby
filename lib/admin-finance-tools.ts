@@ -3,7 +3,7 @@ import "server-only";
 import crypto from "node:crypto";
 import { Prisma, UserStatus, WalletDepositStatus, WalletReferenceType, WalletTransactionCategory, WalletTransactionType } from "@/app/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth";
-import { recordAdminAuditEvent, recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
+import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
 import { prisma } from "@/lib/prisma";
 import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 import { compareMoney, isPositiveMoney, isValidUuid, normalizeMoney, WALLET_CURRENCY, WALLET_PAGE_SIZE } from "@/lib/wallet-rules";
