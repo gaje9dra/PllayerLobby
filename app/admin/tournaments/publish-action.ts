@@ -1,0 +1,57 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { TournamentStatus } from "@/app/generated/prisma/client";
+import { requireAdmin } from "@/lib/auth";
+import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
+import { prisma } from "@/lib/prisma";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MONEY_PATTERN = /^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/;
+
+export type PublishTournamentState = { ok: boolean; error?: string };
+
+export async function publishTournamentNow(_previousState: PublishTournamentState, formData: FormData): Promise<PublishTournamentState> {
+  const admin = await requireAdmin();
+  const tournamentId = String(formData.get("tournamentId") ?? "");
+  if (!UUID_PATTERN.test(tournamentId)) return { ok: false, error: "Invalid tournament identifier." };
+
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { id: true, status: true, name: true, slug: true, description: true, rules: true, bannerUrl: true, gameId: true, entryFee: true, prizePool: true, maxParticipants: true, tournamentFormat: true, region: true, joiningWindowMinutes: true, startTime: true, registrationStartTime: true, registrationEndTime: true, game: { select: { isActive: true } } },
+  });
+  if (!tournament) return { ok: false, error: "Tournament not found." };
+  if (tournament.status !== TournamentStatus.DRAFT) return { ok: false, error: "Only draft tournaments can be published." };
+
+  const name = tournament.name.trim();
+  const slug = tournament.slug.trim();
+  if (name.length < 3 || name.length > 120) return { ok: false, error: "Tournament name is invalid." };
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 120) return { ok: false, error: "Tournament slug is invalid." };
+  if (!tournament.game.isActive) return { ok: false, error: "The selected game is inactive." };
+  if (!MONEY_PATTERN.test(tournament.entryFee.toString()) || !MONEY_PATTERN.test(tournament.prizePool.toString())) return { ok: false, error: "Tournament monetary values are invalid." };
+  if (!Number.isSafeInteger(tournament.maxParticipants) || tournament.maxParticipants <= 0) return { ok: false, error: "Maximum participants must be greater than zero." };
+  if (!tournament.registrationStartTime || !tournament.registrationEndTime) return { ok: false, error: "Registration opening and closing times are required." };
+  if (!(tournament.registrationStartTime < tournament.registrationEndTime && tournament.registrationEndTime < tournament.startTime)) return { ok: false, error: "Registration must open before it closes, and registration must close before the tournament starts." };
+  if (!Number.isSafeInteger(tournament.joiningWindowMinutes) || tournament.joiningWindowMinutes <= 0) return { ok: false, error: "Joining window is invalid." };
+  if (!tournament.region.trim()) return { ok: false, error: "Region / server is required." };
+  if (!Object.values(["SOLO", "DUO", "SQUAD", "TEAM"]).includes(tournament.tournamentFormat)) return { ok: false, error: "Tournament format is invalid." };
+  if (tournament.bannerUrl) { try { const url = new URL(tournament.bannerUrl); if (!["http:", "https:"].includes(url.protocol)) return { ok: false, error: "Banner URL must use HTTP or HTTPS." }; } catch { return { ok: false, error: "Banner URL is invalid." }; } }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.tournament.updateMany({ where: { id: tournamentId, status: TournamentStatus.DRAFT }, data: { status: TournamentStatus.UPCOMING } });
+      if (result.count !== 1) throw new Error("TOURNAMENT_CHANGED");
+      await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_PUBLISHED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { status: TournamentStatus.UPCOMING } });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "TOURNAMENT_CHANGED") return { ok: false, error: "The tournament changed while it was being published. Please reload and try again." };
+    console.error("Tournament publication failed:", error);
+    return { ok: false, error: "Unable to publish the tournament right now. Please try again." };
+  }
+
+  revalidatePath("/admin/tournaments");
+  revalidatePath(`/admin/tournaments/${tournamentId}`);
+  revalidatePath(`/admin/tournaments/${tournamentId}/edit`);
+  redirect(`/admin/tournaments/${tournamentId}?published=1`);
+}
