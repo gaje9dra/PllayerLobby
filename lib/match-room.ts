@@ -1,40 +1,17 @@
 import "server-only";
 
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { Prisma } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
 import { prisma } from "@/lib/prisma";
 import { canParticipantAccessMatchRoom, isEligibleMatchRegistration } from "@/lib/match-room-rules";
 import { MAX_ROOM_ID_LENGTH, MAX_ROOM_PASSWORD_LENGTH, normalizeMatchRoomValue } from "@/lib/match-room-input";
+import { decryptMatchRoomSecret, encryptMatchRoomSecret } from "@/lib/match-room-crypto";
 
-const IV_LENGTH = 12;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function assertUuid(value: string, label: string) {
   if (!UUID.test(value)) throw new Error(`INVALID_${label.toUpperCase()}`);
-}
-
-function encryptionKey() {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret) throw new Error("AUTH_SECRET is not configured.");
-  return createHash("sha256").update(`${secret}:match-room-credential`, "utf8").digest();
-}
-
-export function encryptMatchRoomSecret(value: string) {
-  const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return [iv, tag, ciphertext].map((part) => part.toString("base64url")).join(".");
-}
-
-export function decryptMatchRoomSecret(payload: string) {
-  const [iv, tag, ciphertext] = payload.split(".");
-  if (!iv || !tag || !ciphertext) throw new Error("INVALID_ENCRYPTED_ROOM_CREDENTIAL");
-  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(iv, "base64url"));
-  decipher.setAuthTag(Buffer.from(tag, "base64url"));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertext, "base64url")), decipher.final()]).toString("utf8");
 }
 
 export type MatchRoomMutationResult = { ok: true } | { ok: false; message: string };
