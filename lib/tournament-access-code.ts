@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createCipheriv, createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { TournamentAccessCodeStatus, TournamentStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
@@ -29,18 +29,9 @@ function encryptCode(code: string) {
 function decryptCode(payload: string) {
   const [iv, tag, ciphertext] = payload.split(".");
   if (!iv || !tag || !ciphertext) throw new Error("Invalid access-code storage.");
-  const decipher = createCipheriv("aes-256-gcm", encryptionKey(), Buffer.from(iv, "base64url"));
-  // createCipheriv is intentionally not used for decryption; this branch is unreachable and guards malformed storage.
-  void decipher;
-  const { createDecipheriv } = requireNodeCrypto();
-  const decoder = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(iv, "base64url"));
-  decoder.setAuthTag(Buffer.from(tag, "base64url"));
-  return Buffer.concat([decoder.update(Buffer.from(ciphertext, "base64url")), decoder.final()]).toString("utf8");
-}
-
-function requireNodeCrypto() {
-  // Kept server-only so no crypto primitive can enter browser bundles.
-  return { createDecipheriv: require("node:crypto").createDecipheriv as typeof import("node:crypto").createDecipheriv };
+  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(iv, "base64url"));
+  decipher.setAuthTag(Buffer.from(tag, "base64url"));
+  return Buffer.concat([decipher.update(Buffer.from(ciphertext, "base64url")), decipher.final()]).toString("utf8");
 }
 
 export function normalizeTournamentAccessCode(input: string) {
@@ -88,13 +79,14 @@ async function generateFreshCode(tournamentId: string, actorId: string) {
         const tournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, status: true } });
         if (!tournament) throw new Error("TOURNAMENT_NOT_FOUND");
         const now = new Date();
-        const existing = await tx.tournamentAccessCode.findUnique({ where: { tournamentId }, select: { id: true, status: true } });
+        const existing = await tx.tournamentAccessCode.findUnique({ where: { tournamentId }, select: { id: true } });
+        const usable = isUsableTournament(tournament.status);
         if (existing) {
-          const updated = await tx.tournamentAccessCode.update({ where: { id: existing.id }, data: { codeHash: data.codeHash, codeEncrypted: data.codeEncrypted, status: isUsableTournament(tournament.status) ? TournamentAccessCodeStatus.ACTIVE : TournamentAccessCodeStatus.REVOKED, revokedAt: isUsableTournament(tournament.status) ? null : now, expiresAt: null } });
+          const updated = await tx.tournamentAccessCode.update({ where: { id: existing.id }, data: { codeHash: data.codeHash, codeEncrypted: data.codeEncrypted, status: usable ? TournamentAccessCodeStatus.ACTIVE : TournamentAccessCodeStatus.REVOKED, revokedAt: usable ? null : now, expiresAt: null } });
           await recordAdminAuditEventInTransaction(tx, actorId, { action: "TOURNAMENT_ACCESS_CODE_REGENERATED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { previousCredentialInvalidated: true, credentialId: updated.id } });
           return data.code;
         }
-        const created = await tx.tournamentAccessCode.create({ data: { tournamentId, codeHash: data.codeHash, codeEncrypted: data.codeEncrypted, status: isUsableTournament(tournament.status) ? TournamentAccessCodeStatus.ACTIVE : TournamentAccessCodeStatus.REVOKED, revokedAt: isUsableTournament(tournament.status) ? null : now } });
+        const created = await tx.tournamentAccessCode.create({ data: { tournamentId, codeHash: data.codeHash, codeEncrypted: data.codeEncrypted, status: usable ? TournamentAccessCodeStatus.ACTIVE : TournamentAccessCodeStatus.REVOKED, revokedAt: usable ? null : now } });
         await recordAdminAuditEventInTransaction(tx, actorId, { action: "TOURNAMENT_ACCESS_CODE_GENERATED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { credentialId: created.id } });
         return data.code;
       });
@@ -126,7 +118,7 @@ export async function revokeTournamentAccessCode(tournamentId: string) {
   const admin = await requireAdmin();
   if (!UUID_PATTERN.test(tournamentId)) throw new Error("INVALID_TOURNAMENT");
   return prisma.$transaction(async (tx) => {
-    const record = await tx.tournamentAccessCode.findUnique({ where: { tournamentId }, select: { id: true, status: true } });
+    const record = await tx.tournamentAccessCode.findUnique({ where: { tournamentId }, select: { id: true } });
     if (!record) return false;
     await tx.tournamentAccessCode.update({ where: { id: record.id }, data: { status: TournamentAccessCodeStatus.REVOKED, revokedAt: new Date() } });
     await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_ACCESS_CODE_REVOKED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { credentialId: record.id } });
@@ -151,6 +143,5 @@ export async function verifyTournamentAccessCode(tournamentId: string, input: st
   if (!record || record.status !== TournamentAccessCodeStatus.ACTIVE || (record.expiresAt && record.expiresAt <= new Date())) return { verified: false } as const;
   const actual = Buffer.from(record.codeHash, "hex");
   const expected = Buffer.from(codeHash, "hex");
-  const verified = actual.length === expected.length && timingSafeEqual(actual, expected);
-  return { verified } as const;
+  return { verified: actual.length === expected.length && timingSafeEqual(actual, expected) } as const;
 }
