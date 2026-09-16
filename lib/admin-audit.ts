@@ -10,7 +10,7 @@ const MAX_TARGET_TYPE_LENGTH = 50;
 const MAX_TARGET_ID_LENGTH = 128;
 const MAX_METADATA_LENGTH = 4000;
 
-type AuditDb = Prisma.TransactionClient | typeof prisma;
+type AuditDb = Pick<typeof prisma, "$executeRaw">;
 
 function clean(value: string, maxLength: number) {
   const normalized = value.trim();
