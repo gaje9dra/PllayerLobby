@@ -5,6 +5,7 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
 import { prisma } from "@/lib/prisma";
+import { canParticipantAccessMatchRoom, isEligibleMatchRegistration } from "@/lib/match-room-rules";
 
 const IV_LENGTH = 12;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -55,12 +56,7 @@ type MatchContext = {
 
 async function getMatchContext(matchId: string): Promise<MatchContext | null> {
   const rows = await prisma.$queryRaw<MatchContext[]>(Prisma.sql`
-    SELECT
-      m."id" AS "matchId",
-      m."status" AS "matchStatus",
-      t."id" AS "tournamentId",
-      t."status" AS "tournamentStatus",
-      t."name" AS "tournamentName"
+    SELECT m."id" AS "matchId", m."status" AS "matchStatus", t."id" AS "tournamentId", t."status" AS "tournamentStatus", t."name" AS "tournamentName"
     FROM "TournamentBracketMatch" m
     INNER JOIN "TournamentBracketRound" r ON r."id" = m."roundId"
     INNER JOIN "TournamentBracket" b ON b."id" = r."bracketId"
@@ -76,15 +72,7 @@ export async function getAdminMatchRoom(matchId: string, reveal = false) {
   assertUuid(matchId, "match_id");
   const context = await getMatchContext(matchId);
   if (!context) return null;
-  const rows = await prisma.$queryRaw<Array<{
-    matchId: string;
-    roomIdEncrypted: string;
-    roomPasswordEncrypted: string;
-    publishedAt: Date | null;
-    revokedAt: Date | null;
-    updatedAt: Date;
-    updatedById: string;
-  }>>(Prisma.sql`
+  const rows = await prisma.$queryRaw<Array<{ matchId: string; roomIdEncrypted: string; roomPasswordEncrypted: string; publishedAt: Date | null; revokedAt: Date | null; updatedAt: Date; updatedById: string }>>(Prisma.sql`
     SELECT "matchId", "roomIdEncrypted", "roomPasswordEncrypted", "publishedAt", "revokedAt", "updatedAt", "updatedById"
     FROM "MatchRoomCredential"
     WHERE "matchId" = ${matchId}::uuid
@@ -110,7 +98,7 @@ export async function upsertMatchRoom(input: { matchId: string; roomId: string; 
   assertUuid(input.matchId, "match_id");
   const roomId = normalizeMatchRoomValue(input.roomId, MAX_ROOM_ID_LENGTH);
   const roomPassword = normalizeMatchRoomValue(input.roomPassword, MAX_ROOM_PASSWORD_LENGTH);
-  if (!roomId || !roomPassword) return { ok: false, message: "Room ID and room password are required and must be within the allowed length." };
+  if (!roomId || !normalizeMatchRoomValue(roomPassword, MAX_ROOM_PASSWORD_LENGTH)) return { ok: false, message: "Room ID and room password are required and must be within the allowed length." };
 
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`match-room:${input.matchId}`}, 0))`);
@@ -130,7 +118,6 @@ export async function upsertMatchRoom(input: { matchId: string; roomId: string; 
 
     const encryptedId = encryptMatchRoomSecret(roomId);
     const encryptedPassword = encryptMatchRoomSecret(roomPassword);
-    const now = new Date();
     const rows = await tx.$queryRaw<{ created: boolean }[]>(Prisma.sql`
       INSERT INTO "MatchRoomCredential" ("id", "matchId", "roomIdEncrypted", "roomPasswordEncrypted", "createdAt", "updatedAt", "publishedAt", "revokedAt", "updatedById")
       VALUES (${cryptoRandomUuid()}::uuid, ${input.matchId}::uuid, ${encryptedId}, ${encryptedPassword}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${input.published ? Prisma.sql`CURRENT_TIMESTAMP` : Prisma.sql`NULL`}, ${input.published ? Prisma.sql`NULL` : Prisma.sql`CURRENT_TIMESTAMP`}, ${admin.id}::uuid)
@@ -194,8 +181,7 @@ export async function getParticipantMatchRoomAccess(matchId: string): Promise<Pa
 
   const context = await getMatchContext(matchId);
   if (!context) return { ok: false, reason: "Match not found." };
-  if (["DRAFT", "CANCELLED"].includes(context.tournamentStatus)) return { ok: false, reason: "Match credentials are not available for this tournament." };
-  if (["COMPLETED", "CANCELLED"].includes(context.matchStatus)) return { ok: false, reason: "Match credentials are no longer available." };
+  if (!canParticipantAccessMatchRoom(context.tournamentStatus, context.matchStatus)) return { ok: false, reason: "Match credentials are not available for this match state." };
 
   const eligible = await prisma.$queryRaw<{ registrationId: string }[]>(Prisma.sql`
     SELECT r."id" AS "registrationId"
@@ -207,7 +193,8 @@ export async function getParticipantMatchRoomAccess(matchId: string): Promise<Pa
       AND r."status" = 'CONFIRMED'
     LIMIT 1
   `);
-  if (!eligible[0]) return { ok: false, reason: "You are not an eligible participant in this match." };
+  const eligibleRegistration = isEligibleMatchRegistration({ authenticated: true, userActive: user.status === "ACTIVE", registrationConfirmed: Boolean(eligible[0]), registrationBelongsToTournament: Boolean(eligible[0]), registrationOccupiesMatch: Boolean(eligible[0]) });
+  if (!eligibleRegistration) return { ok: false, reason: "You are not an eligible participant in this match." };
 
   const room = await prisma.$queryRaw<Array<{ roomIdEncrypted: string; roomPasswordEncrypted: string; publishedAt: Date | null; revokedAt: Date | null }>>(Prisma.sql`
     SELECT "roomIdEncrypted", "roomPasswordEncrypted", "publishedAt", "revokedAt"
