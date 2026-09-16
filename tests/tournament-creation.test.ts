@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateTournamentInput, slugify } from "../lib/tournament-validation.ts";
-import { canAdminSetTournamentStatus } from "../lib/tournament-lifecycle-rules.ts";
-import { TournamentStatus } from "../app/generated/prisma/client.ts";
+import { validateTournamentInput, slugify } from "../lib/tournament-validation";
+import { canAdminSetTournamentStatus } from "../lib/tournament-lifecycle-rules";
+import { TournamentStatus } from "../app/generated/prisma/client";
 
 function validValues() {
   return { gameId: "550e8400-e29b-41d4-a716-446655440000", name: "Friday Night Cup", slug: "friday-night-cup", description: "Open esports tournament", rules: "Play fair.", bannerUrl: "https://example.com/banner.png", startTime: "2030-01-10T20:00", registrationStartTime: "2030-01-10T18:00", registrationEndTime: "2030-01-10T19:30", entryFee: "50", prizePool: "5000", maxParticipants: "50", tournamentFormat: "SOLO", region: "IN", joiningWindowMinutes: "10" };
