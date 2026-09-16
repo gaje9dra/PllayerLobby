@@ -25,6 +25,8 @@ export function TournamentAccessCodeManager({ tournamentId }: { tournamentId: st
     }
   }
 
+  // Initial client hydration intentionally synchronizes state from the protected API.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(false); }, [tournamentId]);
 
   async function mutate(path: string, confirmText?: string) {
