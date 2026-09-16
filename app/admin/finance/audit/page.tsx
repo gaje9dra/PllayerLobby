@@ -6,7 +6,7 @@ function date(v: Date) { return new Intl.DateTimeFormat("en-IN", { dateStyle: "m
 
 export default async function AdminFinanceAuditPage({ searchParams }: { searchParams: Promise<{ page?: string; action?: string; targetType?: string; query?: string }> }) {
   const p = await searchParams;
-  const data = await getAdminAuditEvents(p);
+  const data = await getAdminAuditEvents({ ...p, page: p.page ? Number(p.page) : undefined });
   const href = (next: number) => `/admin/finance/audit?${new URLSearchParams({ ...(p.action ? { action: p.action } : {}), ...(p.targetType ? { targetType: p.targetType } : {}), ...(p.query ? { query: p.query } : {}), page: String(next) })}`;
   return <SectionContainer className="py-10 sm:py-14">
     <Link href="/admin/finance" className="text-sm font-semibold text-lime-300">← Finance</Link>
