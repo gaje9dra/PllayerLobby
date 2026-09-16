@@ -6,11 +6,10 @@ import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
 import { prisma } from "@/lib/prisma";
 import { canParticipantAccessMatchRoom, isEligibleMatchRegistration } from "@/lib/match-room-rules";
+import { MAX_ROOM_ID_LENGTH, MAX_ROOM_PASSWORD_LENGTH, normalizeMatchRoomValue } from "@/lib/match-room-input";
 
 const IV_LENGTH = 12;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const MAX_ROOM_ID_LENGTH = 120;
-const MAX_ROOM_PASSWORD_LENGTH = 200;
 
 function assertUuid(value: string, label: string) {
   if (!UUID.test(value)) throw new Error(`INVALID_${label.toUpperCase()}`);
@@ -36,12 +35,6 @@ export function decryptMatchRoomSecret(payload: string) {
   const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(iv, "base64url"));
   decipher.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([decipher.update(Buffer.from(ciphertext, "base64url")), decipher.final()]).toString("utf8");
-}
-
-export function normalizeMatchRoomValue(value: string, maxLength = MAX_ROOM_ID_LENGTH) {
-  const normalized = value.trim();
-  if (!normalized || normalized.length > maxLength || /[\u0000-\u001f\u007f]/.test(normalized)) return null;
-  return normalized;
 }
 
 export type MatchRoomMutationResult = { ok: true } | { ok: false; message: string };
@@ -98,7 +91,7 @@ export async function upsertMatchRoom(input: { matchId: string; roomId: string; 
   assertUuid(input.matchId, "match_id");
   const roomId = normalizeMatchRoomValue(input.roomId, MAX_ROOM_ID_LENGTH);
   const roomPassword = normalizeMatchRoomValue(input.roomPassword, MAX_ROOM_PASSWORD_LENGTH);
-  if (!roomId || !normalizeMatchRoomValue(roomPassword, MAX_ROOM_PASSWORD_LENGTH)) return { ok: false, message: "Room ID and room password are required and must be within the allowed length." };
+  if (!roomId || !roomPassword) return { ok: false, message: "Room ID and room password are required and must be within the allowed length." };
 
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`match-room:${input.matchId}`}, 0))`);
