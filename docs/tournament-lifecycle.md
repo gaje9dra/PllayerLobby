@@ -1,4 +1,4 @@
-# Tournament Lifecycle — Phase 3.6
+# Tournament Lifecycle — Phase 9.4
 
 ## Authoritative lifecycle
 
@@ -10,50 +10,73 @@ The tournament lifecycle is centralized in `lib/tournament-lifecycle-rules.ts` a
 
 ## Date-based transitions
 
-- `UPCOMING → REGISTRATION_OPEN` when `currentTime >= registrationStartTime`.
-- `REGISTRATION_OPEN → REGISTRATION_CLOSED` when `currentTime >= registrationEndTime`.
-- `REGISTRATION_CLOSED → LIVE` when `currentTime >= startTime`.
-- `LIVE → COMPLETED` is **not automatic** because the current `Tournament` schema has no authoritative `endTime`.
+- `UPCOMING → REGISTRATION_OPEN` when server time `>= registrationStartTime`.
+- `REGISTRATION_OPEN → REGISTRATION_CLOSED` when server time `>= registrationEndTime`.
+- `REGISTRATION_CLOSED → LIVE` when server time `>= startTime`.
+- `LIVE → COMPLETED` is explicit because the current `Tournament` schema has no authoritative `endTime`.
 
 DRAFT is deliberately excluded from automatic transitions. An administrator must explicitly publish it with `DRAFT → UPCOMING`.
 
-## Admin status changes
+## Server authority and recovery
 
-Admin status changes are validated against the centralized transition rules. Forward lifecycle transitions are allowed only when their date condition is due. `DRAFT → UPCOMING` is the explicit publication action. Cancellation remains an explicit administrative action and requires the existing `requireAdmin()` authorization path.
+Lifecycle decisions use server-side `Date` values and database state. Browser clocks and countdown timers are never authoritative.
 
-The status update uses a conditional database update so a concurrent lifecycle worker or admin cannot silently overwrite a newer status.
+The lifecycle updater is safe to run repeatedly. Each transition uses a conditional `updateMany` keyed by the observed status, so concurrent workers/admin requests cannot overwrite a newer state. If a scheduled execution is missed, the next execution selects overdue tournaments and catches them up through the required forward states.
 
-## Refresh strategy
+There are no in-memory timers. Application restarts therefore do not lose scheduled transitions.
 
-There was no existing cron, Vercel Cron, worker, or server scheduler in the repository. Phase 3.6 therefore provides two complementary mechanisms:
+## Automatic scheduler
 
-1. Server-side refresh when the public tournament listing, public tournament detail, registration workflow, or protected room-access workflow is used.
-2. A protected server endpoint at `GET /api/admin/tournaments/lifecycle` for deployment schedulers.
+The production deployment uses the existing Netlify infrastructure. `netlify/functions/tournament-lifecycle.mjs` runs every minute and calls the protected lifecycle endpoint:
 
-The endpoint requires `Authorization: Bearer <CRON_SECRET>`. `CRON_SECRET` is server-only and is documented in `.env.example`.
+`GET /api/admin/tournaments/lifecycle`
 
-The batch updater uses indexed status/date predicates and processes at most 100 candidates per pass, with bounded catch-up passes. Updates are conditional on the observed status, so duplicate/concurrent invocations safely become no-ops when another worker has already advanced a tournament.
+The endpoint requires `Authorization: Bearer <CRON_SECRET>`. The scheduler uses Netlify's `URL` environment variable and the server-only `CRON_SECRET`; it does not expose either secret to the browser.
 
-A deployment may invoke the endpoint from its supported scheduler. No always-running Node process is required.
+Netlify Scheduled Functions execute according to their cron schedule and continue independently of whether a user has the site open. The application also performs server-side lifecycle refreshes on relevant requests as a defense-in-depth mechanism.
 
 ## Registration safety
 
-Lifecycle refresh occurs before registration creation. The existing registration eligibility service remains authoritative and still compares the actual server time with `registrationStartTime` and `registrationEndTime`. Therefore a stale `Tournament.status` cannot extend the registration window.
+Lifecycle refresh occurs before registration creation. The existing registration transaction locks the tournament row and then evaluates the registration window using the current server time. The effective rule is:
 
-## Room-access safety
+`now >= registrationStartTime AND now < registrationEndTime`
 
-Protected room access refreshes the tournament lifecycle before checking access. Room access still requires the existing server-side checks: active authenticated user, matching confirmed registration, valid registration code, joinable status, joining window based on `startTime` and `joiningWindowMinutes`, and a published/non-revoked room.
+Therefore a stale status cannot extend registration beyond the configured closing time. The same transaction enforces the participant limit, preventing concurrent joins from exceeding capacity.
 
-Cancelled tournaments remain blocked and their registration/payment/code/room history is preserved.
+A tournament can be `REGISTRATION_OPEN` while its derived availability is `FULL`; capacity does not require a new permanent lifecycle status.
 
-## Timezone
+## Scheduling rules
 
-Tournament timestamps continue to use the existing application timezone parsing and database timestamp strategy. Lifecycle comparisons use JavaScript `Date` values representing absolute instants. No manual hour offsets are introduced.
+New tournaments must have a future `startTime` and a valid ordering:
+
+`registrationStartTime < registrationEndTime < startTime`
+
+Existing tournaments can be edited while safe. Once participant activity exists, schedule changes are rejected. Schedule changes are also locked once a tournament has reached an active/finalized lifecycle state. All accepted schedule changes are audited through the existing admin audit mechanism.
+
+## Cancellation
+
+Cancellation is an explicit authorized admin action. It changes only the tournament status and preserves registrations, payments, wallet transactions, ledger entries, audit history, rooms and other historical records. No new refund system is introduced in Phase 9.4.
+
+## Game deactivation
+
+Deactivating a game does not delete or mutate its existing tournaments. The game must be active when creating a new tournament, while already-created scheduled tournaments remain intact.
+
+## API security
+
+`GET /api/admin/tournaments/lifecycle` is protected by `CRON_SECRET` and is intended only for the deployment scheduler. Administrative publish/cancel/status/schedule operations continue to require `requireAdmin()` and server-side lifecycle validation. Direct manipulation of a `tournamentId` cannot bypass those checks.
+
+## Audit logging
+
+Administrative lifecycle actions and accepted schedule changes use the existing `AdminAuditLog` transaction path. Metadata records the tournament, old/new status and whether the schedule changed. Automatic lifecycle transitions are system operations and are emitted by the scheduler/application lifecycle path without attributing them to a human administrator.
+
+## Financial isolation
+
+Lifecycle processing never directly changes wallet balances, ledger entries, PayU state, deposits, withdrawals, winnings or payment records. Registration entry payments remain in the existing registration/wallet transaction architecture. Cancellation does not create a new financial workflow.
 
 ## Completion limitation
 
-The current Prisma `Tournament` model has `startTime` but no `endTime`. Phase 3.6 therefore intentionally leaves `LIVE` tournaments as `LIVE` until an administrator explicitly completes them. A future tournament-results/settlement phase can define the authoritative completion condition.
+Because the current `Tournament` model has no authoritative `endTime`, Phase 9.4 does not auto-complete LIVE tournaments. Later result processing can explicitly transition a LIVE tournament to COMPLETED.
 
 ## Scope boundary
 
-Phase 3.6 does not implement results, scoring, winners, payouts, refunds, leaderboards, game-lobby APIs, notifications, chat, or other later-phase functionality.
+Phase 9.4 does not implement room credentials, tournament access codes, match results, winner calculation, prize settlement, refunds, notifications, chat or other later-phase functionality.
