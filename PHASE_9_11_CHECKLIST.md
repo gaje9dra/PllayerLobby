@@ -1,0 +1,22 @@
+# Phase 9.11 — Tournament Cancellation & Edge Cases
+
+- [x] Tournament cancellation is a status transition, not deletion.
+- [x] Cancellation requires a reason, confirmation, authorization and audit history.
+- [x] Active tournament matches are cancelled transactionally and room access is revoked.
+- [x] Tournament access codes are revoked on cancellation.
+- [x] Match cancellation preserves history and revokes room access.
+- [x] Participant cancellation continues to use Registration.status.
+- [x] Match-scoped NO_SHOW state is persisted and audited.
+- [x] NO_SHOW does not automatically determine a winner.
+- [x] ABANDONED match state is supported without winner advancement.
+- [x] Existing Phase 9.10 dispute workflow is preserved and controlled resolution is audited.
+- [x] Verified result correction preserves previous data in MatchResultCorrection.
+- [x] Bracket slot correction is local, validated and audited.
+- [x] Missing room/participant states fail safely.
+- [x] Edge-case mutations use server authorization and transaction locks.
+- [x] Duplicate cancellation/no-show requests are safe.
+- [x] Wallet, PayU and ledger behavior is unchanged.
+- [x] Documentation added in TOURNAMENT_EDGE_CASES.md.
+- [x] Unit coverage added for state-aware edge-case rules.
+- [ ] Final CI verification must be green before Phase 9.11 is declared complete.
+- [ ] Do not start Phase 9.12 automatically.
