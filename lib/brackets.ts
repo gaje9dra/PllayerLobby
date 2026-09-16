@@ -8,15 +8,7 @@ import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
 import { buildSingleEliminationPlan, type BracketParticipant } from "@/lib/bracket-plan";
 import { canGenerateBracket, validateGenerationParticipantCount } from "@/lib/bracket-rules";
 
-type BracketRow = {
-  id: string;
-  tournamentId: string;
-  format: string;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
+type BracketRow = { id: string; tournamentId: string; format: string; status: string; createdAt: Date; updatedAt: Date };
 type RoundRow = { id: string; bracketId: string; roundNumber: number; name: string; status: string };
 type MatchRow = { id: string; roundId: string; matchNumber: number; status: string; winnerSlot: number | null; winnerRegistrationId: string | null; scheduledTime: Date | null; nextMatchId: string | null; nextSlot: number | null };
 type SlotRow = { id: string; matchId: string; slotNumber: number; registrationId: string | null; seed: number | null; isBye: boolean; sourceMatchId: string | null; sourceSlot: number | null; participantName?: string | null };
@@ -51,8 +43,8 @@ export async function generateTournamentBracket(tournamentId: string) {
     `);
     if (existing[0]) return { created: false, bracketId: existing[0].id };
 
-    const tournaments = await tx.$queryRaw<{ id: string; status: string; tournamentFormat: string; maxParticipants: number | null }[]>(Prisma.sql`
-      SELECT "id", "status", "tournamentFormat", "maxParticipants"
+    const tournaments = await tx.$queryRaw<{ id: string; status: string; maxParticipants: number | null }[]>(Prisma.sql`
+      SELECT "id", "status", "maxParticipants"
       FROM "Tournament"
       WHERE "id" = ${tournamentId}::uuid
       FOR UPDATE
@@ -80,12 +72,9 @@ export async function generateTournamentBracket(tournamentId: string) {
       VALUES (${bracketId}::uuid, ${tournamentId}::uuid, 'SINGLE_ELIMINATION', 'GENERATED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `);
 
-    const roundIds = new Map<number, string>();
     const matchIds = new Map<string, string>();
-
     for (const round of plan) {
       const roundId = crypto.randomUUID();
-      roundIds.set(round.roundNumber, roundId);
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "TournamentBracketRound" ("id", "bracketId", "roundNumber", "name", "status", "createdAt", "updatedAt")
         VALUES (${roundId}::uuid, ${bracketId}::uuid, ${round.roundNumber}, ${round.name}, ${round.roundNumber === 1 ? "ACTIVE" : "PENDING"}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -144,13 +133,7 @@ export async function generateTournamentBracket(tournamentId: string) {
       action: "BRACKET_GENERATED",
       targetType: "TOURNAMENT_BRACKET",
       targetId: bracketId,
-      metadata: {
-        tournamentId,
-        format: "SINGLE_ELIMINATION",
-        participantCount: participants.length,
-        roundCount: plan.length,
-        matchCount: plan.reduce((total, round) => total + round.matches.length, 0),
-      },
+      metadata: { tournamentId, format: "SINGLE_ELIMINATION", participantCount: participants.length, roundCount: plan.length, matchCount: plan.reduce((total, round) => total + round.matches.length, 0) },
     });
 
     return { created: true, bracketId };
@@ -193,9 +176,12 @@ export async function getTournamentBracket(tournamentId: string) {
 export async function getPublicTournamentBracketBySlug(slug: string) {
   if (!slug || slug.length > 160) return null;
   const tournaments = await prisma.$queryRaw<{ id: string; name: string; slug: string }[]>(Prisma.sql`
-    SELECT "id", "name", "slug"
-    FROM "Tournament"
-    WHERE "slug" = ${slug}
+    SELECT t."id", t."name", t."slug"
+    FROM "Tournament" t
+    INNER JOIN "Game" g ON g."id" = t."gameId"
+    WHERE t."slug" = ${slug}
+      AND t."status" IN ('UPCOMING','REGISTRATION_OPEN','REGISTRATION_CLOSED','LIVE','COMPLETED')
+      AND g."isActive" = true
     LIMIT 1
   `);
   const tournament = tournaments[0];
