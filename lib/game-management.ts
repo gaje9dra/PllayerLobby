@@ -13,21 +13,13 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SAFE_TEXT_PATTERN = /[<>]/;
 
-export type GameInput = {
-  name: unknown;
-  slug?: unknown;
-  description?: unknown;
-  logoUrl?: unknown;
-  isActive?: unknown;
-};
+export type GameInput = { name: unknown; slug?: unknown; description?: unknown; logoUrl?: unknown; isActive?: unknown };
 
 function text(value: unknown, maxLength: number, required = false) {
   const result = typeof value === "string" ? value.trim() : "";
   if (required && !result) throw new GameValidationError("Game name is required.");
   if (result.length > maxLength) throw new GameValidationError("A game field is too long.");
-  if (/[\u0000-\u001f\u007f]/.test(result) || SAFE_TEXT_PATTERN.test(result)) {
-    throw new GameValidationError("Game input contains unsupported characters.");
-  }
+  if (/[\u0000-\u001f\u007f]/.test(result) || SAFE_TEXT_PATTERN.test(result)) throw new GameValidationError("Game input contains unsupported characters.");
   return result;
 }
 
@@ -56,39 +48,27 @@ function validateLogoUrl(value: unknown) {
 }
 
 function gameCode(slug: string) {
-  const base = slug.replace(/-/g, "_").toUpperCase().slice(0, MAX_CODE_LENGTH);
-  return base || "GAME";
+  return slug.replace(/-/g, "_").toUpperCase().slice(0, MAX_CODE_LENGTH) || "GAME";
 }
 
 export class GameValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "GameValidationError";
-  }
+  constructor(message: string) { super(message); this.name = "GameValidationError"; }
 }
 
-export function normalizeGameInput(input: GameInput) {
+export function normalizeGameInput(input: GameInput, defaultIsActive = true) {
   const name = text(input.name, MAX_NAME_LENGTH, true);
   const slug = input.slug === undefined || input.slug === null || String(input.slug).trim() === "" ? slugifyGameName(name) : validateSlug(input.slug);
   const description = text(input.description, MAX_DESCRIPTION_LENGTH) || null;
   const logoUrl = validateLogoUrl(input.logoUrl);
-  const isActive = input.isActive === undefined ? true : input.isActive === true;
+  const isActive = input.isActive === undefined ? defaultIsActive : input.isActive === true;
   return { name, slug, description, logoUrl, isActive };
 }
 
-function isUuid(value: string) {
-  return UUID_PATTERN.test(value);
-}
+function isUuid(value: string) { return UUID_PATTERN.test(value); }
 
 async function assertUniqueGame(input: { name: string; slug: string; excludeId?: string }) {
   const duplicate = await prisma.game.findFirst({
-    where: {
-      ...(input.excludeId ? { id: { not: input.excludeId } } : {}),
-      OR: [
-        { slug: input.slug },
-        { name: { equals: input.name, mode: "insensitive" } },
-      ],
-    },
+    where: { ...(input.excludeId ? { id: { not: input.excludeId } } : {}), OR: [{ slug: input.slug }, { name: { equals: input.name, mode: "insensitive" } }] },
     select: { id: true, name: true, slug: true },
   });
   if (duplicate) {
@@ -102,21 +82,14 @@ export async function listGames(input: { search?: string; status?: string }) {
   const search = (input.search ?? "").trim().slice(0, 80);
   const status = input.status === "ACTIVE" || input.status === "INACTIVE" ? input.status : "ALL";
   return prisma.game.findMany({
-    where: {
-      ...(status === "ACTIVE" ? { isActive: true } : status === "INACTIVE" ? { isActive: false } : {}),
-      ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { slug: { contains: search, mode: "insensitive" } }] } : {}),
-    },
+    where: { ...(status === "ACTIVE" ? { isActive: true } : status === "INACTIVE" ? { isActive: false } : {}), ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { slug: { contains: search, mode: "insensitive" } }] } : {}) },
     orderBy: [{ isActive: "desc" }, { name: "asc" }],
     include: { _count: { select: { tournaments: true } } },
   });
 }
 
 export async function listActiveGames() {
-  return prisma.game.findMany({
-    where: { isActive: true },
-    orderBy: [{ name: "asc" }],
-    select: { id: true, name: true, slug: true, description: true, logoUrl: true, isActive: true },
-  });
+  return prisma.game.findMany({ where: { isActive: true }, orderBy: [{ name: "asc" }], select: { id: true, name: true, slug: true, description: true, logoUrl: true, isActive: true } });
 }
 
 export async function createGame(input: GameInput) {
@@ -142,9 +115,9 @@ export async function createGame(input: GameInput) {
 export async function updateGame(id: string, input: GameInput) {
   const admin = await requireAdmin();
   if (!isUuid(id)) throw new GameValidationError("Invalid game identifier.");
-  const values = normalizeGameInput(input);
   const existing = await prisma.game.findUnique({ where: { id }, select: { id: true, name: true, slug: true, isActive: true } });
   if (!existing) throw new GameValidationError("Game not found.");
+  const values = normalizeGameInput(input, existing.isActive);
   await assertUniqueGame({ ...values, excludeId: id });
   try {
     return await prisma.$transaction(async (tx) => {
