@@ -26,7 +26,7 @@ export default async function TournamentJoinPage({ params }: { params: Promise<{
   const user = await getCurrentUser();
   const registration = user ? await prisma.registration.findUnique({ where: { userId_tournamentId: { userId: user.id, tournamentId: tournament.id } }, select: { id: true, status: true } }) : null;
   const dbNowRows = await prisma.$queryRaw<Array<{ now: Date }>>`SELECT CURRENT_TIMESTAMP AS now`;
-  const now = dbNowRows[0]?.now ?? new Date();
+  const now = dbNowRows[0]?.now;
   const joiningStart = getJoiningWindowStart(tournament.startTime, tournament.joiningWindowMinutes);
 
   let state: "LOGIN" | "NOT_REGISTERED" | "PENDING" | "CANCELLED" | "COMPLETED" | "NOT_OPEN" | "READY" = "NOT_OPEN";
@@ -35,7 +35,7 @@ export default async function TournamentJoinPage({ params }: { params: Promise<{
   else if (tournament.status === TournamentStatus.COMPLETED) state = "COMPLETED";
   else if (!registration) state = "NOT_REGISTERED";
   else if (registration.status !== RegistrationStatus.CONFIRMED) state = "PENDING";
-  else if (now < joiningStart) state = "NOT_OPEN";
+  else if (!now || now < joiningStart) state = "NOT_OPEN";
   else state = "READY";
 
   return (
@@ -50,7 +50,7 @@ export default async function TournamentJoinPage({ params }: { params: Promise<{
           {state === "PENDING" ? <Message title="Your registration is not confirmed yet" text="Joining details become available only after your registration is confirmed." /> : null}
           {state === "CANCELLED" ? <Message title="This tournament has been cancelled" text="Tournament joining is disabled." /> : null}
           {state === "COMPLETED" ? <Message title="Tournament joining is closed" text="This tournament has already been completed." /> : null}
-          {state === "NOT_OPEN" ? <Message title="Tournament access is not open yet" text={`Access opens at ${formatAppDateTime(joiningStart)} (${tournament.joiningWindowMinutes} minutes before the scheduled start by default).`} /> : null}
+          {state === "NOT_OPEN" ? <Message title="Tournament access is not open yet" text={`Access opens at ${formatAppDateTime(joiningStart)} (${tournament.joiningWindowMinutes} minutes before the scheduled start).`} /> : null}
           {state === "READY" ? <JoinRoom tournamentId={tournament.id} /> : null}
         </section>
       </div>
