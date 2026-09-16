@@ -8,7 +8,7 @@ const MAX_PARTICIPANTS = 10000;
 const MAX_JOINING_WINDOW_MINUTES = 120;
 export function slugify(value: string) { return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-"); }
 export function validateMoney(value: string, label: string) { const normalized = value.trim(); if (!MONEY_PATTERN.test(normalized)) return `${label} must be a valid non-negative amount with up to 2 decimal places.`; return null; }
-export function validateTournamentInput(values: TournamentFormValues) {
+export function validateTournamentInput(values: TournamentFormValues): TournamentFieldErrors {
   const errors: TournamentFieldErrors = {};
   const name = values.name.trim(); const slug = values.slug.trim(); const description = values.description.trim(); const rules = values.rules.trim(); const bannerUrl = values.bannerUrl.trim(); const region = values.region.trim();
   if (!values.gameId) errors.gameId = "Please select a game.";
