@@ -18,6 +18,12 @@ enum UserStatus {
   BANNED
 }
 
+enum TournamentAccessCodeStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
 enum TournamentFormat {
   SOLO
   DUO
@@ -247,6 +253,7 @@ model Tournament {
   registrations Registration[]
   results TournamentResult[]
   room TournamentRoom?
+  accessCode TournamentAccessCode?
   prizes TournamentPrize[]
   settlements TournamentPrizeSettlement[]
   @@index([gameId])
@@ -254,6 +261,22 @@ model Tournament {
   @@index([startTime])
   @@index([registrationStartTime])
   @@index([registrationEndTime])
+}
+
+model TournamentAccessCode {
+  id String @id @default(uuid()) @db.Uuid
+  tournamentId String @unique @db.Uuid
+  codeHash String @unique @db.Char(64)
+  codeEncrypted String @db.Text
+  status TournamentAccessCodeStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revokedAt DateTime?
+  expiresAt DateTime?
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  @@index([status])
+  @@index([revokedAt])
+  @@index([expiresAt])
 }
 
 model Registration {
@@ -469,7 +492,7 @@ model PayoutDestination {
 }
 
 model PayoutBeneficiary {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid())
   payoutDestinationId String @db.Uuid
   provider String
   providerBeneficiaryId String
