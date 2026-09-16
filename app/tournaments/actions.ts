@@ -9,11 +9,11 @@ export type RegistrationActionState = {
   code?: string;
   message?: string;
   registrationId?: string;
+  registrationReference?: string;
   registrationStatus?: RegistrationStatus;
   paymentRequired?: boolean;
   walletBalance?: string;
   entryFee?: string;
-  registrationCode?: string;
 };
 
 export async function registerForTournament(
@@ -23,18 +23,11 @@ export async function registerForTournament(
   const tournamentId = String(formData.get("tournamentId") ?? "").trim();
 
   if (!tournamentId) {
-    return {
-      ok: false,
-      code: "TOURNAMENT_NOT_FOUND",
-      message: "This tournament is no longer available.",
-    };
+    return { ok: false, code: "TOURNAMENT_NOT_FOUND", message: "This tournament is no longer available." };
   }
 
   const result = await createTournamentRegistration(tournamentId);
-
-  if (!result.ok) {
-    return result;
-  }
+  if (!result.ok) return result;
 
   revalidatePath("/tournaments");
   revalidatePath("/dashboard");
