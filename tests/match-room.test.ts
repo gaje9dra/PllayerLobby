@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { decryptMatchRoomSecret, encryptMatchRoomSecret, normalizeMatchRoomValue } from "../lib/match-room";
+import { decryptMatchRoomSecret, encryptMatchRoomSecret } from "../lib/match-room-crypto";
+import { MAX_ROOM_ID_LENGTH, normalizeMatchRoomValue } from "../lib/match-room-input";
 import { canParticipantAccessMatchRoom, isEligibleMatchRegistration } from "../lib/match-room-rules";
 
 test("match room values reject control characters and unsafe lengths", () => {
   assert.equal(normalizeMatchRoomValue("  room-123  "), "room-123");
   assert.equal(normalizeMatchRoomValue("room\n123"), null);
-  assert.equal(normalizeMatchRoomValue("x".repeat(121)), null);
+  assert.equal(normalizeMatchRoomValue("x".repeat(MAX_ROOM_ID_LENGTH + 1)), null);
 });
 
 test("match room secrets use authenticated encryption and round-trip", () => {
