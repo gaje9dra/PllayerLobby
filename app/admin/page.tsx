@@ -11,16 +11,21 @@ export default async function AdminPage() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-lime-300">Administration</p>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Admin Panel</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Manage tournament configuration, financial reconciliation, and your organizer account.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Manage games, tournament configuration, financial reconciliation, and your organizer account.</p>
         </div>
-        <Button href="/admin/tournaments">Manage Tournaments</Button>
+        <div className="flex flex-wrap gap-3"><Button href="/admin/games" variant="secondary">Manage Games</Button><Button href="/admin/tournaments">Manage Tournaments</Button></div>
       </div>
 
-      <div className="mt-8 grid gap-5 lg:grid-cols-3">
+      <div className="mt-8 grid gap-5 lg:grid-cols-4">
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-6">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Current account</p>
           <p className="mt-3 font-semibold text-white">{user.email}</p>
           <p className="mt-1 text-sm text-slate-500">Role: {user.role} · Status: {user.status}</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-6">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Game management</p>
+          <p className="mt-3 text-sm leading-6 text-slate-400">Add, edit, activate, or deactivate games without changing tournament history.</p>
+          <Button href="/admin/games" variant="secondary" className="mt-5">Manage Games</Button>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-6">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Tournament management</p>
