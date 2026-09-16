@@ -1,4 +1,6 @@
 -- Phase 9.11: resilient tournament edge-case state and immutable correction history.
+-- MatchResult is created by the later 20260916210000_match_results migration, so its
+-- foreign key from this migration is intentionally added by a follow-up migration.
 
 ALTER TABLE "TournamentBracketMatch" DROP CONSTRAINT IF EXISTS "TournamentBracketMatch_status_check";
 ALTER TABLE "TournamentBracketMatch"
@@ -40,7 +42,6 @@ CREATE TABLE "TournamentEdgeCaseAction" (
   CONSTRAINT "TournamentEdgeCaseAction_tournament_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "TournamentEdgeCaseAction_match_fkey" FOREIGN KEY ("matchId") REFERENCES "TournamentBracketMatch"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "TournamentEdgeCaseAction_registration_fkey" FOREIGN KEY ("registrationId") REFERENCES "Registration"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "TournamentEdgeCaseAction_result_fkey" FOREIGN KEY ("resultId") REFERENCES "MatchResult"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "TournamentEdgeCaseAction_actor_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX "TournamentEdgeCaseAction_idempotency_key" ON "TournamentEdgeCaseAction"("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
@@ -60,7 +61,6 @@ CREATE TABLE "MatchResultCorrection" (
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "MatchResultCorrection_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "MatchResultCorrection_match_fkey" FOREIGN KEY ("matchId") REFERENCES "TournamentBracketMatch"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "MatchResultCorrection_result_fkey" FOREIGN KEY ("resultId") REFERENCES "MatchResult"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "MatchResultCorrection_actor_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 CREATE INDEX "MatchResultCorrection_match_created_idx" ON "MatchResultCorrection"("matchId","createdAt");
