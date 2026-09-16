@@ -35,6 +35,8 @@ export function MatchRoomForm({ matchId }: { matchId: string }) {
     }
   }
 
+  // Hydrate local state from the external room API when the match changes.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [matchId]);
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
