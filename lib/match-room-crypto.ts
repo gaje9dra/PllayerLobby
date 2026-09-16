@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
+const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 function encryptionKey() {
   const secret = process.env.AUTH_SECRET;
@@ -13,9 +14,17 @@ function encryptionKey() {
 function decodeBase64Url(value: string, label: string) {
   if (!value || !BASE64URL.test(value)) throw new Error(`INVALID_ENCRYPTED_ROOM_CREDENTIAL_${label}`);
   const decoded = Buffer.from(value, "base64url");
-  // Reject non-canonical encodings so changing insignificant trailing base64 bits
-  // cannot produce the same decoded bytes while bypassing the tamper check.
+  // Require the canonical representation and valid zero padding bits. Node's
+  // decoder otherwise accepts alternate final characters that decode to the
+  // same bytes, which can make a one-character tamper test ineffective.
   if (decoded.toString("base64url") !== value) throw new Error("INVALID_ENCRYPTED_ROOM_CREDENTIAL");
+  const remainder = decoded.length % 3;
+  if (remainder !== 0) {
+    const finalIndex = BASE64URL_ALPHABET.indexOf(value[value.length - 1]);
+    const unusedBits = remainder === 1 ? 4 : 2;
+    const mask = (1 << unusedBits) - 1;
+    if ((finalIndex & mask) !== 0) throw new Error("INVALID_ENCRYPTED_ROOM_CREDENTIAL");
+  }
   return decoded;
 }
 
