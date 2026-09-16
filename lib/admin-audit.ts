@@ -10,6 +10,8 @@ const MAX_TARGET_TYPE_LENGTH = 50;
 const MAX_TARGET_ID_LENGTH = 128;
 const MAX_METADATA_LENGTH = 4000;
 
+type AuditDb = Prisma.TransactionClient | typeof prisma;
+
 function clean(value: string, maxLength: number) {
   const normalized = value.trim();
   if (!normalized || normalized.length > maxLength || /[\u0000-\u001f\u007f]/.test(normalized)) throw new Error("INVALID_AUDIT_VALUE");
@@ -34,7 +36,7 @@ function prepareAudit(input: {
 }
 
 export async function recordAdminAuditEventInTransaction(
-  tx: Prisma.TransactionClient,
+  tx: AuditDb,
   actorUserId: string,
   input: {
     action: string;
