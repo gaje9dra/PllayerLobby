@@ -53,20 +53,20 @@ export async function createTournament(_previousState: TournamentActionState, fo
   const slug = values.slug.trim();
   const existingSlug = await prisma.tournament.findUnique({ where: { slug }, select: { id: true } });
   if (existingSlug) return { ok: false, errors: { slug: "This tournament slug is already in use." } };
+  let tournamentId: string;
   try {
-    const tournament = await prisma.$transaction(async (tx) => {
+    tournamentId = await prisma.$transaction(async (tx) => {
       const created = await tx.tournament.create({ data: { gameId: game.id, name: values.name.trim(), slug, description: values.description.trim() || null, rules: values.rules.trim() || null, bannerUrl: values.bannerUrl.trim() || null, startTime: schedule.startTime!, registrationStartTime: schedule.registrationStartTime!, registrationEndTime: schedule.registrationEndTime!, entryFee: values.entryFee.trim(), prizePool: values.prizePool.trim(), maxParticipants: Number.parseInt(values.maxParticipants, 10), tournamentFormat: values.tournamentFormat as TournamentFormat, region: values.region.trim(), status: TournamentStatus.DRAFT, joiningWindowMinutes: Number.parseInt(values.joiningWindowMinutes, 10) } });
       await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_CREATED", targetType: "TOURNAMENT", targetId: created.id, metadata: { status: created.status, gameId: created.gameId } });
-      return created;
+      return created.id;
     });
-    revalidatePath("/admin/tournaments");
-    redirect(`/admin/tournaments/${tournament.id}?created=1`);
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") return { ok: false, errors: { slug: "This tournament slug is already in use." } };
-    if (error instanceof Error && error.message === "NEXT_REDIRECT") throw error;
     console.error("Tournament creation failed:", error);
     return { ok: false, errors: { form: "Unable to create the tournament right now. Please try again." } };
   }
+  revalidatePath("/admin/tournaments");
+  redirect(`/admin/tournaments/${tournamentId}?created=1`);
 }
 
 export async function updateTournament(_previousState: TournamentActionState, formData: FormData): Promise<TournamentActionState> {
@@ -84,19 +84,16 @@ export async function updateTournament(_previousState: TournamentActionState, fo
   if (!Object.values(TournamentFormat).includes(values.tournamentFormat as TournamentFormat)) errors.tournamentFormat = "Please select a valid tournament format.";
   const newMaxParticipants = Number.parseInt(values.maxParticipants, 10);
   if (Number.isSafeInteger(newMaxParticipants) && newMaxParticipants < participantCount) errors.maxParticipants = `Maximum participants cannot be below the current participant count (${participantCount}).`;
-  const financiallyActive = participantCount > 0 || existing.status !== TournamentStatus.DRAFT;
-  if (financiallyActive && values.entryFee.trim() !== existing.entryFee.toString()) errors.entryFee = "Entry fee cannot be changed after the tournament becomes financially or operationally active.";
+  if (participantCount > 0 && values.entryFee.trim() !== existing.entryFee.toString()) errors.entryFee = "Entry fee cannot be changed after users have registered. Historical entry payments must remain unchanged.";
   const finalizedPrizeCount = await prisma.tournamentPrize.count({ where: { tournamentId, status: TournamentPrizeStatus.FINALIZED } });
   if (finalizedPrizeCount > 0 && values.prizePool.trim() !== existing.prizePool.toString()) errors.prizePool = "The prize pool cannot be changed while the prize configuration is finalized. Use the explicit prize reconfiguration workflow in a later phase.";
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx) => {
       const updated = await tx.tournament.updateMany({ where: { id: tournamentId, status: existing.status }, data: { gameId: values.gameId, name: values.name.trim(), slug: values.slug.trim(), description: values.description.trim() || null, rules: values.rules.trim() || null, bannerUrl: values.bannerUrl.trim() || null, startTime: schedule.startTime!, registrationStartTime: schedule.registrationStartTime!, registrationEndTime: schedule.registrationEndTime!, entryFee: values.entryFee.trim(), prizePool: values.prizePool.trim(), maxParticipants: newMaxParticipants, tournamentFormat: values.tournamentFormat as TournamentFormat, region: values.region.trim(), status: status as TournamentStatus, joiningWindowMinutes: Number.parseInt(values.joiningWindowMinutes, 10) } });
       if (updated.count !== 1) throw new Error("TOURNAMENT_CHANGED");
       await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_UPDATED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { fromStatus: existing.status, toStatus: status, participantCount } });
-      return updated;
     });
-    if (result.count !== 1) return { ok: false, errors: { form: "The tournament changed while you were editing it. Please reload and try again." } };
   } catch (error) {
     if (error instanceof Error && error.message === "TOURNAMENT_CHANGED") return { ok: false, errors: { form: "The tournament changed while you were editing it. Please reload and try again." } };
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") return { ok: false, errors: { slug: "This tournament slug is already in use." } };
@@ -108,35 +105,6 @@ export async function updateTournament(_previousState: TournamentActionState, fo
   revalidatePath(`/admin/tournaments/${tournamentId}/edit`);
   revalidatePath(`/admin/tournaments/${tournamentId}/prizes`);
   redirect(`/admin/tournaments/${tournamentId}?updated=1`);
-}
-
-export async function publishTournament(_previousState: TournamentActionState, formData: FormData): Promise<TournamentActionState> {
-  const admin = await requireAdmin();
-  const tournamentId = String(formData.get("tournamentId") ?? "");
-  if (!isUuid(tournamentId)) return { ok: false, errors: { form: "Invalid tournament identifier." } };
-  const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, status: true, gameId: true, name: true, description: true, entryFee: true, prizePool: true, maxParticipants: true, startTime: true, registrationStartTime: true, registrationEndTime: true, game: { select: { isActive: true } } } });
-  if (!tournament) return { ok: false, errors: { form: "Tournament not found." } };
-  if (tournament.status !== TournamentStatus.DRAFT) return { ok: false, errors: { status: "Only draft tournaments can be published." } };
-  const values: TournamentFormValues = { gameId: tournament.gameId, name: tournament.name, slug: String(formData.get("slug") ?? ""), description: tournament.description ?? "", rules: String(formData.get("rules") ?? ""), bannerUrl: String(formData.get("bannerUrl") ?? ""), startTime: String(formData.get("startTime") ?? ""), registrationStartTime: String(formData.get("registrationStartTime") ?? ""), registrationEndTime: String(formData.get("registrationEndTime") ?? ""), entryFee: tournament.entryFee.toString(), prizePool: tournament.prizePool.toString(), maxParticipants: String(tournament.maxParticipants ?? ""), tournamentFormat: String(formData.get("tournamentFormat") ?? ""), region: String(formData.get("region") ?? ""), joiningWindowMinutes: String(formData.get("joiningWindowMinutes") ?? "") };
-  const errors = validateTournamentInput(values);
-  const schedule = getSchedule(values, errors);
-  if (!tournament.game.isActive) errors.gameId = "The selected game is inactive.";
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
-  try {
-    await prisma.$transaction(async (tx) => {
-      const updated = await tx.tournament.updateMany({ where: { id: tournamentId, status: TournamentStatus.DRAFT }, data: { status: TournamentStatus.UPCOMING, startTime: schedule.startTime!, registrationStartTime: schedule.registrationStartTime!, registrationEndTime: schedule.registrationEndTime! } });
-      if (updated.count !== 1) throw new Error("TOURNAMENT_CHANGED");
-      await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_PUBLISHED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { status: TournamentStatus.UPCOMING } });
-    });
-  } catch (error) {
-    if (error instanceof Error && error.message === "TOURNAMENT_CHANGED") return { ok: false, errors: { form: "The tournament changed while you were publishing it. Please reload and try again." } };
-    console.error("Tournament publication failed:", error);
-    return { ok: false, errors: { form: "Unable to publish the tournament right now. Please try again." } };
-  }
-  revalidatePath("/admin/tournaments");
-  revalidatePath(`/admin/tournaments/${tournamentId}`);
-  revalidatePath(`/admin/tournaments/${tournamentId}/edit`);
-  redirect(`/admin/tournaments/${tournamentId}?published=1`);
 }
 
 export type CancelTournamentState = { ok: boolean; error?: string };
