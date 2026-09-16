@@ -47,7 +47,7 @@ export async function getAdminTransactions(input: { page?: number; query?: strin
   if (input.type && Object.values(WalletTransactionType).includes(input.type as WalletTransactionType)) where.type = input.type as WalletTransactionType;
   if (input.category && Object.values(WalletTransactionCategory).includes(input.category as WalletTransactionCategory)) where.category = input.category as WalletTransactionCategory;
   if (query) {
-    const ors: Prisma.WalletTransactionWhereInput[] = [{ referenceId: { contains: query, mode: "insensitive" } }, { wallet: { user: { email: { contains: query, mode: "insensitive" } } } }, { wallet: { user: { name: { contains: query, mode: "insensitive" } } } }];
+    const ors: Prisma.WalletTransactionWhereInput[] = [{ wallet: { user: { email: { contains: query, mode: "insensitive" } } } }, { wallet: { user: { name: { contains: query, mode: "insensitive" } } } }];
     if (isValidUuid(query)) ors.unshift({ referenceId: query });
     where.OR = ors;
   }
