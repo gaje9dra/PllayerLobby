@@ -8,6 +8,8 @@ Phase 9.6 adds a tournament-scoped bracket hierarchy:
 
 A bracket is unique per tournament. The current implementation supports `SINGLE_ELIMINATION`. The database format field is extensible for future formats such as round robin without pretending that unsupported formats are implemented today.
 
+The bracket also snapshots the existing tournament participant format (`SOLO`, `DUO`, `SQUAD`, or `TEAM`) so later team-aware phases do not need to infer it from database IDs or mutable tournament state.
+
 ## Participants and teams
 
 Bracket slots reference existing `Registration` records. Complete user records are never copied into matches. Current registration is user-based, while the schema keeps match slots generic enough for a future team-registration model.
@@ -53,6 +55,7 @@ The migration enforces:
 - a registration can appear at most once in a bracket;
 - valid tournament, registration, round, match, and source-match references;
 - supported bracket and status values;
+- valid tournament participant-format values;
 - valid slot and winner/next-slot values.
 
 ## Financial and registration isolation
