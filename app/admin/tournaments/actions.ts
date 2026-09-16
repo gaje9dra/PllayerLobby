@@ -9,6 +9,7 @@ import { recordAdminAuditEventInTransaction } from "@/lib/admin-audit";
 import { canAdminSetTournamentStatus } from "@/lib/tournament-lifecycle-rules";
 import { validateTournamentInput, type TournamentFieldErrors, type TournamentFormValues } from "@/lib/tournament-validation";
 import { parseAppLocalDateTime } from "@/lib/timezone";
+import { GAME_CONFIG_CODES, parseGameConfigForm, upsertTournamentGameConfig } from "@/lib/game-specific-config";
 
 export type TournamentActionState = { ok: boolean; errors: TournamentFieldErrors };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -34,11 +35,19 @@ async function validateCommonUpdate(values: TournamentFormValues, tournamentId: 
   if (!isUuid(tournamentId)) return { errors: { form: "Invalid tournament identifier." } as TournamentFieldErrors, schedule };
   if (!isUuid(values.gameId)) { errors.gameId = "Please select a valid game."; return { errors, schedule }; }
   if (Object.keys(errors).length > 0) return { errors, schedule };
-  const game = await prisma.game.findUnique({ where: { id: values.gameId }, select: { id: true, isActive: true } });
+  const game = await prisma.game.findUnique({ where: { id: values.gameId }, select: { id: true, isActive: true, code: true } });
   if (!game || !game.isActive) return { errors: { gameId: "The selected game is unavailable or inactive." }, schedule };
   const existingSlug = await prisma.tournament.findUnique({ where: { slug: values.slug.trim() }, select: { id: true } });
   if (existingSlug && existingSlug.id !== tournamentId) return { errors: { slug: "This tournament slug is already in use." }, schedule };
-  return { errors: {}, schedule };
+  return { errors: {}, schedule, game };
+}
+
+function getGameConfig(formData: FormData, gameCode: string) {
+  if (!GAME_CONFIG_CODES.includes(gameCode as (typeof GAME_CONFIG_CODES)[number])) return { ok: true as const, config: null };
+  const raw = String(formData.get("gameConfig") ?? "");
+  const result = parseGameConfigForm(gameCode, raw);
+  if (!result.ok) return { ok: false as const, errors: result.errors };
+  return { ok: true as const, config: result.config };
 }
 
 export async function createTournament(_previousState: TournamentActionState, formData: FormData): Promise<TournamentActionState> {
@@ -48,8 +57,10 @@ export async function createTournament(_previousState: TournamentActionState, fo
   const schedule = getSchedule(values, errors);
   if (!isUuid(values.gameId)) errors.gameId = "Please select a valid game.";
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  const game = await prisma.game.findUnique({ where: { id: values.gameId }, select: { id: true, isActive: true } });
+  const game = await prisma.game.findUnique({ where: { id: values.gameId }, select: { id: true, isActive: true, code: true } });
   if (!game || !game.isActive) return { ok: false, errors: { gameId: "The selected game is unavailable or inactive." } };
+  const gameConfig = getGameConfig(formData, game.code);
+  if (!gameConfig.ok) return { ok: false, errors: { gameConfig: gameConfig.errors.form ?? "Invalid game-specific configuration." } };
   const slug = values.slug.trim();
   const existingSlug = await prisma.tournament.findUnique({ where: { slug }, select: { id: true } });
   if (existingSlug) return { ok: false, errors: { slug: "This tournament slug is already in use." } };
@@ -57,7 +68,9 @@ export async function createTournament(_previousState: TournamentActionState, fo
   try {
     tournamentId = await prisma.$transaction(async (tx) => {
       const created = await tx.tournament.create({ data: { gameId: game.id, name: values.name.trim(), slug, description: values.description.trim() || null, rules: values.rules.trim() || null, bannerUrl: values.bannerUrl.trim() || null, startTime: schedule.startTime!, registrationStartTime: schedule.registrationStartTime!, registrationEndTime: schedule.registrationEndTime!, entryFee: values.entryFee.trim(), prizePool: values.prizePool.trim(), maxParticipants: Number.parseInt(values.maxParticipants, 10), tournamentFormat: values.tournamentFormat as TournamentFormat, region: values.region.trim(), status: TournamentStatus.DRAFT, joiningWindowMinutes: Number.parseInt(values.joiningWindowMinutes, 10) } });
-      await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_CREATED", targetType: "TOURNAMENT", targetId: created.id, metadata: { status: created.status, gameId: created.gameId } });
+      if (gameConfig.config) await upsertTournamentGameConfig(created.id, game.id, game.code as (typeof GAME_CONFIG_CODES)[number], gameConfig.config, tx);
+      await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_CREATED", targetType: "TOURNAMENT", targetId: created.id, metadata: { status: created.status, gameId: created.gameId, gameConfigCode: gameConfig.config ? game.code : null } });
+      if (gameConfig.config) await recordAdminAuditEventInTransaction(tx, admin.id, { action: "GAME_CONFIG_CREATED", targetType: "TOURNAMENT", targetId: created.id, metadata: { gameId: game.id, gameCode: game.code, version: gameConfig.config.version } });
       return created.id;
     });
   } catch (error) {
@@ -73,11 +86,14 @@ export async function updateTournament(_previousState: TournamentActionState, fo
   const admin = await requireAdmin();
   const tournamentId = String(formData.get("tournamentId") ?? "");
   if (!isUuid(tournamentId)) return { ok: false, errors: { form: "Invalid tournament identifier." } };
-  const existing = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, status: true, startTime: true, registrationStartTime: true, registrationEndTime: true, prizePool: true, entryFee: true, maxParticipants: true } });
+  const existing = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, status: true, startTime: true, registrationStartTime: true, registrationEndTime: true, prizePool: true, entryFee: true, maxParticipants: true, gameId: true } });
   if (!existing) return { ok: false, errors: { form: "Tournament not found." } };
   const participantCount = await prisma.registration.count({ where: { tournamentId, status: { not: "CANCELLED" } } });
   const values = getValues(formData);
-  const { errors, schedule } = await validateCommonUpdate(values, tournamentId);
+  const { errors, schedule, game } = await validateCommonUpdate(values, tournamentId);
+  if (!game) return { ok: false, errors };
+  const gameConfig = getGameConfig(formData, game.code);
+  if (!gameConfig.ok) errors.gameConfig = gameConfig.errors.form ?? "Invalid game-specific configuration.";
   const status = String(formData.get("status") ?? "");
   if (!Object.values(TournamentStatus).includes(status as TournamentStatus)) errors.status = "Please select a valid tournament status.";
   else if (!canAdminSetTournamentStatus(existing.status, status as TournamentStatus, { status: existing.status, startTime: schedule.startTime ?? existing.startTime, registrationStartTime: schedule.registrationStartTime ?? existing.registrationStartTime, registrationEndTime: schedule.registrationEndTime ?? existing.registrationEndTime }, new Date())) errors.status = `Cannot change status from ${existing.status} to ${status} before its lifecycle condition is met.`;
@@ -88,11 +104,16 @@ export async function updateTournament(_previousState: TournamentActionState, fo
   const finalizedPrizeCount = await prisma.tournamentPrize.count({ where: { tournamentId, status: TournamentPrizeStatus.FINALIZED } });
   if (finalizedPrizeCount > 0 && values.prizePool.trim() !== existing.prizePool.toString()) errors.prizePool = "The prize pool cannot be changed while the prize configuration is finalized. Use the explicit prize reconfiguration workflow in a later phase.";
   if (Object.keys(errors).length > 0) return { ok: false, errors };
+  const configChanged = gameConfig.config !== null;
   try {
     await prisma.$transaction(async (tx) => {
       const updated = await tx.tournament.updateMany({ where: { id: tournamentId, status: existing.status }, data: { gameId: values.gameId, name: values.name.trim(), slug: values.slug.trim(), description: values.description.trim() || null, rules: values.rules.trim() || null, bannerUrl: values.bannerUrl.trim() || null, startTime: schedule.startTime!, registrationStartTime: schedule.registrationStartTime!, registrationEndTime: schedule.registrationEndTime!, entryFee: values.entryFee.trim(), prizePool: values.prizePool.trim(), maxParticipants: newMaxParticipants, tournamentFormat: values.tournamentFormat as TournamentFormat, region: values.region.trim(), status: status as TournamentStatus, joiningWindowMinutes: Number.parseInt(values.joiningWindowMinutes, 10) } });
       if (updated.count !== 1) throw new Error("TOURNAMENT_CHANGED");
-      await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_UPDATED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { fromStatus: existing.status, toStatus: status, participantCount } });
+      if (gameConfig.config) {
+        await upsertTournamentGameConfig(tournamentId, game.id, game.code as (typeof GAME_CONFIG_CODES)[number], gameConfig.config, tx);
+        await recordAdminAuditEventInTransaction(tx, admin.id, { action: "GAME_CONFIG_UPDATED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { gameId: game.id, gameCode: game.code, version: gameConfig.config.version } });
+      }
+      await recordAdminAuditEventInTransaction(tx, admin.id, { action: "TOURNAMENT_UPDATED", targetType: "TOURNAMENT", targetId: tournamentId, metadata: { fromStatus: existing.status, toStatus: status, participantCount, gameConfigChanged: configChanged } });
     });
   } catch (error) {
     if (error instanceof Error && error.message === "TOURNAMENT_CHANGED") return { ok: false, errors: { form: "The tournament changed while you were editing it. Please reload and try again." } };
