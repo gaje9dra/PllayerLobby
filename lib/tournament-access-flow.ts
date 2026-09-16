@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Prisma } from "@/app/generated/prisma/client";
+import { Prisma, TournamentStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser } from "@/lib/auth";
 import { verifyTournamentAccessCode } from "@/lib/tournament-access-code";
 import { getJoiningWindowStart } from "@/lib/tournament-room-rules";
@@ -8,6 +8,8 @@ import { decryptMatchRoomSecret } from "@/lib/match-room-crypto";
 import { prisma } from "@/lib/prisma";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ACTIVE_MATCH_STATUSES = new Set(["PENDING", "READY", "LIVE"]);
+const CLOSED_MATCH_STATUSES = new Set(["COMPLETED", "CANCELLED"]);
 
 export type TournamentAccessResult =
   | { ok: true; matchId: string; roundNumber: number; matchNumber: number; roomId: string; roomPassword: string }
@@ -16,10 +18,7 @@ export type TournamentAccessResult =
 async function auditAccess(userId: string, tournamentId: string, action: string, matchId?: string) {
   await prisma.$executeRaw(Prisma.sql`
     INSERT INTO "AdminAuditLog" ("id", "actorUserId", "action", "targetType", "targetId", "metadataJson", "createdAt")
-    VALUES (
-      gen_random_uuid(), ${userId}::uuid, ${action}, 'TOURNAMENT_ACCESS', ${matchId ?? tournamentId},
-      ${JSON.stringify({ tournamentId, ...(matchId ? { matchId } : {}) })}, CURRENT_TIMESTAMP
-    )
+    VALUES (gen_random_uuid(), ${userId}::uuid, ${action}, 'TOURNAMENT_ACCESS', ${matchId ?? tournamentId}, ${JSON.stringify({ tournamentId, ...(matchId ? { matchId } : {}) })}, CURRENT_TIMESTAMP)
   `);
 }
 
@@ -28,17 +27,19 @@ export async function getParticipantTournamentAccess(tournamentId: string, acces
   if (!user) return { ok: false, reason: "Login to continue." };
   if (user.status !== "ACTIVE" || !UUID.test(tournamentId)) return { ok: false, reason: "Access denied." };
 
-  const tournament = await prisma.tournament.findUnique({
-    where: { id: tournamentId },
-    select: { id: true, status: true, startTime: true, joiningWindowMinutes: true },
-  });
-  if (!tournament || tournament.status === "CANCELLED" || tournament.status === "COMPLETED") {
+  const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, status: true, startTime: true, joiningWindowMinutes: true } });
+  if (!tournament || tournament.status === TournamentStatus.CANCELLED || tournament.status === TournamentStatus.COMPLETED) {
     await auditAccess(user.id, tournamentId, "TOURNAMENT_ACCESS_DENIED_STATE");
     return { ok: false, reason: "Tournament access is unavailable." };
   }
 
   const dbNowRows = await prisma.$queryRaw<Array<{ now: Date }>>(Prisma.sql`SELECT CURRENT_TIMESTAMP AS now`);
-  const now = dbNowRows[0]?.now ?? new Date();
+  const now = dbNowRows[0]?.now;
+  if (!now) {
+    await auditAccess(user.id, tournamentId, "TOURNAMENT_ACCESS_DENIED_STATE");
+    return { ok: false, reason: "Tournament access is temporarily unavailable." };
+  }
+
   const accessOpensAt = getJoiningWindowStart(tournament.startTime, tournament.joiningWindowMinutes);
   if (now < accessOpensAt) {
     await auditAccess(user.id, tournamentId, "TOURNAMENT_ACCESS_DENIED_TIMING");
@@ -61,7 +62,7 @@ export async function getParticipantTournamentAccess(tournamentId: string, acces
       AND reg."tournamentId" = ${tournamentId}::uuid
       AND reg."status" = 'CONFIRMED'
       AND s."registrationId" IS NOT NULL
-    ORDER BY CASE WHEN m."status" = 'LIVE' THEN 0 WHEN m."status" = 'READY' THEN 1 ELSE 2 END, r."roundNumber" DESC, m."matchNumber"
+    ORDER BY CASE WHEN m."status" = 'LIVE' THEN 0 WHEN m."status" = 'READY' THEN 1 WHEN m."status" = 'PENDING' THEN 2 ELSE 3 END, r."roundNumber" ASC, m."matchNumber" ASC
     LIMIT 1
   `);
   const match = assigned[0];
@@ -70,9 +71,14 @@ export async function getParticipantTournamentAccess(tournamentId: string, acces
     return { ok: false, reason: "No active match is assigned to your confirmed registration." };
   }
 
-  if (now >= tournament.startTime && !["PENDING", "READY", "LIVE"].includes(match.matchStatus)) {
+  if (CLOSED_MATCH_STATUSES.has(match.matchStatus)) {
     await auditAccess(user.id, tournamentId, "TOURNAMENT_ACCESS_DENIED_MATCH", match.matchId);
     return { ok: false, reason: "Your match is no longer available for joining." };
+  }
+
+  if (!ACTIVE_MATCH_STATUSES.has(match.matchStatus)) {
+    await auditAccess(user.id, tournamentId, "TOURNAMENT_ACCESS_DENIED_MATCH", match.matchId);
+    return { ok: false, reason: "Your match is not currently available for joining." };
   }
 
   const room = await prisma.$queryRaw<Array<{ roomIdEncrypted: string; roomPasswordEncrypted: string; publishedAt: Date | null; revokedAt: Date | null }>>(Prisma.sql`
