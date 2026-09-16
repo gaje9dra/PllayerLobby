@@ -1,16 +1,14 @@
 # Tournament Access Flow
 
-Phase 9.9 connects the existing registration, bracket, room-credential and tournament-access-code systems into one participant joining flow.
+Phase 9.9 connects the existing registration, bracket, match-room credential and tournament-access-code systems into one participant joining flow.
 
 ## Access timing
 
 The default access window starts **10 minutes before `Tournament.startTime`**. The value is stored in `Tournament.joiningWindowMinutes` (default `10`) so the window can be adjusted without rewriting the access flow.
 
-The server/database is authoritative. The participant page may display timing, but the API performs the actual timing check using PostgreSQL `CURRENT_TIMESTAMP`.
+The server/database is authoritative. The participant page may display timing, but the API performs the actual timing check using PostgreSQL `CURRENT_TIMESTAMP`; if the database time cannot be read, access fails closed. Browser time and client request timestamps are never used as authority.
 
-Before the window opens, no access code verification or room credential retrieval can succeed. At the opening boundary, an eligible participant can continue.
-
-After tournament start, access is not automatically closed. The assigned match must still be in an active joining state (`PENDING`, `READY`, or `LIVE`). Completed/cancelled matches do not expose room credentials.
+Before the window opens, access is denied without exposing room credentials. At the opening boundary, an eligible participant can continue. After tournament start, access is not automatically closed. The assigned match must still be in an active joining state (`PENDING`, `READY`, or `LIVE`). Completed/cancelled matches do not expose room credentials.
 
 ## Authorization order
 
@@ -25,7 +23,7 @@ After tournament start, access is not automatically closed. The assigned match m
 9. Retrieve the existing Phase 9.7 `MatchRoomCredential` only for that match.
 10. Return only the assigned match number and decrypted room ID/password.
 
-A code is never sufficient by itself. A registration ID supplied by the browser is not trusted for authorization, and participants cannot select another match ID to retrieve another participant's credentials.
+A code is never sufficient by itself. A registration ID or match ID supplied by the browser is not trusted for authorization, and participants cannot select another match to retrieve another participant's credentials.
 
 ## Access-code failures
 
@@ -41,13 +39,11 @@ Credentials come from the existing Phase 9.7 encrypted `MatchRoomCredential` rec
 
 Successful responses use `Cache-Control: private, no-store, max-age=0`.
 
-Passwords are masked by default in the participant UI and can be shown or copied only after the server has returned an authorized response. Credentials are held only in component state; they are not written to `localStorage` or `sessionStorage`.
+Passwords are masked by default in the participant UI and can be shown or copied only after the server has returned an authorized response. Credentials are held only in component state; they are not written to `localStorage` or `sessionStorage`, URLs, analytics or SEO metadata.
 
 ## Direct URLs and isolation
 
-The legacy direct match-room credential endpoint is blocked. Participants must use the tournament joining flow. Sensitive match IDs do not authorize access by themselves.
-
-Server-side queries bind the authenticated user, tournament, confirmed registration, bracket slot and match together. This prevents cross-user, cross-tournament, cross-registration and cross-match access.
+Sensitive match-room access is available only through the tournament joining flow. Server-side queries bind the authenticated user, tournament, confirmed registration, bracket slot and match together. This prevents cross-user, cross-tournament, cross-registration and cross-match access.
 
 ## Audit events
 
@@ -66,8 +62,8 @@ The access code, room password and encryption key are never placed in audit meta
 
 ## Financial isolation
 
-Tournament access is read/authorization oriented. It does not debit or credit wallets, create ledger entries, call PayU, modify payments, create registrations, modify bracket assignments, or modify room credentials.
+Tournament access is read/authorization oriented. It does not debit or credit wallets, create ledger entries, call PayU, modify payments, create or modify registrations, modify bracket assignments, or modify room credentials. Refreshes and repeated access requests remain read-oriented.
 
 ## Verification
 
-The repository test suite covers the configured access-window boundary and tournament-state rules. CI must additionally run Prisma validation/migration, generation, lint, typecheck, unit/integration/security tests and the production build before Phase 9.9 is accepted.
+The repository test suite covers the configured access-window boundary, configurable window behavior, tournament lifecycle rules and participant match lifecycle rules. CI must additionally run Prisma validation/migration, generation, lint, typecheck, unit/integration/security/concurrency/financial-regression tests and the production build before Phase 9.9 is accepted.
