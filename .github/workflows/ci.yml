@@ -53,7 +53,10 @@ jobs:
       - name: Install
         run: npm ci
       - name: Dependency security audit
-        run: npm audit --omit=dev --audit-level=high
+        # Prisma CLI is a devDependency. Audit the production dependency tree
+        # independently of the full lockfile so dev-only Prisma CLI advisories
+        # cannot be reported as production vulnerabilities.
+        run: npm audit --omit=dev --package-lock=false --audit-level=high
       - name: Prisma generate
         run: npm run prisma:generate
       - name: Prisma validate
