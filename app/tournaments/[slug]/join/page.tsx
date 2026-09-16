@@ -50,7 +50,7 @@ export default async function TournamentJoinPage({ params }: { params: Promise<{
           {state === "PENDING" ? <Message title="Your registration is not confirmed yet" text="Joining details become available only after your registration is confirmed." /> : null}
           {state === "CANCELLED" ? <Message title="This tournament has been cancelled" text="Tournament joining is disabled." /> : null}
           {state === "COMPLETED" ? <Message title="Tournament joining is closed" text="This tournament has already been completed." /> : null}
-          {state === "NOT_OPEN" ? <Message title="Tournament access is not open yet" text={`Access opens at ${formatAppDateTime(joiningStart)} (10 minutes before the scheduled start by default).`} /> : null}
+          {state === "NOT_OPEN" ? <Message title="Tournament access is not open yet" text={`Access opens at ${formatAppDateTime(joiningStart)} (${tournament.joiningWindowMinutes} minutes before the scheduled start by default).`} /> : null}
           {state === "READY" ? <JoinRoom tournamentId={tournament.id} /> : null}
         </section>
       </div>
