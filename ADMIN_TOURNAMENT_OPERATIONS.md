@@ -1,15 +1,21 @@
 # Admin Tournament Operations
 
-Phase 9.12 implementation is tracked in the repository. This document is the operational documentation entry point; implementation must reuse the existing authentication, authorization, tournament, participant, bracket, match, room, access-code, result, dispute, cancellation, wallet, ledger, and PayU systems.
+Phase 9.12 operational documentation.
+
+This phase integrates the existing admin authentication/authorization, tournament, participant, bracket, match, room, access-code, result, dispute, cancellation, wallet, ledger, and PayU systems. It does not introduce duplicate systems or prize settlement.
 
 ## Security
 
-Admin operations must be authorized server-side. Sensitive room passwords and access codes must remain masked by default and must not be exposed in URLs, logs, analytics, or unauthorised responses. Destructive operations require confirmation, reason, authorization, transactionality where related records change, and audit records.
+Admin operations are authorized server-side. Room passwords and access codes are masked by default and excluded from URLs, logs, analytics, and unauthorized responses. Destructive actions require confirmation and a reason and are audited.
 
 ## Financial isolation
 
-Tournament administration does not implement prize settlement or modify wallet balances, ledger entries, deposits, withdrawals, or PayU transactions.
+Tournament-management actions do not directly credit/debit wallets, modify the ledger, alter deposits/withdrawals, invoke PayU, or settle prizes.
+
+## Operations
+
+The admin dashboard covers tournament overview/list/search/filtering, participants, brackets, matches, room credentials, access codes, results, disputes, cancellations, operational alerts, consistency issues, and audit logs. Existing lifecycle and scheduling rules remain authoritative.
 
 ## Verification
 
-Run the repository's migration, Prisma generation, lint, typecheck, unit/integration/security/concurrency/financial-regression tests, and production build before declaring Phase 9.12 complete.
+Before Phase 9.12 is declared complete, CI must pass migrations, Prisma generation, lint, typecheck, unit/integration/security/IDOR/concurrency/financial-regression/tournament/bracket/result tests, and production build.
