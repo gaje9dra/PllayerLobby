@@ -5,6 +5,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refreshTournamentLifecycle } from "@/lib/tournament-lifecycle";
 import { createRegistrationCodeData } from "@/lib/registration-code";
+import { getRegistrationReference } from "@/lib/registration-reference";
 import {
   evaluateRegistrationEligibility,
   REGISTRATION_ELIGIBILITY_REASONS,
@@ -30,11 +31,11 @@ export type RegistrationCreationResult =
   | {
       ok: true;
       registrationId: string;
+      registrationReference: string;
       registrationStatus: RegistrationStatus;
       paymentRequired: false;
       walletBalance: string;
       entryFee: string;
-      registrationCode?: string;
     }
   | {
       ok: false;
@@ -66,30 +67,24 @@ function isUniqueConstraintError(error: unknown) {
 function isTransactionConflict(error: unknown): boolean {
   const seen = new Set<object>();
   let current: unknown = error;
-
   for (let depth = 0; depth < 8 && current; depth += 1) {
     if (typeof current !== "object") {
       const text = String(current);
       if (/TransactionWriteConflict|could not serialize access|serialization failure/i.test(text)) return true;
       break;
     }
-
     if (seen.has(current)) break;
     seen.add(current);
-
     if ("code" in current && current.code === "P2034") return true;
     if ("originalCode" in current && (current.originalCode === "40001" || current.originalCode === 40001)) return true;
-
     const message = "message" in current && typeof current.message === "string" ? current.message : "";
     if (/TransactionWriteConflict|could not serialize access|serialization failure/i.test(message)) return true;
-
     if ("cause" in current) {
       current = current.cause;
       continue;
     }
     break;
   }
-
   return false;
 }
 
@@ -105,15 +100,8 @@ export async function createTournamentRegistrationForUser(
     return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
   }
 
-  const rateLimit = await consumeSecurityRateLimit({
-    namespace: "tournament-entry",
-    key: `${user.id}:${tournamentId}`,
-    limit: 5,
-    windowSeconds: 60,
-  });
-  if (!rateLimit.allowed) {
-    return { ok: false, code: REGISTRATION_RESULT_CODES.RATE_LIMITED, message: "Too many join attempts. Please wait a moment and try again." };
-  }
+  const rateLimit = await consumeSecurityRateLimit({ namespace: "tournament-entry", key: `${user.id}:${tournamentId}`, limit: 5, windowSeconds: 60 });
+  if (!rateLimit.allowed) return { ok: false, code: REGISTRATION_RESULT_CODES.RATE_LIMITED, message: "Too many join attempts. Please wait a moment and try again." };
 
   try {
     for (let lifecycleAttempt = 1; lifecycleAttempt <= TRANSACTION_RETRY_LIMIT; lifecycleAttempt += 1) {
@@ -129,89 +117,45 @@ export async function createTournamentRegistrationForUser(
     for (let attempt = 1; attempt <= TRANSACTION_RETRY_LIMIT; attempt += 1) {
       try {
         return await prisma.$transaction(async (tx) => {
-          // Establish a single lock ordering for paid entries:
-          // wallet -> tournament. This prevents two requests spending the same
-          // wallet from simultaneously holding different tournament locks and
-          // then colliding when they reach the shared wallet row.
-          const walletRef = await tx.wallet.findUnique({
-            where: { userId: user.id },
-            select: { id: true },
-          });
-
-          const initialTournament = await tx.tournament.findUnique({
-            where: { id: tournamentId },
-            select: { id: true, entryFee: true },
-          });
-
-          if (!initialTournament) {
-            return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
-          }
+          const walletRef = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
+          const initialTournament = await tx.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, entryFee: true } });
+          if (!initialTournament) return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
 
           const initialEntryFee = normalizeMoney(initialTournament.entryFee.toFixed(2));
           if (!initialEntryFee) throw new Error("Invalid tournament entry fee.");
-
           if (initialEntryFee !== "0.00") {
             if (!walletRef) throw new Error("Wallet unavailable.");
-
-            const lockedWallet = await tx.$queryRaw<Array<{ id: string }>>`
-              SELECT "id" FROM "Wallet" WHERE "id" = CAST(${walletRef.id} AS UUID) FOR UPDATE
-            `;
+            const lockedWallet = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Wallet" WHERE "id" = CAST(${walletRef.id} AS UUID) FOR UPDATE`;
             if (lockedWallet.length === 0) throw new Error("Wallet unavailable.");
           }
 
-          const lockedRows = await tx.$queryRaw<{ id: string }[]>`
-            SELECT "id" FROM "Tournament" WHERE "id" = CAST(${tournamentId} AS UUID) FOR UPDATE
-          `;
-          if (lockedRows.length === 0) {
-            return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
-          }
+          const lockedRows = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Tournament" WHERE "id" = CAST(${tournamentId} AS UUID) FOR UPDATE`;
+          if (lockedRows.length === 0) return { ok: false, code: REGISTRATION_RESULT_CODES.TOURNAMENT_NOT_FOUND, message: ERROR_MESSAGES.TOURNAMENT_NOT_FOUND };
 
-          // Do not issue concurrent queries on the same Prisma transaction.
-          // adapter-pg uses one pg client for an interactive transaction.
           const tournament = await tx.tournament.findUnique({
             where: { id: tournamentId },
             select: { id: true, entryFee: true, status: true, registrationStartTime: true, registrationEndTime: true, maxParticipants: true },
           });
-          const registration = await tx.registration.findUnique({
-            where: { userId_tournamentId: { userId: user.id, tournamentId } },
-            select: { id: true, status: true },
-          });
-          const confirmedParticipants = await tx.registration.count({
-            where: { tournamentId, status: RegistrationStatus.CONFIRMED },
-          });
-
+          const registration = await tx.registration.findUnique({ where: { userId_tournamentId: { userId: user.id, tournamentId } }, select: { id: true, status: true } });
+          const confirmedParticipants = await tx.registration.count({ where: { tournamentId, status: RegistrationStatus.CONFIRMED } });
           const eligibility = evaluateRegistrationEligibility({ user, tournament, registration, confirmedParticipants, now: new Date() });
-          if (!eligibility.allowed) {
-            return { ok: false, code: eligibility.reason, message: ERROR_MESSAGES[eligibility.reason] };
-          }
+          if (!eligibility.allowed) return { ok: false, code: eligibility.reason, message: ERROR_MESSAGES[eligibility.reason] };
 
           const entryFee = normalizeMoney(tournament!.entryFee.toFixed(2));
           if (!entryFee) throw new Error("Invalid tournament entry fee.");
           const isFree = entryFee === "0.00";
 
           if (registration?.status === RegistrationStatus.CANCELLED && !isFree) {
-            const priorEntryDebit = await tx.walletTransaction.findFirst({
-              where: { referenceType: "ENTRY_PAYMENT", referenceId: registration.id, type: WalletTransactionType.DEBIT, category: "ENTRY_FEE" },
-              select: { id: true },
-            });
-            if (priorEntryDebit) {
-              return { ok: false, code: REGISTRATION_RESULT_CODES.REGISTRATION_NOT_REOPENABLE, message: "This cancelled paid registration cannot be reactivated without the existing refund workflow." };
-            }
+            const priorEntryDebit = await tx.walletTransaction.findFirst({ where: { referenceType: "ENTRY_PAYMENT", referenceId: registration.id, type: WalletTransactionType.DEBIT, category: "ENTRY_FEE" }, select: { id: true } });
+            if (priorEntryDebit) return { ok: false, code: REGISTRATION_RESULT_CODES.REGISTRATION_NOT_REOPENABLE, message: "This cancelled paid registration cannot be reactivated without the existing refund workflow." };
           }
 
           let registrationId: string;
           if (registration?.status === RegistrationStatus.CANCELLED) {
-            const updated = await tx.registration.update({
-              where: { userId_tournamentId: { userId: user.id, tournamentId } },
-              data: { status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING },
-              select: { id: true },
-            });
+            const updated = await tx.registration.update({ where: { userId_tournamentId: { userId: user.id, tournamentId } }, data: { status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING }, select: { id: true } });
             registrationId = updated.id;
           } else {
-            const created = await tx.registration.create({
-              data: { tournamentId, userId: user.id, status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING },
-              select: { id: true },
-            });
+            const created = await tx.registration.create({ data: { tournamentId, userId: user.id, status: isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING }, select: { id: true } });
             registrationId = created.id;
           }
 
@@ -226,27 +170,23 @@ export async function createTournamentRegistrationForUser(
               referenceId: registrationId,
               description: `Tournament entry ${tournamentId}`,
             });
-
             await tx.registration.update({ where: { id: registrationId }, data: { status: RegistrationStatus.CONFIRMED } });
           }
 
+          // Registration codes already exist for later tournament-access work.
+          // Phase 9.5 deliberately does not expose the code to the user yet.
           const codeData = createRegistrationCodeData();
-          await tx.registrationCode.upsert({
-            where: { registrationId },
-            create: { registrationId, codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted },
-            update: { codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted, revokedAt: null },
-          });
+          await tx.registrationCode.upsert({ where: { registrationId }, create: { registrationId, codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted }, update: { codeHash: codeData.codeHash, codeEncrypted: codeData.codeEncrypted, revokedAt: null } });
 
           const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { balance: true } });
-
           return {
             ok: true,
             registrationId,
+            registrationReference: getRegistrationReference(registrationId),
             registrationStatus: RegistrationStatus.CONFIRMED,
             paymentRequired: false,
             walletBalance: wallet?.balance.toString() ?? "0.00",
             entryFee,
-            registrationCode: codeData.code,
           };
         }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
       } catch (error) {
@@ -254,12 +194,9 @@ export async function createTournamentRegistrationForUser(
         await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
       }
     }
-
     throw new Error("Registration transaction retry limit reached.");
   } catch (error) {
-    if (isUniqueConstraintError(error)) {
-      return { ok: false, code: REGISTRATION_RESULT_CODES.ALREADY_REGISTERED, message: ERROR_MESSAGES.ALREADY_REGISTERED };
-    }
+    if (isUniqueConstraintError(error)) return { ok: false, code: REGISTRATION_RESULT_CODES.ALREADY_REGISTERED, message: ERROR_MESSAGES.ALREADY_REGISTERED };
     const message = errorMessage(error);
     if (message === "Insufficient wallet balance.") return { ok: false, code: REGISTRATION_RESULT_CODES.INSUFFICIENT_BALANCE, message: "Insufficient wallet balance." };
     if (message === "Wallet unavailable.") return { ok: false, code: REGISTRATION_RESULT_CODES.WALLET_UNAVAILABLE, message: "Your wallet is currently unavailable. Please try again." };
