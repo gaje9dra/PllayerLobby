@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useActionState } from "react";
+import { useActionState } from "react";
 import { registerForTournament, type RegistrationActionState } from "@/app/tournaments/actions";
 import { TournamentPayment } from "@/components/tournaments/tournament-payment";
 import { Button } from "@/components/ui/button";
@@ -27,31 +27,6 @@ const availabilityMessages: Record<Exclude<RegistrationAvailability, "LOGIN" | "
   COMPLETED: "This tournament is completed.",
 };
 
-function RegistrationCode({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyCode() {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  }
-
-  return (
-    <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/50 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Registration code</p>
-          <p className="mt-1 font-mono text-sm font-bold tracking-wider text-white">{code}</p>
-        </div>
-        <button type="button" onClick={copyCode} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5 hover:text-white">
-          {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
-      <p className="mt-2 text-[11px] leading-5 text-slate-500">Keep this code available. It will be required for tournament joining.</p>
-    </div>
-  );
-}
-
 export function TournamentRegistration({
   tournamentId,
   availability,
@@ -60,6 +35,9 @@ export function TournamentRegistration({
   existingRegistrationId,
   walletBalance,
   entryFee,
+  tournamentName,
+  gameName,
+  tournamentStart,
 }: {
   tournamentId: string;
   availability: RegistrationAvailability;
@@ -68,6 +46,9 @@ export function TournamentRegistration({
   existingRegistrationId: string | null;
   walletBalance: string | null;
   entryFee: string;
+  tournamentName: string;
+  gameName: string;
+  tournamentStart: string;
 }) {
   const [state, action, pending] = useActionState(registerForTournament, INITIAL_STATE);
   const displayedBalance = state.ok ? state.walletBalance : walletBalance;
@@ -76,12 +57,17 @@ export function TournamentRegistration({
     const paid = state.entryFee !== "0.00";
     return (
       <div className="rounded-2xl border border-lime-300/20 bg-lime-300/10 p-4" role="status">
-        <p className="text-sm font-bold text-lime-200">You&apos;re registered.</p>
-        <p className="mt-1 text-xs leading-5 text-lime-100/70">
-          {paid ? `Entry fee ${state.entryFee === entryFee ? `₹${state.entryFee}` : `₹${state.entryFee}`} was paid from your wallet.` : "This tournament is free."}
-        </p>
-        {paid ? <p className="mt-2 text-xs font-semibold text-white">Remaining wallet balance: ₹{state.walletBalance}</p> : null}
-        {state.registrationCode ? <RegistrationCode code={state.registrationCode} /> : null}
+        <p className="text-sm font-bold text-lime-200">Registration Confirmed</p>
+        <dl className="mt-3 grid gap-2 text-xs text-lime-100/80">
+          <div className="flex justify-between gap-4"><dt>Tournament</dt><dd className="font-semibold text-white">{tournamentName}</dd></div>
+          <div className="flex justify-between gap-4"><dt>Game</dt><dd className="font-semibold text-white">{gameName}</dd></div>
+          <div className="flex justify-between gap-4"><dt>Entry fee</dt><dd className="font-semibold text-white">{paid ? `₹${state.entryFee}` : "Free"}</dd></div>
+          <div className="flex justify-between gap-4"><dt>Reference</dt><dd className="font-mono font-semibold text-white">{state.registrationReference}</dd></div>
+          <div className="flex justify-between gap-4"><dt>Tournament date</dt><dd className="font-semibold text-white">{tournamentStart}</dd></div>
+          <div className="flex justify-between gap-4"><dt>Participant status</dt><dd className="font-semibold text-white">{state.registrationStatus}</dd></div>
+        </dl>
+        {paid ? <p className="mt-3 text-xs font-semibold text-white">Remaining wallet balance: ₹{state.walletBalance}</p> : null}
+        <p className="mt-3 text-[11px] leading-5 text-slate-500">Keep your registration reference for support. Tournament access credentials are provided separately when that feature is enabled.</p>
       </div>
     );
   }
@@ -98,18 +84,11 @@ export function TournamentRegistration({
     );
   }
 
-  if (availability === "LOGIN") {
-    return <Button href={loginHref} className="w-full">Login to Register</Button>;
-  }
+  if (availability === "LOGIN") return <Button href={loginHref} className="w-full">Login to Register</Button>;
 
   if (availability !== "REGISTER") {
     const message = availabilityMessages[availability as Exclude<RegistrationAvailability, "LOGIN" | "REGISTER" | "PAYMENT_PENDING">];
-    return (
-      <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4" role="status">
-        <p className="text-sm font-bold text-white">{message}</p>
-        {state.message ? <p className="mt-1 text-xs leading-5 text-slate-400">{state.message}</p> : null}
-      </div>
-    );
+    return <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4" role="status"><p className="text-sm font-bold text-white">{message}</p></div>;
   }
 
   const isFree = entryFee === "0.00";
@@ -118,29 +97,15 @@ export function TournamentRegistration({
       {!isFree ? (
         <div className="mb-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Wallet balance</p>
-              <p className="mt-1 text-lg font-black text-white">₹{displayedBalance ?? "0.00"}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Entry fee</p>
-              <p className="mt-1 text-lg font-black text-lime-200">₹{entryFee}</p>
-            </div>
+            <div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Wallet balance</p><p className="mt-1 text-lg font-black text-white">₹{displayedBalance ?? "0.00"}</p></div>
+            <div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Entry fee</p><p className="mt-1 text-lg font-black text-lime-200">₹{entryFee}</p></div>
           </div>
         </div>
       ) : null}
-
       <form action={action}>
         <input type="hidden" name="tournamentId" value={tournamentId} />
-        <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>
-          {pending ? "Joining..." : isFree ? "Join Free Tournament" : `Join for ₹${entryFee}`}
-        </Button>
-        {state.message ? (
-          <div className="mt-3 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-3 text-xs leading-5 text-red-200" role="alert">
-            <p>{state.message}</p>
-            {state.code === "INSUFFICIENT_BALANCE" ? <Button href="/dashboard/wallet/add-money" variant="secondary" className="mt-3 w-full">Add Money</Button> : null}
-          </div>
-        ) : null}
+        <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>{pending ? "Joining..." : isFree ? "Join Free Tournament" : `Join for ₹${entryFee}`}</Button>
+        {state.message ? <div className="mt-3 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-3 text-xs leading-5 text-red-200" role="alert"><p>{state.message}</p>{state.code === "INSUFFICIENT_BALANCE" ? <Button href="/dashboard/wallet/add-money" variant="secondary" className="mt-3 w-full">Add Money</Button> : null}</div> : null}
       </form>
     </div>
   );
