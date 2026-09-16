@@ -492,7 +492,7 @@ model PayoutDestination {
 }
 
 model PayoutBeneficiary {
-  id String @id @default(uuid())
+  id String @id @default(uuid()) @db.Uuid
   payoutDestinationId String @db.Uuid
   provider String
   providerBeneficiaryId String
