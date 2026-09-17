@@ -48,17 +48,22 @@ test("aviator completes a round and starts the next waiting round", async () => 
 });
 
 test("crash callback receives the authoritative final multiplier", async () => {
-  let received: { roundId: string; crashPoint: number } | null = null;
+  let resolveCrash!: (value: { roundId: string; crashPoint: number }) => void;
+  const crash = new Promise<{ roundId: string; crashPoint: number }>((resolve) => {
+    resolveCrash = resolve;
+  });
+
   const engine = new AviatorGameEngine({
     crashPointGenerator: { generate: () => 1.01 },
     timings: fastTimings,
-    onCrash: (snapshot, crashPoint) => {
-      received = { roundId: snapshot.roundId, crashPoint };
-    },
+    onCrash: (snapshot, crashPoint) => resolveCrash({ roundId: snapshot.roundId, crashPoint }),
   });
 
   engine.start();
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  const received = await Promise.race([
+    crash,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
+  ]);
   engine.stop();
 
   assert.ok(received);
