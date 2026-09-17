@@ -106,6 +106,31 @@ export function AviatorGame() {
     return () => { mounted = false; if (reconnectTimer !== null) window.clearTimeout(reconnectTimer); socket?.close(); };
   }, [loadBets, loadHistory]);
 
+  // Netlify serves Next.js route handlers as independent invocations. Poll the
+  // database-backed round so the UI does not depend on a WebSocket connection.
+  useEffect(() => {
+    let mounted = true;
+    let previousRoundId = snapshot.roundId;
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/games/aviator/round", { cache: "no-store" });
+        if (!response.ok) return;
+        const next = (await response.json()) as AviatorRoundSnapshot;
+        if (!mounted) return;
+        setSnapshot(next);
+        setConnection((current) => current === "Connected" ? current : "Live polling");
+        if (next.roundId !== previousRoundId) {
+          previousRoundId = next.roundId;
+          void loadBets(next.roundId);
+          void loadHistory();
+        }
+      } catch { if (mounted) setConnection((current) => current === "Connected" ? current : "Disconnected"); }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 250);
+    return () => { mounted = false; window.clearInterval(timer); };
+  }, [loadBets, loadHistory, snapshot.roundId]);
+
   const statusText = useMemo(() => ({ WAITING: "Betting open — next round starting soon", RUNNING: "Round running", CRASHED: "Crashed", SETTLED: "Round settled" })[snapshot.phase], [snapshot.phase]);
   const countdown = snapshot.phase === "WAITING" && snapshot.waitingEndsAt ? Math.max(0, (snapshot.waitingEndsAt - clientNow) / 1000).toFixed(1) : null;
   const activeBets = bets.filter((bet) => bet.status === "ACTIVE" && bet.roundId === snapshot.roundId);
@@ -138,6 +163,11 @@ export function AviatorGame() {
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Cashout failed."); }
     finally { setCashoutBusy(null); }
   };
+
+  useEffect(() => {
+    const autoBet = activeBets.find((bet) => bet.autoCashoutMultiplier && snapshot.multiplier >= Number(bet.autoCashoutMultiplier));
+    if (snapshot.phase === "RUNNING" && autoBet && !cashoutBusy) void cashOut(autoBet);
+  }, [activeBets, cashoutBusy, snapshot.multiplier, snapshot.phase]);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
