@@ -48,14 +48,9 @@ function playTone(kind: "start" | "cashout" | "crash" | "bet") {
 }
 
 export function AviatorGamePhase106() {
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [motionEnabled, setMotionEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(() => readPreference(SOUND_KEY, true));
+  const [motionEnabled, setMotionEnabled] = useState(() => readPreference(MOTION_KEY, true));
   const [settingsOpen, setSettingsOpen] = useState(false);
-
-  useEffect(() => {
-    setSoundEnabled(readPreference(SOUND_KEY, true));
-    setMotionEnabled(readPreference(MOTION_KEY, true));
-  }, []);
 
   useEffect(() => {
     const main = document.querySelector("main");
