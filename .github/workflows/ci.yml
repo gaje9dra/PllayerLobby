@@ -56,7 +56,7 @@ jobs:
         # Current high-severity findings are in Prisma's development CLI
         # dependency tree. Keep the audit visible without blocking the
         # application verification pipeline on development-only advisories.
-        run: npm audit --omit=dev --audit-level=high --package-lock=false || true
+        run: timeout 60s npm audit --omit=dev --audit-level=high --package-lock=false || true
       - name: Prisma generate
         run: npm run prisma:generate
       - name: Prisma validate
