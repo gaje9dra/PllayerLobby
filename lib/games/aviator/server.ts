@@ -1,6 +1,7 @@
 import "server-only";
 
-import { AviatorGameEngine, type AviatorRoundSnapshot } from "./engine";
+import { AviatorGameEngine } from "./engine";
+import type { AviatorRoundSnapshot } from "./types";
 import { persistFinalizedAviatorRound } from "./persistence";
 
 const globalKey = Symbol.for("playerlobby.aviator.engine");
