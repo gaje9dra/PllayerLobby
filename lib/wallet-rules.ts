@@ -5,8 +5,8 @@ const MONEY_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const WALLET_TRANSACTION_TYPES = ["CREDIT", "DEBIT"] as const;
-export const WALLET_TRANSACTION_CATEGORIES = ["PRIZE", "REFUND", "WITHDRAWAL", "ENTRY_FEE", "ADJUSTMENT", "DEPOSIT"] as const;
-export const WALLET_REFERENCE_TYPES = ["PRIZE_SETTLEMENT", "REFUND", "WITHDRAWAL", "WITHDRAWAL_PAYOUT", "ENTRY_PAYMENT", "ADJUSTMENT", "DEPOSIT"] as const;
+export const WALLET_TRANSACTION_CATEGORIES = ["PRIZE", "REFUND", "WITHDRAWAL", "ENTRY_FEE", "ADJUSTMENT", "DEPOSIT", "AVIATOR_BET"] as const;
+export const WALLET_REFERENCE_TYPES = ["PRIZE_SETTLEMENT", "REFUND", "WITHDRAWAL", "WITHDRAWAL_PAYOUT", "ENTRY_PAYMENT", "ADJUSTMENT", "DEPOSIT", "AVIATOR_BET"] as const;
 
 export type WalletTransactionType = (typeof WALLET_TRANSACTION_TYPES)[number];
 export type WalletTransactionCategory = (typeof WALLET_TRANSACTION_CATEGORIES)[number];
@@ -51,6 +51,19 @@ export function compareMoney(a: string, b: string): number {
   const leftCents = BigInt(left.replace(".", ""));
   const rightCents = BigInt(right.replace(".", ""));
   return leftCents < rightCents ? -1 : leftCents > rightCents ? 1 : 0;
+}
+
+export function multiplyMoneyByMultiplier(amount: string, multiplier: string): string {
+  const normalizedAmount = normalizeMoney(amount);
+  const normalizedMultiplier = normalizeMoney(multiplier);
+  if (!normalizedAmount || !normalizedMultiplier || !isPositiveMoney(normalizedMultiplier)) {
+    throw new Error("Invalid monetary multiplier.");
+  }
+  const amountCents = BigInt(normalizedAmount.replace(".", ""));
+  const multiplierHundredths = BigInt(normalizedMultiplier.replace(".", ""));
+  const numerator = amountCents * multiplierHundredths;
+  const cents = (numerator + 50n) / 100n;
+  return `${cents / HUNDRED_CENTS}.${(cents % HUNDRED_CENTS).toString().padStart(2, "0")}`;
 }
 
 export function isSupportedCurrency(currency: string): currency is typeof WALLET_CURRENCY {
