@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { calculateAviatorCrashMultiplier, createAviatorFairnessRound, ProvablyFairService, type AviatorFairnessSecret } from "./provably-fair";
+import { ProvablyFairService, type AviatorFairnessSecret } from "./provably-fair";
 import type { AviatorPhase, AviatorRoundSnapshot } from "./types";
 
 type EngineTimings = { waitingMs: number; settledMs: number; updateIntervalMs: number };
