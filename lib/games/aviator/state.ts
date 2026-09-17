@@ -1,4 +1,4 @@
-import type { AviatorPhase, AviatorRoundSnapshot } from "./engine";
+import type { AviatorPhase, AviatorRoundSnapshot } from "./types";
 
 export const AVIATOR_GAME_SLUG = "aviator" as const;
 
