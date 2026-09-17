@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash, randomUUID } from "node:crypto";
 import type { AviatorPhase, AviatorRoundSnapshot } from "./types";
 
 export type CrashPointGenerator = {
@@ -9,16 +10,16 @@ export type CrashPointGenerator = {
 const WAITING_MS = 5_000;
 const SETTLED_MS = 1_000;
 const UPDATE_INTERVAL_MS = 100;
+const MIN_CRASH_POINT = 1.01;
+const MAX_CRASH_POINT = 50;
 
 const defaultCrashPointGenerator: CrashPointGenerator = {
   generate({ seed }) {
-    let hash = 2166136261;
-    for (let index = 0; index < seed.length; index += 1) {
-      hash ^= seed.charCodeAt(index);
-      hash = Math.imul(hash, 16777619);
-    }
-    const unit = (hash >>> 0) / 4294967296;
-    return Number((1 + unit * unit * 19).toFixed(2));
+    const digest = createHash("sha256").update(seed).digest();
+    const integer = digest.readUInt32BE(0);
+    const unit = integer / 0x1_0000_0000;
+    const point = MIN_CRASH_POINT + unit * unit * (MAX_CRASH_POINT - MIN_CRASH_POINT);
+    return Number(Math.min(MAX_CRASH_POINT, point).toFixed(2));
   },
 };
 
@@ -42,7 +43,6 @@ export class AviatorGameEngine {
   private readonly onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
   private snapshot: AviatorRoundSnapshot;
   private crashPoint: number;
-  private roundCreatedAt: number;
   private settledTimer: ReturnType<typeof setTimeout> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly listeners = new Set<(snapshot: AviatorRoundSnapshot) => void>();
@@ -55,8 +55,8 @@ export class AviatorGameEngine {
     this.crashPointGenerator = options?.crashPointGenerator ?? defaultCrashPointGenerator;
     this.now = options?.now ?? Date.now;
     this.onCrash = options?.onCrash;
-    this.roundCreatedAt = this.now();
-    this.snapshot = this.createWaitingSnapshot(this.roundCreatedAt);
+    const now = this.now();
+    this.snapshot = this.createWaitingSnapshot(now);
     this.crashPoint = this.generateCrashPoint();
   }
 
@@ -137,14 +137,13 @@ export class AviatorGameEngine {
   private startNextRound(now: number) {
     if (this.snapshot.phase !== "SETTLED") return;
     this.snapshot = this.createWaitingSnapshot(now);
-    this.roundCreatedAt = now;
     this.crashPoint = this.generateCrashPoint();
     this.emit();
   }
 
   private createWaitingSnapshot(now: number): AviatorRoundSnapshot {
     return {
-      roundId: crypto.randomUUID(),
+      roundId: randomUUID(),
       phase: "WAITING",
       serverTime: now,
       multiplier: 1,
@@ -154,8 +153,8 @@ export class AviatorGameEngine {
   }
 
   private generateCrashPoint() {
-    const point = this.crashPointGenerator.generate({ roundId: this.snapshot.roundId, seed: crypto.randomUUID() });
-    if (!Number.isFinite(point) || point < 1) throw new Error("INVALID_CRASH_POINT");
+    const point = this.crashPointGenerator.generate({ roundId: this.snapshot.roundId, seed: randomUUID() });
+    if (!Number.isFinite(point) || point < MIN_CRASH_POINT || point > MAX_CRASH_POINT) throw new Error("INVALID_CRASH_POINT");
     return Number(point.toFixed(2));
   }
 
