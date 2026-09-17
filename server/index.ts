@@ -8,9 +8,10 @@ const port = Number(process.env.PORT ?? 3000);
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
-const handleUpgrade = app.getUpgradeHandler();
 
 await app.prepare();
+
+const handleUpgrade = app.getUpgradeHandler();
 
 const server = http.createServer((request, response) => {
   void handle(request, response);
