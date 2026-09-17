@@ -1,5 +1,5 @@
 import { Prisma } from "@/app/generated/prisma/client";
-import { getCurrentUser, type CurrentUser } from "@/lib/auth";
+import { type CurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { consumeSecurityRateLimit } from "@/lib/security-rate-limit";
 import { recordWalletTransactionInTransaction } from "@/lib/wallet";
@@ -34,7 +34,8 @@ const MIN_AUTO = 1.01;
 const MAX_AUTO = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const activeBets = new Map<string, Map<string, { userId: string; autoCashoutMultiplier: number | null; autoCashoutInFlight: boolean }>>();
+type ActiveBetRuntime = { userId: string; autoCashoutMultiplier: number | null; autoCashoutInFlight: boolean };
+const activeBets = new Map<string, Map<string, ActiveBetRuntime>>();
 let subscriptionsInstalled = false;
 
 function message(code: ResultCode) {
@@ -55,25 +56,6 @@ function message(code: ResultCode) {
     RATE_LIMITED: "Too many requests. Please wait a moment.",
   };
   return messages[code];
-}
-
-function installRuntimeSubscriptions() {
-  if (subscriptionsInstalled) return;
-  subscriptionsInstalled = true;
-  getAviatorEngine().subscribe((snapshot) => {
-    if (snapshot.phase !== "RUNNING") return;
-    const roundBets = activeBets.get(snapshot.roundId);
-    if (!roundBets?.size) return;
-    for (const [betId, runtime] of roundBets) {
-      if (runtime.autoCashoutMultiplier && snapshot.multiplier >= runtime.autoCashoutMultiplier && !runtime.autoCashoutInFlight) {
-        runtime.autoCashoutInFlight = true;
-        void cashoutBetForUser(runtime.userId, betId, snapshot.roundId, true).finally(() => {
-          const current = activeBets.get(snapshot.roundId)?.get(betId);
-          if (current) current.autoCashoutInFlight = false;
-        });
-      }
-    }
-  });
 }
 
 function validateAmount(value: unknown) {
@@ -113,14 +95,31 @@ export function removeActiveBet(roundId: string, betId: string) {
   if (!bets.size) activeBets.delete(roundId);
 }
 
+function installRuntimeSubscriptions() {
+  if (subscriptionsInstalled) return;
+  subscriptionsInstalled = true;
+  getAviatorEngine().subscribe((snapshot) => {
+    if (snapshot.phase !== "RUNNING") return;
+    const roundBets = activeBets.get(snapshot.roundId);
+    if (!roundBets?.size) return;
+    for (const [betId, runtime] of roundBets) {
+      if (runtime.autoCashoutMultiplier && snapshot.multiplier >= runtime.autoCashoutMultiplier && !runtime.autoCashoutInFlight) {
+        runtime.autoCashoutInFlight = true;
+        void cashoutBetForUser(runtime.userId, betId, snapshot.roundId, true).finally(() => {
+          const current = activeBets.get(snapshot.roundId)?.get(betId);
+          if (current) current.autoCashoutInFlight = false;
+        });
+      }
+    }
+  });
+}
+
 export async function placeAviatorBetForUser(
   user: Pick<CurrentUser, "id" | "status">,
   input: { roundId: string; amount: unknown; clientRequestId: string; autoCashoutMultiplier?: unknown },
 ): Promise<Result<{ bet: { id: string; roundId: string; stake: string; status: string; serverTime: number; autoCashoutMultiplier: number | null }; walletBalance: string }>> {
   if (user.status !== "ACTIVE") return { ok: false, code: AVIATOR_BET_RESULT_CODES.AUTHENTICATION_REQUIRED, message: message(AVIATOR_BET_RESULT_CODES.AUTHENTICATION_REQUIRED) };
-  if (!UUID.test(input.roundId) || !input.clientRequestId || input.clientRequestId.length > 128) {
-    return { ok: false, code: AVIATOR_BET_RESULT_CODES.INVALID_BET_AMOUNT, message: message(AVIATOR_BET_RESULT_CODES.INVALID_BET_AMOUNT) };
-  }
+  if (!UUID.test(input.roundId) || !input.clientRequestId || input.clientRequestId.length > 128) return { ok: false, code: AVIATOR_BET_RESULT_CODES.INVALID_BET_AMOUNT, message: message(AVIATOR_BET_RESULT_CODES.INVALID_BET_AMOUNT) };
   const amount = validateAmount(input.amount);
   if (!amount) return { ok: false, code: AVIATOR_BET_RESULT_CODES.INVALID_BET_AMOUNT, message: message(AVIATOR_BET_RESULT_CODES.INVALID_BET_AMOUNT) };
   const auto = validateAuto(input.autoCashoutMultiplier);
@@ -150,31 +149,14 @@ export async function placeAviatorBetForUser(
         await ensureRoundRow(tx, snapshot);
         const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true, balance: true, currency: true } });
         if (!wallet || wallet.currency !== "INR" || compareMoney(wallet.balance.toString(), amount) < 0) throw new Error("INSUFFICIENT_BALANCE");
-
-        const bet = await tx.aviatorBet.create({
-          data: { roundId: snapshot.roundId, userId: user.id, stake: amount, status: "ACTIVE", clientRequestId: input.clientRequestId, autoCashoutMultiplier: auto },
-        });
-        await recordWalletTransactionInTransaction(tx, {
-          walletId: wallet.id,
-          type: "DEBIT",
-          category: "AVIATOR_BET",
-          amount,
-          currency: "INR",
-          referenceType: "AVIATOR_BET",
-          referenceId: bet.id,
-          description: `Aviator bet ${bet.id}`,
-        });
+        const bet = await tx.aviatorBet.create({ data: { roundId: snapshot.roundId, userId: user.id, stake: amount, status: "ACTIVE", clientRequestId: input.clientRequestId, autoCashoutMultiplier: auto } });
+        await recordWalletTransactionInTransaction(tx, { walletId: wallet.id, type: "DEBIT", category: "AVIATOR_BET", amount, currency: "INR", referenceType: "AVIATOR_BET", referenceId: bet.id, description: `Aviator bet ${bet.id}` });
         const updatedWallet = await tx.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true } });
         return { duplicate: false as const, bet, walletBalance: updatedWallet?.balance.toString() ?? "0.00" };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-      if (result.duplicate) {
-        registerActiveBet({ roundId: result.bet.roundId, betId: result.bet.id, userId: result.bet.userId, autoCashoutMultiplier: result.bet.autoCashoutMultiplier ? Number(result.bet.autoCashoutMultiplier) : null });
-        return { ok: true, bet: { id: result.bet.id, roundId: result.bet.roundId, stake: result.bet.stake.toString(), status: result.bet.status, serverTime: Date.now(), autoCashoutMultiplier: result.bet.autoCashoutMultiplier ? Number(result.bet.autoCashoutMultiplier) : null }, walletBalance: result.walletBalance };
-      }
-
       registerActiveBet({ roundId: result.bet.roundId, betId: result.bet.id, userId: result.bet.userId, autoCashoutMultiplier: result.bet.autoCashoutMultiplier ? Number(result.bet.autoCashoutMultiplier) : null });
-      emitAviatorBetEvent({ type: "bet:placed", roundId: result.bet.roundId, betId: result.bet.id, stake: result.bet.stake.toString(), status: "ACTIVE" });
+      if (!result.duplicate) emitAviatorBetEvent({ type: "bet:placed", roundId: result.bet.roundId, betId: result.bet.id, stake: result.bet.stake.toString(), status: "ACTIVE" });
       return { ok: true, bet: { id: result.bet.id, roundId: result.bet.roundId, stake: result.bet.stake.toString(), status: result.bet.status, serverTime: Date.now(), autoCashoutMultiplier: result.bet.autoCashoutMultiplier ? Number(result.bet.autoCashoutMultiplier) : null }, walletBalance: result.walletBalance };
     } catch (error) {
       if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE") return { ok: false, code: AVIATOR_BET_RESULT_CODES.INSUFFICIENT_BALANCE, message: message(AVIATOR_BET_RESULT_CODES.INSUFFICIENT_BALANCE) };
@@ -201,18 +183,16 @@ async function cashoutBetForUser(userId: string, betId: string, roundId: string,
         const lockedRound = await tx.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`SELECT "id", "status" FROM "AviatorRound" WHERE "id" = ${roundId}::uuid FOR UPDATE`);
         if (!lockedRound[0]) return { kind: "invalid-round" as const };
         if (lockedRound[0].status === "CRASHED" || lockedRound[0].status === "SETTLED") return { kind: "late" as const };
-        if (lockedRound[0].status === "WAITING") await tx.aviatorRound.update({ where: { id: roundId }, data: { status: "RUNNING" } });
-
         const bet = await tx.aviatorBet.findUnique({ where: { id: betId } });
         if (!bet || bet.userId !== userId || bet.roundId !== roundId) return { kind: "not-found" as const };
-        if (bet.status !== "ACTIVE") return { kind: "settled" as const, bet };
+        if (bet.status !== "ACTIVE") return { kind: "settled" as const };
         const payout = multiplyMoneyByMultiplier(bet.stake.toString(), multiplier.toFixed(2));
         const updated = await tx.aviatorBet.updateMany({ where: { id: betId, status: "ACTIVE" }, data: { status: "CASHED_OUT", cashedOutAt: new Date(), cashoutMultiplier: multiplier, payout } });
-        if (updated.count !== 1) return { kind: "settled" as const, bet };
+        if (updated.count !== 1) return { kind: "settled" as const };
         const wallet = await tx.wallet.findUnique({ where: { userId }, select: { id: true } });
         if (!wallet) throw new Error("WALLET_TRANSACTION_FAILED");
         await recordWalletTransactionInTransaction(tx, { walletId: wallet.id, type: "CREDIT", category: "AVIATOR_BET", amount: payout, currency: "INR", referenceType: "AVIATOR_BET", referenceId: betId, description: `Aviator payout ${betId}` });
-        return { kind: "success" as const, betId, payout, multiplier };
+        return { kind: "success" as const, payout, multiplier };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
       if (result.kind === "success") {
@@ -222,12 +202,9 @@ async function cashoutBetForUser(userId: string, betId: string, roundId: string,
       }
       if (result.kind === "settled") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED, message: message(AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED) };
       if (result.kind === "late") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.CASHOUT_TOO_LATE, message: message(AVIATOR_BET_RESULT_CODES.CASHOUT_TOO_LATE) };
-      if (result.kind === "invalid-round") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND, message: message(AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND) };
       return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND, message: message(AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND) };
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
-        return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED, message: message(AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED) };
-      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED, message: message(AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED) };
       if (error instanceof Error && error.message === "WALLET_TRANSACTION_FAILED") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.WALLET_TRANSACTION_FAILED, message: message(AVIATOR_BET_RESULT_CODES.WALLET_TRANSACTION_FAILED) };
       console.error("Aviator cashout failed", error);
       return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.WALLET_TRANSACTION_FAILED, message: message(AVIATOR_BET_RESULT_CODES.WALLET_TRANSACTION_FAILED) };
@@ -240,25 +217,6 @@ export async function cashoutAviatorBetForUser(user: Pick<CurrentUser, "id" | "s
   const rate = await consumeSecurityRateLimit({ namespace: "aviator-cashout", key: user.id, limit: 30, windowSeconds: 10 });
   if (!rate.allowed) return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.RATE_LIMITED, message: message(AVIATOR_BET_RESULT_CODES.RATE_LIMITED) };
   return cashoutBetForUser(user.id, betId, roundId);
-}
-
-export async function settleAviatorCrash(roundId: string, crashMultiplier: number) {
-  if (!UUID.test(roundId) || !Number.isFinite(crashMultiplier) || crashMultiplier < 1.01 || crashMultiplier > 50) return;
-  const engine = getAviatorEngine();
-  await engine.withStateLock(async () => {
-    await prisma.$transaction(async (tx) => {
-      const lockedRound = await tx.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`SELECT "id", "status" FROM "AviatorRound" WHERE "id" = ${roundId}::uuid FOR UPDATE`);
-      if (!lockedRound[0]) return;
-      await tx.aviatorBet.updateMany({ where: { roundId, status: "ACTIVE" }, data: { status: "LOST", lostAt: new Date(), payout: "0.00" } });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    const bets = activeBets.get(roundId);
-    if (bets) {
-      for (const betId of bets.keys()) {
-        emitAviatorBetEvent({ type: "bet:lost", roundId, betId, multiplier: crashMultiplier, payout: "0.00", status: "LOST" });
-      }
-      activeBets.delete(roundId);
-    }
-  });
 }
 
 export async function getCurrentUserAviatorBets(userId: string, roundId?: string) {
