@@ -19,10 +19,9 @@ export function AviatorGame() {
   const [snapshot, setSnapshot] = useState(initial);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [connection, setConnection] = useState("Connecting...");
-  const [clientNow, setClientNow] = useState(0);
+  const [clientNow, setClientNow] = useState(() => Date.now());
 
   useEffect(() => {
-    setClientNow(Date.now());
     const clock = window.setInterval(() => setClientNow(Date.now()), 100);
     return () => window.clearInterval(clock);
   }, []);
@@ -61,8 +60,7 @@ export function AviatorGame() {
       socket.onopen = () => {
         if (!active || !socket) return;
         setConnection("Connected");
-        const currentRoundId = snapshot.roundId === "loading" ? undefined : snapshot.roundId;
-        socket.send(JSON.stringify({ type: "round:sync", ...(currentRoundId ? { roundId: currentRoundId } : {}) }));
+        socket.send(JSON.stringify({ type: "round:sync" }));
       };
 
       socket.onmessage = (event) => {
@@ -104,7 +102,7 @@ export function AviatorGame() {
     return "Round settled";
   }, [snapshot.phase]);
 
-  const countdown = snapshot.phase === "WAITING" && snapshot.waitingEndsAt && clientNow
+  const countdown = snapshot.phase === "WAITING" && snapshot.waitingEndsAt
     ? Math.max(0, (snapshot.waitingEndsAt - clientNow) / 1000).toFixed(1)
     : null;
 
