@@ -17,6 +17,7 @@ export function getAviatorEngine() {
           await persistFinalizedAviatorRound(snapshot, crashPoint);
         } catch (error) {
           console.error("[aviator] failed to settle finalized round", error);
+          throw error;
         }
       },
     });
