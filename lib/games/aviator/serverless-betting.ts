@@ -117,7 +117,7 @@ export async function placeNetlifyAviatorBetForUser(
   }
 }
 
-export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "id" | "status">, betId: string, roundId: string): Promise<Result<{ betId: string; roundId: string; multiplier: number; payout: Prisma.Decimal; status: string }>> {
+export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "id" | "status">, betId: string, roundId: string): Promise<Result<{ betId: string; roundId: string; multiplier: number; payout: string; status: string }>> {
   if (user.status !== "ACTIVE") return { ok: false, code: SERVERLESS_AVIATOR_CODES.AUTHENTICATION_REQUIRED, message: message(SERVERLESS_AVIATOR_CODES.AUTHENTICATION_REQUIRED) };
   if (!UUID.test(betId) || !UUID.test(roundId)) return { ok: false, code: SERVERLESS_AVIATOR_CODES.BET_NOT_FOUND, message: message(SERVERLESS_AVIATOR_CODES.BET_NOT_FOUND) };
   const rate = await consumeSecurityRateLimit({ namespace: "aviator-cashout", key: user.id, limit: 30, windowSeconds: 10 });
@@ -147,8 +147,9 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     if (result.kind === "success") {
-      emitAviatorBetEvent({ type: "bet:cashout", roundId, betId, multiplier: result.multiplier, payout: result.payout, status: "CASHED_OUT" });
-      return { ok: true, betId, roundId, multiplier: result.multiplier, payout: result.payout, status: "CASHED_OUT" };
+      const payout = result.payout.toString();
+      emitAviatorBetEvent({ type: "bet:cashout", roundId, betId, multiplier: result.multiplier, payout, status: "CASHED_OUT" });
+      return { ok: true, betId, roundId, multiplier: result.multiplier, payout, status: "CASHED_OUT" };
     }
     if (result.kind === "settled") return { ok: false, code: SERVERLESS_AVIATOR_CODES.BET_ALREADY_SETTLED, message: message(SERVERLESS_AVIATOR_CODES.BET_ALREADY_SETTLED) };
     if (result.kind === "late") return { ok: false, code: SERVERLESS_AVIATOR_CODES.CASHOUT_TOO_LATE, message: message(SERVERLESS_AVIATOR_CODES.CASHOUT_TOO_LATE) };
