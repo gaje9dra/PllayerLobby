@@ -12,7 +12,9 @@ export function getAviatorEngine() {
     globalState[globalKey] = new AviatorGameEngine({
       onCrash: async (snapshot, crashPoint) => {
         try {
-          const { settleAviatorCrash } = await import("./betting");
+          // Crash settlement must not load betting.ts: that module imports
+          // Next.js server-only request/auth helpers and is also used by API routes.
+          const { settleAviatorCrash } = await import("./settlement");
           await settleAviatorCrash(snapshot, crashPoint);
           await persistFinalizedAviatorRound(snapshot, crashPoint);
         } catch (error) {
