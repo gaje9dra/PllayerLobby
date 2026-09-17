@@ -142,7 +142,7 @@ export async function placeAviatorBetForUser(
         const existing = await tx.aviatorBet.findUnique({ where: { userId_clientRequestId: { userId: user.id, clientRequestId: input.clientRequestId } } });
         if (existing) {
           const existingAuto = existing.autoCashoutMultiplier ? Number(existing.autoCashoutMultiplier) : null;
-          if (existing.stake.toString() !== amount || existingAuto !== auto) throw new Error("DUPLICATE_REQUEST");
+          if (normalizeMoney(existing.stake.toString()) !== amount || existingAuto !== auto) throw new Error("DUPLICATE_REQUEST");
           const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { balance: true } });
           return { duplicate: true as const, bet: existing, walletBalance: wallet?.balance.toString() ?? "0.00" };
         }
@@ -221,58 +221,61 @@ async function cashoutBetForUser(userId: string, betId: string, roundId: string,
         return { ok: true as const, betId, roundId, multiplier: result.multiplier, payout: result.payout, status: "CASHED_OUT", automatic };
       }
       if (result.kind === "settled") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED, message: message(AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED) };
-      if (result.kind === "not-found") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND, message: message(AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND) };
-      return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.CASHOUT_TOO_LATE, message: message(AVIATOR_BET_RESULT_CODES.CASHOUT_TOO_LATE) };
+      if (result.kind === "late") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.CASHOUT_TOO_LATE, message: message(AVIATOR_BET_RESULT_CODES.CASHOUT_TOO_LATE) };
+      if (result.kind === "invalid-round") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND, message: message(AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND) };
+      return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND, message: message(AVIATOR_BET_RESULT_CODES.BET_NOT_FOUND) };
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.CASHOUT_TOO_LATE, message: message(AVIATOR_BET_RESULT_CODES.CASHOUT_TOO_LATE) };
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+        return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED, message: message(AVIATOR_BET_RESULT_CODES.BET_ALREADY_SETTLED) };
+      }
+      if (error instanceof Error && error.message === "WALLET_TRANSACTION_FAILED") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.WALLET_TRANSACTION_FAILED, message: message(AVIATOR_BET_RESULT_CODES.WALLET_TRANSACTION_FAILED) };
       console.error("Aviator cashout failed", error);
       return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.WALLET_TRANSACTION_FAILED, message: message(AVIATOR_BET_RESULT_CODES.WALLET_TRANSACTION_FAILED) };
     }
   });
 }
 
-export async function cashoutAviatorBetForUser(user: Pick<CurrentUser, "id">, betId: string, roundId: string) {
+export async function cashoutAviatorBetForUser(user: Pick<CurrentUser, "id" | "status">, betId: string, roundId: string) {
+  if (user.status !== "ACTIVE") return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.AUTHENTICATION_REQUIRED, message: message(AVIATOR_BET_RESULT_CODES.AUTHENTICATION_REQUIRED) };
   const rate = await consumeSecurityRateLimit({ namespace: "aviator-cashout", key: user.id, limit: 30, windowSeconds: 10 });
   if (!rate.allowed) return { ok: false as const, code: AVIATOR_BET_RESULT_CODES.RATE_LIMITED, message: message(AVIATOR_BET_RESULT_CODES.RATE_LIMITED) };
-  return cashoutBetForUser(user.id, betId, roundId, false);
+  return cashoutBetForUser(user.id, betId, roundId);
 }
 
-export async function settleAviatorCrash(snapshot: AviatorRoundSnapshot, crashPoint: number) {
-  installRuntimeSubscriptions();
-  return prisma.$transaction(async (tx) => {
-    await ensureRoundRow(tx, snapshot);
-    await tx.aviatorRound.update({ where: { id: snapshot.roundId }, data: { status: "CRASHED", crashedAt: new Date(snapshot.serverTime), crashMultiplier: crashPoint } });
-    const active = await tx.aviatorBet.findMany({ where: { roundId: snapshot.roundId, status: "ACTIVE" }, select: { id: true } });
-    if (active.length) await tx.aviatorBet.updateMany({ where: { roundId: snapshot.roundId, status: "ACTIVE" }, data: { status: "LOST", updatedAt: new Date(snapshot.serverTime) } });
-    for (const bet of active) {
-      removeActiveBet(snapshot.roundId, bet.id);
-      emitAviatorBetEvent({ type: "bet:lost", roundId: snapshot.roundId, betId: bet.id, status: "LOST" });
+export async function settleAviatorCrash(roundId: string, crashMultiplier: number) {
+  if (!UUID.test(roundId) || !Number.isFinite(crashMultiplier) || crashMultiplier < 1.01 || crashMultiplier > 50) return;
+  const engine = getAviatorEngine();
+  await engine.withStateLock(async () => {
+    await prisma.$transaction(async (tx) => {
+      const lockedRound = await tx.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`SELECT "id", "status" FROM "AviatorRound" WHERE "id" = ${roundId}::uuid FOR UPDATE`);
+      if (!lockedRound[0]) return;
+      await tx.aviatorBet.updateMany({ where: { roundId, status: "ACTIVE" }, data: { status: "LOST", lostAt: new Date(), payout: "0.00" } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    const bets = activeBets.get(roundId);
+    if (bets) {
+      for (const betId of bets.keys()) {
+        emitAviatorBetEvent({ type: "bet:lost", roundId, betId, multiplier: crashMultiplier, payout: "0.00", status: "LOST" });
+      }
+      activeBets.delete(roundId);
     }
-    return active.length;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }
 
 export async function getCurrentUserAviatorBets(userId: string, roundId?: string) {
   return prisma.aviatorBet.findMany({
     where: { userId, ...(roundId && UUID.test(roundId) ? { roundId } : {}) },
     orderBy: { createdAt: "desc" },
-    take: 10,
-    select: { id: true, roundId: true, stake: true, status: true, placedAt: true, cashedOutAt: true, cashoutMultiplier: true, autoCashoutMultiplier: true, payout: true },
+    take: 50,
   });
 }
 
-export async function getAviatorBetHistory(userId: string, page = 1) {
-  const safePage = Number.isInteger(page) && page > 0 ? page : 1;
-  const take = 20;
-  const [items, total] = await Promise.all([
-    prisma.aviatorBet.findMany({ where: { userId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (safePage - 1) * take, take, select: { id: true, roundId: true, stake: true, status: true, placedAt: true, cashedOutAt: true, cashoutMultiplier: true, payout: true, createdAt: true } }),
-    prisma.aviatorBet.count({ where: { userId } }),
-  ]);
-  return { items, page: safePage, total, totalPages: Math.max(1, Math.ceil(total / take)) };
-}
-
-export async function getAuthenticatedAviatorBets(roundId?: string) {
-  const user = await getCurrentUser();
-  if (!user || user.status !== "ACTIVE") return null;
-  return getCurrentUserAviatorBets(user.id, roundId);
+export async function getAviatorBetHistory(userId: string, page = 1, pageSize = 20) {
+  const safePage = Math.max(1, Math.floor(page));
+  const safeSize = Math.min(50, Math.max(1, Math.floor(pageSize)));
+  return prisma.aviatorBet.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    skip: (safePage - 1) * safeSize,
+    take: safeSize,
+  });
 }
