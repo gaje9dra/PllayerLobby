@@ -1,16 +1,6 @@
 import "server-only";
 
-export const AVIATOR_PHASES = ["WAITING", "RUNNING", "CRASHED", "SETTLED"] as const;
-export type AviatorPhase = (typeof AVIATOR_PHASES)[number];
-
-export type AviatorRoundSnapshot = {
-  roundId: string;
-  phase: AviatorPhase;
-  serverTime: number;
-  multiplier: number;
-  startedAt: number | null;
-  waitingEndsAt: number | null;
-};
+import type { AviatorPhase, AviatorRoundSnapshot } from "./types";
 
 export type CrashPointGenerator = {
   generate: (context: { roundId: string; seed: string }) => number;
