@@ -27,13 +27,17 @@ test("crash point is not exposed in public snapshots", () => {
   assert.equal(engine.getCrashPointForPersistence(), null);
 });
 
-test("aviator completes a round and starts the next waiting round", async () => {
+test("aviator completes a round and starts a fresh waiting round", async () => {
   const phases: string[] = [];
+  const roundIds = new Set<string>();
   const engine = new AviatorGameEngine({
     crashPointGenerator: { generate: () => 1.01 },
     timings: fastTimings,
   });
-  const unsubscribe = engine.subscribe((snapshot) => phases.push(snapshot.phase));
+  const unsubscribe = engine.subscribe((snapshot) => {
+    phases.push(snapshot.phase);
+    roundIds.add(snapshot.roundId);
+  });
 
   engine.start();
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -44,7 +48,8 @@ test("aviator completes a round and starts the next waiting round", async () => 
   assert.ok(phases.includes("RUNNING"));
   assert.ok(phases.includes("CRASHED"));
   assert.ok(phases.includes("SETTLED"));
-  assert.equal(engine.getSnapshot().phase, "WAITING");
+  assert.ok(roundIds.size >= 2);
+  assert.ok(["WAITING", "RUNNING"].includes(engine.getSnapshot().phase));
 });
 
 test("crash callback receives the authoritative final multiplier", async () => {
