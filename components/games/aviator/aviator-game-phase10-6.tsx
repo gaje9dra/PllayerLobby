@@ -78,6 +78,7 @@ export function AviatorGamePhase106() {
 
     let previousStatus = getStatus();
     let previousMultiplier = Number.parseFloat(findMultiplier()?.textContent ?? "1");
+    let previousWonCount = Array.from(main.querySelectorAll("td")).filter((node) => node.textContent?.trim() === "WON").length;
     let internalWrite = false;
     let frame = 0;
     let lastToneAt = 0;
@@ -133,6 +134,13 @@ export function AviatorGamePhase106() {
       if (Number.isFinite(currentMultiplier) && currentMultiplier !== previousMultiplier) {
         animateMultiplier(currentMultiplier);
       }
+
+      const wonCount = Array.from(main.querySelectorAll("td")).filter((node) => node.textContent?.trim() === "WON").length;
+      if (soundEnabled && wonCount > previousWonCount && Date.now() - lastToneAt > 350) {
+        playTone("cashout");
+        lastToneAt = Date.now();
+      }
+      previousWonCount = wonCount;
     });
 
     observer.observe(main, { subtree: true, childList: true, characterData: true });
