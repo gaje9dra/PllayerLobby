@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { decryptAviatorServerSeed, encryptAviatorServerSeed } from "./secret";
-import { calculateAviatorCrashMultiplier, createAviatorFairnessRound } from "./provably-fair";
+import { calculateAviatorCrashMultiplier, createAviatorFairnessRound, AVIATOR_FAIRNESS_ALGORITHM_VERSION } from "./provably-fair";
 import { settleAviatorCrash } from "./settlement";
 import { persistFinalizedAviatorRound } from "./persistence";
 import type { AviatorRoundSnapshot } from "./types";
@@ -88,6 +88,7 @@ async function getOrCreateRound() {
 
 function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["phase"], multiplier: number): AviatorRoundSnapshot {
   if (!row.serverSeedHash || !row.clientSeed || row.nonce === null || !row.algorithmVersion) throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
+  if (row.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
   return {
     roundId: row.id,
     phase,
@@ -95,7 +96,7 @@ function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["pha
     multiplier,
     startedAt: row.startedAt?.getTime() ?? null,
     waitingEndsAt: phase === "WAITING" ? row.createdAt.getTime() + WAITING_MS : null,
-    fairness: { roundId: row.id, serverSeedHash: row.serverSeedHash, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: row.algorithmVersion },
+    fairness: { roundId: row.id, serverSeedHash: row.serverSeedHash, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION },
   };
 }
 
@@ -128,16 +129,22 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
 
   if (row.status === "RUNNING") {
     if (!row.serverSeedEncrypted || !row.clientSeed || row.nonce === null || !row.algorithmVersion) throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
+    if (row.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
     const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);
-    const crashPoint = calculateAviatorCrashMultiplier({ serverSeed, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: row.algorithmVersion });
+    const crashPoint = calculateAviatorCrashMultiplier({ serverSeed, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION });
     const startedAt = row.startedAt ?? new Date(row.createdAt.getTime() + WAITING_MS);
     const multiplier = Math.max(1, multiplierAt(startedAt, now));
+
     if (multiplier >= crashPoint) {
       const claim = await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "RUNNING" }, data: { status: "CRASHED", crashedAt: new Date(now), crashMultiplier: crashPoint } });
-      if (claim.count === 1) return settleCrashIfNeeded((await getRound(row.id)) ?? row, now, crashPoint);
+      if (claim.count === 1) {
+        const crashedRow = (await getRound(row.id)) ?? row;
+        return settleCrashIfNeeded(crashedRow, now, crashPoint);
+      }
       const latest = await getRound(row.id);
       if (latest?.status === "CRASHED") return toSnapshot(latest, now, "CRASHED", crashPoint);
     }
+
     return toSnapshot(row, now, "RUNNING", multiplier);
   }
 
