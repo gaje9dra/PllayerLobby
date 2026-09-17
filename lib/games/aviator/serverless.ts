@@ -8,11 +8,7 @@ import type { AviatorRoundSnapshot } from "./types";
 
 const WAITING_MS = 5_000;
 const SETTLED_MS = 1_000;
-const UPDATE_EVERY_MS = 100;
 
-// This adapter is intentionally database-backed. Netlify runs Next.js route handlers
-// as ephemeral serverless functions, so an in-memory game engine cannot be the
-// authoritative source of round state across requests.
 type RoundRow = {
   id: string;
   status: "WAITING" | "RUNNING" | "CRASHED" | "SETTLED";
@@ -39,8 +35,6 @@ function randomNonce() {
 async function createRound() {
   const id = randomUUID();
   const fairness = createAviatorFairnessRound(id);
-  // The process-local nonce helper is not safe across serverless instances, so use
-  // a timestamp/random nonce for this DB-backed runtime.
   const nonce = randomNonce();
   const encryptedSeed = encryptAviatorServerSeed(fairness.serverSeed);
   await prisma.$executeRaw`
@@ -84,7 +78,6 @@ async function getOrCreateRound() {
   try {
     return await createRound();
   } catch (error) {
-    // Another serverless invocation may have created the round concurrently.
     if (error instanceof Error && /unique|duplicate/i.test(error.message)) {
       const retry = await getLatestActiveRound();
       if (retry) return retry;
@@ -94,9 +87,7 @@ async function getOrCreateRound() {
 }
 
 function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["phase"], multiplier: number): AviatorRoundSnapshot {
-  if (!row.serverSeedHash || !row.clientSeed || row.nonce === null || !row.algorithmVersion) {
-    throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
-  }
+  if (!row.serverSeedHash || !row.clientSeed || row.nonce === null || !row.algorithmVersion) throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
   return {
     roundId: row.id,
     phase,
@@ -104,13 +95,7 @@ function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["pha
     multiplier,
     startedAt: row.startedAt?.getTime() ?? null,
     waitingEndsAt: phase === "WAITING" ? row.createdAt.getTime() + WAITING_MS : null,
-    fairness: {
-      roundId: row.id,
-      serverSeedHash: row.serverSeedHash,
-      clientSeed: row.clientSeed,
-      nonce: row.nonce.toString(),
-      algorithmVersion: row.algorithmVersion,
-    },
+    fairness: { roundId: row.id, serverSeedHash: row.serverSeedHash, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: row.algorithmVersion },
   };
 }
 
@@ -130,53 +115,31 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
       await prisma.aviatorRound.update({ where: { id: row.id }, data: { status: "SETTLED" } });
       row = await getOrCreateRound();
     } else {
-      const crash = row.crashMultiplier ? Number(row.crashMultiplier) : 1.01;
-      return toSnapshot(row, now, "CRASHED", crash);
+      return toSnapshot(row, now, "CRASHED", row.crashMultiplier ? Number(row.crashMultiplier) : 1.01);
     }
   }
 
   if (row.status === "WAITING") {
     const waitingEndsAt = row.createdAt.getTime() + WAITING_MS;
     if (now < waitingEndsAt) return toSnapshot(row, now, "WAITING", 1);
-
-    const startedAt = new Date(waitingEndsAt);
-    await prisma.aviatorRound.updateMany({
-      where: { id: row.id, status: "WAITING" },
-      data: { status: "RUNNING", startedAt },
-    });
+    await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "WAITING" }, data: { status: "RUNNING", startedAt: new Date(waitingEndsAt) } });
     row = (await getRound(row.id)) ?? row;
   }
 
   if (row.status === "RUNNING") {
-    if (!row.serverSeedEncrypted || !row.clientSeed || row.nonce === null || !row.algorithmVersion) {
-      throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
-    }
+    if (!row.serverSeedEncrypted || !row.clientSeed || row.nonce === null || !row.algorithmVersion) throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
     const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);
-    const crashPoint = calculateAviatorCrashMultiplier({
-      serverSeed,
-      clientSeed: row.clientSeed,
-      nonce: row.nonce.toString(),
-      algorithmVersion: row.algorithmVersion,
-    });
+    const crashPoint = calculateAviatorCrashMultiplier({ serverSeed, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: row.algorithmVersion });
     const startedAt = row.startedAt ?? new Date(row.createdAt.getTime() + WAITING_MS);
     const multiplier = Math.max(1, multiplierAt(startedAt, now));
-
     if (multiplier >= crashPoint) {
-      const claim = await prisma.aviatorRound.updateMany({
-        where: { id: row.id, status: "RUNNING" },
-        data: { status: "CRASHED", crashedAt: new Date(now), crashMultiplier: crashPoint },
-      });
-      if (claim.count === 1) {
-        const crashedRow = (await getRound(row.id)) ?? row;
-        return settleCrashIfNeeded(crashedRow, now, crashPoint);
-      }
+      const claim = await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "RUNNING" }, data: { status: "CRASHED", crashedAt: new Date(now), crashMultiplier: crashPoint } });
+      if (claim.count === 1) return settleCrashIfNeeded((await getRound(row.id)) ?? row, now, crashPoint);
       const latest = await getRound(row.id);
       if (latest?.status === "CRASHED") return toSnapshot(latest, now, "CRASHED", crashPoint);
     }
-
     return toSnapshot(row, now, "RUNNING", multiplier);
   }
 
-  // A settled row should never be returned as the live round. Start a new round.
   return getNetlifyAviatorRoundSnapshot();
 }
