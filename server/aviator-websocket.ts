@@ -146,7 +146,7 @@ function authorizedOrigin(request: IncomingMessage) {
 
 export function attachAviatorWebSocket(request: IncomingMessage, socket: Duplex, head: Buffer) {
   if (!authorizedOrigin(request)) {
-    socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+    socket.end("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nWEBSOCKET_NOT_AUTHORIZED");
     return;
   }
 
@@ -164,7 +164,7 @@ export function attachAviatorWebSocket(request: IncomingMessage, socket: Duplex,
 
   const ws = socket as SocketLike;
   ws.__playerLobbyAviator = {
-    buffer: head.length ? Buffer.from(head) : Buffer.alloc(0),
+    buffer: Buffer.alloc(0),
     messages: 0,
     windowStartedAt: Date.now(),
     unsubscribe: null,
@@ -210,4 +210,6 @@ export function attachAviatorWebSocket(request: IncomingMessage, socket: Duplex,
   ws.on("data", (chunk: Buffer) => parseFrames(ws, chunk, handleMessage));
   ws.on("close", () => state.unsubscribe?.());
   ws.on("error", () => state.unsubscribe?.());
+
+  if (head.length) parseFrames(ws, Buffer.from(head), handleMessage);
 }
