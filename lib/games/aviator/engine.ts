@@ -7,9 +7,18 @@ export type CrashPointGenerator = {
   generate: (context: { roundId: string; seed: string }) => number;
 };
 
-const WAITING_MS = 5_000;
-const SETTLED_MS = 1_000;
-const UPDATE_INTERVAL_MS = 100;
+type EngineTimings = {
+  waitingMs: number;
+  settledMs: number;
+  updateIntervalMs: number;
+};
+
+const DEFAULT_TIMINGS: EngineTimings = {
+  waitingMs: 5_000,
+  settledMs: 1_000,
+  updateIntervalMs: 100,
+};
+
 const MIN_CRASH_POINT = 1.01;
 const MAX_CRASH_POINT = 50;
 
@@ -41,6 +50,7 @@ export class AviatorGameEngine {
   private readonly crashPointGenerator: CrashPointGenerator;
   private readonly now: () => number;
   private readonly onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
+  private readonly timings: EngineTimings;
   private snapshot: AviatorRoundSnapshot;
   private crashPoint: number;
   private settledTimer: ReturnType<typeof setTimeout> | null = null;
@@ -51,10 +61,12 @@ export class AviatorGameEngine {
     crashPointGenerator?: CrashPointGenerator;
     now?: () => number;
     onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
+    timings?: Partial<EngineTimings>;
   }) {
     this.crashPointGenerator = options?.crashPointGenerator ?? defaultCrashPointGenerator;
     this.now = options?.now ?? Date.now;
     this.onCrash = options?.onCrash;
+    this.timings = { ...DEFAULT_TIMINGS, ...options?.timings };
     const now = this.now();
     this.snapshot = this.createWaitingSnapshot(now);
     this.crashPoint = this.generateCrashPoint();
@@ -62,7 +74,7 @@ export class AviatorGameEngine {
 
   start() {
     if (this.timer) return;
-    this.timer = setInterval(() => this.tick(), UPDATE_INTERVAL_MS);
+    this.timer = setInterval(() => this.tick(), this.timings.updateIntervalMs);
     this.tick();
   }
 
@@ -117,7 +129,7 @@ export class AviatorGameEngine {
           if (this.snapshot.phase !== "CRASHED") return;
           this.transition("SETTLED");
           this.startNextRound(this.now());
-        }, SETTLED_MS);
+        }, this.timings.settledMs);
         return;
       }
     }
@@ -148,7 +160,7 @@ export class AviatorGameEngine {
       serverTime: now,
       multiplier: 1,
       startedAt: null,
-      waitingEndsAt: now + WAITING_MS,
+      waitingEndsAt: now + this.timings.waitingMs,
     };
   }
 
