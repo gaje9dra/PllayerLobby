@@ -7,165 +7,28 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserRole {
-  USER
-  ADMIN
-}
-
-enum UserStatus {
-  ACTIVE
-  SUSPENDED
-  BANNED
-}
-
-enum TournamentAccessCodeStatus {
-  ACTIVE
-  REVOKED
-  EXPIRED
-}
-
-enum TournamentFormat {
-  SOLO
-  DUO
-  SQUAD
-  TEAM
-}
-
-enum TournamentStatus {
-  DRAFT
-  UPCOMING
-  REGISTRATION_OPEN
-  REGISTRATION_CLOSED
-  LIVE
-  COMPLETED
-  CANCELLED
-}
-
-enum RegistrationStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  INITIATED
-  PENDING
-  SUCCESS
-  FAILED
-  CANCELLED
-}
-
-enum TournamentResultStatus {
-  DRAFT
-  VERIFIED
-  DISQUALIFIED
-}
-
-enum TournamentPrizeStatus {
-  DRAFT
-  FINALIZED
-}
-
-enum TournamentPrizeSettlementStatus {
-  PENDING
-  APPROVED
-  CREDITED
-  CANCELLED
-}
-
-enum WalletTransactionType {
-  CREDIT
-  DEBIT
-}
-
-enum WalletTransactionCategory {
-  PRIZE
-  REFUND
-  WITHDRAWAL
-  ENTRY_FEE
-  ADJUSTMENT
-  DEPOSIT
-}
-
-enum WalletReferenceType {
-  PRIZE_SETTLEMENT
-  REFUND
-  WITHDRAWAL
-  WITHDRAWAL_PAYOUT
-  ENTRY_PAYMENT
-  ADJUSTMENT
-  DEPOSIT
-}
-
-enum WalletDepositStatus {
-  PENDING
-  SUCCESS
-  FAILED
-  CANCELLED
-}
-
-enum WithdrawalRequestStatus {
-  PENDING
-  APPROVED
-  PAYOUT_INITIATED
-  PROCESSING
-  PAID
-  FAILED
-  REVERSED
-  REJECTED
-  CANCELLED
-}
-
-enum PayoutDestinationType {
-  UPI
-  BANK_ACCOUNT
-}
-
-enum PayoutDestinationStatus {
-  PENDING_VERIFICATION
-  VERIFIED
-  DISABLED
-}
-
-enum PayoutPaymentType {
-  UPI
-  IMPS
-  NEFT
-  RTGS
-}
-
-enum PayoutStatus {
-  PAYOUT_INITIATED
-  PROCESSING
-  PAID
-  FAILED
-  REVERSED
-}
-
-enum PayoutReconciliationStatus {
-  NOT_CHECKED
-  PENDING
-  MATCHED
-  FAILED
-  REVERSED
-  MISMATCH
-  CONFLICT
-  REQUIRED
-}
-
-enum PayoutBeneficiaryStatus {
-  ACTIVE
-  PENDING
-  FAILED
-  DISABLED
-}
-
-enum AviatorRoundStatus {
-  WAITING
-  RUNNING
-  CRASHED
-  SETTLED
-}
+enum UserRole { USER ADMIN }
+enum UserStatus { ACTIVE SUSPENDED BANNED }
+enum TournamentAccessCodeStatus { ACTIVE REVOKED EXPIRED }
+enum TournamentFormat { SOLO DUO SQUAD TEAM }
+enum TournamentStatus { DRAFT UPCOMING REGISTRATION_OPEN REGISTRATION_CLOSED LIVE COMPLETED CANCELLED }
+enum RegistrationStatus { PENDING CONFIRMED CANCELLED }
+enum PaymentStatus { INITIATED PENDING SUCCESS FAILED CANCELLED }
+enum TournamentResultStatus { DRAFT VERIFIED DISQUALIFIED }
+enum TournamentPrizeStatus { DRAFT FINALIZED }
+enum TournamentPrizeSettlementStatus { PENDING APPROVED CREDITED CANCELLED }
+enum WalletTransactionType { CREDIT DEBIT }
+enum WalletTransactionCategory { PRIZE REFUND WITHDRAWAL ENTRY_FEE ADJUSTMENT DEPOSIT }
+enum WalletReferenceType { PRIZE_SETTLEMENT REFUND WITHDRAWAL WITHDRAWAL_PAYOUT ENTRY_PAYMENT ADJUSTMENT DEPOSIT }
+enum WalletDepositStatus { PENDING SUCCESS FAILED CANCELLED }
+enum WithdrawalRequestStatus { PENDING APPROVED PAYOUT_INITIATED PROCESSING PAID FAILED REVERSED REJECTED CANCELLED }
+enum PayoutDestinationType { UPI BANK_ACCOUNT }
+enum PayoutDestinationStatus { PENDING_VERIFICATION VERIFIED DISABLED }
+enum PayoutPaymentType { UPI IMPS NEFT RTGS }
+enum PayoutStatus { PAYOUT_INITIATED PROCESSING PAID FAILED REVERSED }
+enum PayoutReconciliationStatus { NOT_CHECKED PENDING MATCHED FAILED REVERSED MISMATCH CONFLICT REQUIRED }
+enum PayoutBeneficiaryStatus { ACTIVE PENDING FAILED DISABLED }
+enum AviatorRoundStatus { WAITING RUNNING CRASHED SETTLED }
 
 model User {
   id String @id @default(uuid()) @db.Uuid
@@ -195,12 +58,12 @@ model Account {
   type String
   provider String
   providerAccountId String
-  refresh_token String?
-  access_token String?
+  refresh_token String? @db.Text
+  access_token String? @db.Text
   expires_at Int?
   token_type String?
   scope String?
-  id_token String?
+  id_token String? @db.Text
   session_state String?
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([provider, providerAccountId])
@@ -263,6 +126,11 @@ model Tournament {
   accessCode TournamentAccessCode?
   prizes TournamentPrize[]
   settlements TournamentPrizeSettlement[]
+  @@index([gameId])
+  @@index([status])
+  @@index([startTime])
+  @@index([registrationStartTime])
+  @@index([registrationEndTime])
 }
 
 model TournamentAccessCode {
