@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { calculateAviatorCrashMultiplier, createAviatorFairnessRound, type AviatorFairnessSecret } from "./provably-fair";
+import { calculateAviatorCrashMultiplier, createAviatorFairnessRound, ProvablyFairService, type AviatorFairnessSecret } from "./provably-fair";
 import type { AviatorPhase, AviatorRoundSnapshot } from "./types";
 
 type EngineTimings = { waitingMs: number; settledMs: number; updateIntervalMs: number };
@@ -28,6 +28,7 @@ function canTransition(from: AviatorPhase, to: AviatorPhase) {
 
 export class AviatorGameEngine {
   private readonly crashPointGenerator?: CrashPointGenerator;
+  private readonly provablyFairService: ProvablyFairService;
   private readonly now: () => number;
   private readonly onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
   private readonly onRoundCreated?: (snapshot: AviatorRoundSnapshot, fairness: AviatorFairnessSecret) => void | Promise<void>;
@@ -42,12 +43,14 @@ export class AviatorGameEngine {
 
   constructor(options?: {
     crashPointGenerator?: CrashPointGenerator;
+    provablyFairService?: ProvablyFairService;
     now?: () => number;
     onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
     onRoundCreated?: (snapshot: AviatorRoundSnapshot, fairness: AviatorFairnessSecret) => void | Promise<void>;
     timings?: Partial<EngineTimings>;
   }) {
     this.crashPointGenerator = options?.crashPointGenerator;
+    this.provablyFairService = options?.provablyFairService ?? new ProvablyFairService();
     this.now = options?.now ?? Date.now;
     this.onCrash = options?.onCrash;
     this.onRoundCreated = options?.onRoundCreated;
@@ -168,7 +171,7 @@ export class AviatorGameEngine {
 
   private createWaitingSnapshot(now: number) {
     const roundId = randomUUID();
-    const fairness = createAviatorFairnessRound(roundId);
+    const fairness = this.provablyFairService.createRound(roundId);
     return {
       fairness,
       snapshot: {
@@ -195,7 +198,7 @@ export class AviatorGameEngine {
       if (!Number.isFinite(point) || point < MIN_CRASH_POINT || point > MAX_CRASH_POINT) throw new Error("INVALID_CRASH_POINT");
       return Number(point.toFixed(2));
     }
-    return calculateAviatorCrashMultiplier(this.fairness);
+    return this.provablyFairService.calculateCrashMultiplier(this.fairness);
   }
 
   private notifyRoundCreated() {
