@@ -1,5 +1,5 @@
-import { AviatorGameOptimized } from "@/components/games/aviator/aviator-game-optimized";
+import { AviatorGamePhase106 } from "@/components/games/aviator/aviator-game-phase10-6";
 
 export default function AviatorPage() {
-  return <AviatorGameOptimized />;
+  return <AviatorGamePhase106 />;
 }
