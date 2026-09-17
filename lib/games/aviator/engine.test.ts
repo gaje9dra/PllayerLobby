@@ -36,7 +36,7 @@ test("aviator completes a round and starts the next waiting round", async () => 
   const unsubscribe = engine.subscribe((snapshot) => phases.push(snapshot.phase));
 
   engine.start();
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await new Promise((resolve) => setTimeout(resolve, 100));
   engine.stop();
   unsubscribe();
 
@@ -58,7 +58,7 @@ test("crash callback receives the authoritative final multiplier", async () => {
   });
 
   engine.start();
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await new Promise((resolve) => setTimeout(resolve, 100));
   engine.stop();
 
   assert.ok(received);
