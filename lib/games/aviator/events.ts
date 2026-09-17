@@ -1,7 +1,12 @@
 import type { AviatorRoundSnapshot } from "./types";
 import type { AviatorServerEvent } from "./state";
 
-export function eventForSnapshot(snapshot: AviatorRoundSnapshot): AviatorServerEvent {
+export function eventForSnapshot(
+  snapshot: AviatorRoundSnapshot,
+  previousPhase: AviatorRoundSnapshot["phase"] | null = null,
+): AviatorServerEvent {
+  if (snapshot.phase === "RUNNING" && previousPhase !== "RUNNING") return { type: "round:started", snapshot };
+
   switch (snapshot.phase) {
     case "WAITING":
       return { type: "round:waiting", snapshot };
