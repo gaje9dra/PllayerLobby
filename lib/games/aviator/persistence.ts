@@ -4,14 +4,16 @@ import { prisma } from "@/lib/prisma";
 import type { AviatorRoundSnapshot } from "./engine";
 
 export async function persistFinalizedAviatorRound(snapshot: AviatorRoundSnapshot, crashMultiplier: number) {
-  return prisma.aviatorRound.create({
-    data: {
+  return prisma.aviatorRound.upsert({
+    where: { id: snapshot.roundId },
+    create: {
       id: snapshot.roundId,
       status: "SETTLED",
       startedAt: snapshot.startedAt ? new Date(snapshot.startedAt) : new Date(snapshot.serverTime),
       crashedAt: new Date(snapshot.serverTime),
       crashMultiplier,
     },
+    update: { status: "SETTLED", crashedAt: new Date(snapshot.serverTime), crashMultiplier },
   });
 }
 
