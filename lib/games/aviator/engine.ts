@@ -1,22 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AviatorPhase, AviatorRoundSnapshot } from "./types";
 
-type EngineTimings = {
-  waitingMs: number;
-  settledMs: number;
-  updateIntervalMs: number;
-};
+type EngineTimings = { waitingMs: number; settledMs: number; updateIntervalMs: number };
 
 export type CrashPointGenerator = {
   generate: (context: { roundId: string; seed: string }) => number;
 };
 
-const DEFAULT_TIMINGS: EngineTimings = {
-  waitingMs: 5_000,
-  settledMs: 1_000,
-  updateIntervalMs: 100,
-};
-
+const DEFAULT_TIMINGS: EngineTimings = { waitingMs: 5_000, settledMs: 1_000, updateIntervalMs: 100 };
 const MIN_CRASH_POINT = 1.01;
 const MAX_CRASH_POINT = 50;
 
@@ -54,6 +45,7 @@ export class AviatorGameEngine {
   private settledTimer: ReturnType<typeof setTimeout> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly listeners = new Set<(snapshot: AviatorRoundSnapshot) => void>();
+  private lockTail: Promise<void> = Promise.resolve();
 
   constructor(options?: {
     crashPointGenerator?: CrashPointGenerator;
@@ -72,9 +64,9 @@ export class AviatorGameEngine {
 
   start() {
     if (this.timer) return;
-    this.timer = setInterval(() => this.tick(), this.timings.updateIntervalMs);
+    this.timer = setInterval(() => void this.tick(), this.timings.updateIntervalMs);
     this.timer.unref?.();
-    this.tick();
+    void this.tick();
   }
 
   stop() {
@@ -98,6 +90,18 @@ export class AviatorGameEngine {
     return this.snapshot.phase === "CRASHED" || this.snapshot.phase === "SETTLED" ? this.crashPoint : null;
   }
 
+  async withStateLock<T>(operation: () => Promise<T> | T): Promise<T> {
+    const previous = this.lockTail;
+    let release!: () => void;
+    this.lockTail = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
+
   forceTransition(to: AviatorPhase) {
     if (!canTransition(this.snapshot.phase, to)) {
       throw new Error(`INVALID_STATE_TRANSITION: ${this.snapshot.phase} -> ${to}`);
@@ -105,36 +109,40 @@ export class AviatorGameEngine {
     this.transition(to);
   }
 
-  private tick() {
-    const now = this.now();
-    this.snapshot.serverTime = now;
+  private async tick() {
+    await this.withStateLock(async () => {
+      const now = this.now();
+      this.snapshot.serverTime = now;
 
-    if (this.snapshot.phase === "WAITING" && now >= (this.snapshot.waitingEndsAt ?? Number.POSITIVE_INFINITY)) {
-      this.snapshot.startedAt = now;
-      this.snapshot.waitingEndsAt = null;
-      this.transition("RUNNING");
-      return;
-    }
-
-    if (this.snapshot.phase === "RUNNING" && this.snapshot.startedAt) {
-      const multiplier = Math.max(1, multiplierAt(this.snapshot.startedAt, now));
-      this.snapshot.multiplier = multiplier;
-      if (multiplier >= this.crashPoint) {
-        this.snapshot.multiplier = this.crashPoint;
-        this.transition("CRASHED");
-        const crashedSnapshot = this.getSnapshot();
-        void this.onCrash?.(crashedSnapshot, this.crashPoint);
-        this.settledTimer = setTimeout(() => {
-          if (this.snapshot.phase !== "CRASHED") return;
-          this.transition("SETTLED");
-          this.startNextRound(this.now());
-        }, this.timings.settledMs);
-        this.settledTimer.unref?.();
+      if (this.snapshot.phase === "WAITING" && now >= (this.snapshot.waitingEndsAt ?? Number.POSITIVE_INFINITY)) {
+        this.snapshot.startedAt = now;
+        this.snapshot.waitingEndsAt = null;
+        this.transition("RUNNING");
         return;
       }
-    }
 
-    this.emit();
+      if (this.snapshot.phase === "RUNNING" && this.snapshot.startedAt) {
+        const multiplier = Math.max(1, multiplierAt(this.snapshot.startedAt, now));
+        this.snapshot.multiplier = multiplier;
+        if (multiplier >= this.crashPoint) {
+          this.snapshot.multiplier = this.crashPoint;
+          this.transition("CRASHED");
+          const crashedSnapshot = this.getSnapshot();
+          await this.onCrash?.(crashedSnapshot, this.crashPoint);
+          this.settledTimer = setTimeout(() => {
+            void this.withStateLock(async () => {
+              if (this.snapshot.phase !== "CRASHED") return;
+              this.transition("SETTLED");
+              this.startNextRound(this.now());
+            });
+          }, this.timings.settledMs);
+          this.settledTimer.unref?.();
+          return;
+        }
+      }
+
+      this.emit();
+    });
   }
 
   private transition(phase: AviatorPhase) {
