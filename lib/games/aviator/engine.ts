@@ -9,6 +9,7 @@ export type AviatorRoundSnapshot = {
   serverTime: number;
   multiplier: number;
   startedAt: number | null;
+  waitingEndsAt: number | null;
 };
 
 export type CrashPointGenerator = {
@@ -107,8 +108,9 @@ export class AviatorGameEngine {
     const now = this.now();
     this.snapshot.serverTime = now;
 
-    if (this.snapshot.phase === "WAITING" && now - this.roundCreatedAt >= WAITING_MS) {
+    if (this.snapshot.phase === "WAITING" && now >= (this.snapshot.waitingEndsAt ?? Number.POSITIVE_INFINITY)) {
       this.snapshot.startedAt = now;
+      this.snapshot.waitingEndsAt = null;
       this.transition("RUNNING");
       return;
     }
@@ -126,10 +128,11 @@ export class AviatorGameEngine {
           this.transition("SETTLED");
           this.startNextRound(this.now());
         }, SETTLED_MS);
+        return;
       }
-    } else {
-      this.emit();
     }
+
+    this.emit();
   }
 
   private transition(phase: AviatorPhase) {
@@ -150,7 +153,14 @@ export class AviatorGameEngine {
   }
 
   private createWaitingSnapshot(now: number): AviatorRoundSnapshot {
-    return { roundId: crypto.randomUUID(), phase: "WAITING", serverTime: now, multiplier: 1, startedAt: null };
+    return {
+      roundId: crypto.randomUUID(),
+      phase: "WAITING",
+      serverTime: now,
+      multiplier: 1,
+      startedAt: null,
+      waitingEndsAt: now + WAITING_MS,
+    };
   }
 
   private generateCrashPoint() {
