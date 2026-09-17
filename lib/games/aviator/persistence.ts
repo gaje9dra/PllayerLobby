@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import type { AviatorRoundSnapshot } from "./engine";
+import type { AviatorRoundSnapshot } from "./types";
 
 export async function persistFinalizedAviatorRound(snapshot: AviatorRoundSnapshot, crashMultiplier: number) {
   return prisma.aviatorRound.upsert({
