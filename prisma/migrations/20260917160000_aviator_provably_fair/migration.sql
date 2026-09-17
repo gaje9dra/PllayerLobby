@@ -50,4 +50,4 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER "AviatorRound_fairness_immutable"
 BEFORE UPDATE ON "AviatorRound"
 FOR EACH ROW
-EXECUTE FUNCTION "prevent_aviator_fairness_mutation";
+EXECUTE FUNCTION "prevent_aviator_fairness_mutation"();
