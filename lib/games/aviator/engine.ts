@@ -8,7 +8,9 @@ export type CrashPointGenerator = {
   generate: (context: { roundId: string; seed: string }) => number;
 };
 
-const DEFAULT_TIMINGS: EngineTimings = { waitingMs: 5_000, settledMs: 1_000, updateIntervalMs: 100 };
+// Keep the authoritative server tick frequent enough that connected clients receive
+// smooth multiplier updates without turning the engine into a tight CPU loop.
+const DEFAULT_TIMINGS: EngineTimings = { waitingMs: 5_000, settledMs: 1_000, updateIntervalMs: 50 };
 const MIN_CRASH_POINT = 1.01;
 const MAX_CRASH_POINT = 50;
 
