@@ -1,5 +1,3 @@
-import "server-only";
-
 import { AviatorGameEngine } from "./engine";
 import type { AviatorRoundSnapshot } from "./types";
 import { persistFinalizedAviatorRound } from "./persistence";
