@@ -11,12 +11,19 @@ const initial: AviatorRoundSnapshot = {
   serverTime: Date.now(),
   multiplier: 1,
   startedAt: null,
+  waitingEndsAt: Date.now() + 5_000,
 };
 
 export function AviatorGame() {
   const [snapshot, setSnapshot] = useState(initial);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [connection, setConnection] = useState("Connecting...");
+  const [clientNow, setClientNow] = useState(Date.now());
+
+  useEffect(() => {
+    const clock = window.setInterval(() => setClientNow(Date.now()), 100);
+    return () => window.clearInterval(clock);
+  }, []);
 
   useEffect(() => {
     let source: EventSource | null = null;
@@ -77,6 +84,10 @@ export function AviatorGame() {
     return "Round settled";
   }, [snapshot.phase]);
 
+  const countdown = snapshot.phase === "WAITING" && snapshot.waitingEndsAt
+    ? Math.max(0, (snapshot.waitingEndsAt - clientNow) / 1000).toFixed(1)
+    : null;
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <div className="mb-6 flex items-center justify-between gap-4">
@@ -88,9 +99,10 @@ export function AviatorGame() {
       </div>
 
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/70 p-6 shadow-2xl sm:p-10">
-        <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-white/5 bg-white/[0.025] text-center">
+        <div className={`flex min-h-[360px] flex-col items-center justify-center rounded-2xl border bg-white/[0.025] text-center transition-colors duration-200 ${snapshot.phase === "CRASHED" ? "border-red-400/30" : "border-white/5"}`}>
           <p className="text-sm font-semibold text-slate-400">{status}</p>
-          <div className="my-5 text-7xl font-black tracking-tight text-white tabular-nums sm:text-8xl">
+          {countdown ? <p className="mt-3 text-lg font-bold text-slate-300">Starting in {countdown}s</p> : null}
+          <div className={`my-5 text-7xl font-black tracking-tight tabular-nums transition-transform duration-200 sm:text-8xl ${snapshot.phase === "CRASHED" ? "scale-105 text-red-300" : "text-white"}`}>
             {snapshot.multiplier.toFixed(2)}x
           </div>
           <p className="text-xs text-slate-500">Round {snapshot.roundId}</p>
