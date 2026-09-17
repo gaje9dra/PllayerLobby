@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { multiplyMoneyByMultiplier } from "@/lib/wallet-rules";
 import { AviatorGameEngine } from "@/lib/games/aviator/engine";
+import { nextAviatorNonce } from "@/lib/games/aviator/provably-fair";
 
 test("aviator payout money arithmetic stays decimal-safe", () => {
   assert.equal(multiplyMoneyByMultiplier("100.00", "2.50"), "250.00");
   assert.equal(multiplyMoneyByMultiplier("99.99", "1.01"), "100.99");
   assert.equal(multiplyMoneyByMultiplier("0.01", "1.01"), "0.01");
+});
+
+test("aviator fairness nonce stays inside PostgreSQL BIGINT range", () => {
+  const nonce = BigInt(nextAviatorNonce());
+  assert.ok(nonce > 0n);
+  assert.ok(nonce <= 9_223_372_036_854_775_807n);
 });
 
 test("aviator state lock serializes concurrent financial operations", async () => {
