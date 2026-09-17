@@ -1,0 +1,160 @@
+import "server-only";
+
+export const AVIATOR_PHASES = ["WAITING", "RUNNING", "CRASHED", "SETTLED"] as const;
+export type AviatorPhase = (typeof AVIATOR_PHASES)[number];
+
+export type AviatorRoundSnapshot = {
+  roundId: string;
+  phase: AviatorPhase;
+  serverTime: number;
+  multiplier: number;
+  startedAt: number | null;
+};
+
+export type CrashPointGenerator = {
+  generate: (context: { roundId: string; seed: string }) => number;
+};
+
+const WAITING_MS = 5_000;
+const UPDATE_INTERVAL_MS = 100;
+
+const defaultCrashPointGenerator: CrashPointGenerator = {
+  generate({ seed }) {
+    let hash = 2166136261;
+    for (let index = 0; index < seed.length; index += 1) {
+      hash ^= seed.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    const unit = (hash >>> 0) / 4294967296;
+    return Number((1 + unit * unit * 19).toFixed(2));
+  },
+};
+
+function multiplierAt(startedAt: number, now: number) {
+  const elapsed = Math.max(0, now - startedAt) / 1000;
+  return Number(Math.exp(elapsed * 0.12).toFixed(2));
+}
+
+function canTransition(from: AviatorPhase, to: AviatorPhase) {
+  return (
+    (from === "WAITING" && to === "RUNNING") ||
+    (from === "RUNNING" && to === "CRASHED") ||
+    (from === "CRASHED" && to === "SETTLED") ||
+    (from === "SETTLED" && to === "WAITING")
+  );
+}
+
+export class AviatorGameEngine {
+  private readonly crashPointGenerator: CrashPointGenerator;
+  private readonly now: () => number;
+  private snapshot: AviatorRoundSnapshot;
+  private crashPoint: number | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private readonly listeners = new Set<(snapshot: AviatorRoundSnapshot) => void>();
+
+  constructor(options?: { crashPointGenerator?: CrashPointGenerator; now?: () => number }) {
+    this.crashPointGenerator = options?.crashPointGenerator ?? defaultCrashPointGenerator;
+    this.now = options?.now ?? Date.now;
+    this.snapshot = {
+      roundId: crypto.randomUUID(),
+      phase: "WAITING",
+      serverTime: this.now(),
+      multiplier: 1,
+      startedAt: null,
+    };
+    this.crashPoint = this.crashPointGenerator.generate({
+      roundId: this.snapshot.roundId,
+      seed: crypto.randomUUID(),
+    });
+  }
+
+  start() {
+    if (this.timer) return;
+    this.timer = setInterval(() => this.tick(), UPDATE_INTERVAL_MS);
+    this.tick();
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  subscribe(listener: (snapshot: AviatorRoundSnapshot) => void) {
+    this.listeners.add(listener);
+    listener(this.getSnapshot());
+    return () => this.listeners.delete(listener);
+  }
+
+  getSnapshot(): AviatorRoundSnapshot {
+    return { ...this.snapshot };
+  }
+
+  getCrashPointForPersistence() {
+    if (this.snapshot.phase !== "CRASHED" && this.snapshot.phase !== "SETTLED") return null;
+    return this.crashPoint;
+  }
+
+  forceTransition(to: AviatorPhase) {
+    if (!canTransition(this.snapshot.phase, to)) {
+      throw new Error(`INVALID_STATE_TRANSITION: ${this.snapshot.phase} -> ${to}`);
+    }
+    this.transition(to);
+  }
+
+  private tick() {
+    const now = this.now();
+    this.snapshot.serverTime = now;
+
+    if (this.snapshot.phase === "WAITING") {
+      if (now - this.snapshot.serverTime >= WAITING_MS) return;
+      // Waiting is advanced from the round creation timestamp below.
+      const createdAt = this.roundCreatedAt;
+      if (now - createdAt >= WAITING_MS) {
+        this.snapshot.startedAt = now;
+        this.transition("RUNNING");
+      }
+    } else if (this.snapshot.phase === "RUNNING" && this.snapshot.startedAt) {
+      const multiplier = Math.max(1, multiplierAt(this.snapshot.startedAt, now));
+      this.snapshot.multiplier = multiplier;
+      if (this.crashPoint !== null && multiplier >= this.crashPoint) {
+        this.snapshot.multiplier = this.crashPoint;
+        this.transition("CRASHED");
+        this.transition("SETTLED");
+        this.resetRound(now);
+      }
+    }
+
+    this.emit();
+  }
+
+  private roundCreatedAt = this.now();
+
+  private transition(phase: AviatorPhase) {
+    if (!canTransition(this.snapshot.phase, phase)) {
+      throw new Error(`INVALID_STATE_TRANSITION: ${this.snapshot.phase} -> ${phase}`);
+    }
+    this.snapshot.phase = phase;
+    this.snapshot.serverTime = this.now();
+    this.emit();
+  }
+
+  private resetRound(now: number) {
+    this.snapshot = {
+      roundId: crypto.randomUUID(),
+      phase: "WAITING",
+      serverTime: now,
+      multiplier: 1,
+      startedAt: null,
+    };
+    this.roundCreatedAt = now;
+    this.crashPoint = this.crashPointGenerator.generate({
+      roundId: this.snapshot.roundId,
+      seed: crypto.randomUUID(),
+    });
+  }
+
+  private emit() {
+    const snapshot = this.getSnapshot();
+    for (const listener of this.listeners) listener(snapshot);
+  }
+}
