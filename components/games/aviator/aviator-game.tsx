@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AviatorRoundSnapshot } from "@/lib/games/aviator/types";
 
 type HistoryItem = { id: string; crashMultiplier: string | number | null; crashedAt: string | null };
+type ServerEvent = { type: string; snapshot?: AviatorRoundSnapshot };
 
 const initial: AviatorRoundSnapshot = {
   roundId: "loading",
@@ -27,18 +28,16 @@ export function AviatorGame() {
   }, []);
 
   useEffect(() => {
-    let source: EventSource | null = null;
     let active = true;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
 
     const loadCurrent = async () => {
       try {
         const response = await fetch("/api/games/aviator/round", { cache: "no-store" });
         if (!response.ok) throw new Error("round request failed");
         const next = (await response.json()) as AviatorRoundSnapshot;
-        if (active) {
-          setSnapshot(next);
-          setConnection("Connected");
-        }
+        if (active) setSnapshot(next);
       } catch {
         if (active) setConnection("Disconnected");
       }
@@ -54,18 +53,37 @@ export function AviatorGame() {
     };
 
     const connect = () => {
-      source = new EventSource("/api/games/aviator/stream");
-      source.onopen = () => setConnection("Connected");
-      source.onmessage = (event) => {
+      if (!active) return;
+      setConnection("Connecting...");
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      socket = new WebSocket(`${protocol}//${window.location.host}/api/games/aviator/ws`);
+
+      socket.onopen = () => {
+        if (!active || !socket) return;
+        setConnection("Connected");
+        const currentRoundId = snapshot.roundId === "loading" ? undefined : snapshot.roundId;
+        socket.send(JSON.stringify({ type: "round:sync", ...(currentRoundId ? { roundId: currentRoundId } : {}) }));
+      };
+
+      socket.onmessage = (event) => {
         try {
-          const payload = JSON.parse(event.data) as { type: string; snapshot: AviatorRoundSnapshot };
+          const payload = JSON.parse(event.data) as ServerEvent;
           if (payload.snapshot) setSnapshot(payload.snapshot);
-          if (payload.type === "round:settled" || payload.type === "round:crashed") void loadHistory();
+          if (payload.type === "round:crashed" || payload.type === "round:settled") void loadHistory();
         } catch {
-          setConnection("Disconnected");
+          if (active) setConnection("Disconnected");
         }
       };
-      source.onerror = () => setConnection("Connecting...");
+
+      socket.onerror = () => {
+        if (active) setConnection("Disconnected");
+      };
+
+      socket.onclose = () => {
+        if (!active) return;
+        setConnection("Connecting...");
+        reconnectTimer = window.setTimeout(connect, 1000);
+      };
     };
 
     void loadCurrent();
@@ -74,7 +92,8 @@ export function AviatorGame() {
 
     return () => {
       active = false;
-      source?.close();
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      socket?.close();
     };
   }, []);
 
