@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateWalletForUser } from "@/lib/wallet";
-import { getAviatorRoundSnapshot } from "@/lib/games/aviator/server";
 import { getCurrentUserAviatorBets, placeAviatorBetForUser } from "@/lib/games/aviator/betting";
 
 function noStore(body: unknown, status = 200) {
