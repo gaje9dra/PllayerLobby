@@ -3,14 +3,14 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { AviatorPhase, AviatorRoundSnapshot } from "./types";
 
-export type CrashPointGenerator = {
-  generate: (context: { roundId: string; seed: string }) => number;
-};
-
 type EngineTimings = {
   waitingMs: number;
   settledMs: number;
   updateIntervalMs: number;
+};
+
+export type CrashPointGenerator = {
+  generate: (context: { roundId: string; seed: string }) => number;
 };
 
 const DEFAULT_TIMINGS: EngineTimings = {
@@ -75,6 +75,7 @@ export class AviatorGameEngine {
   start() {
     if (this.timer) return;
     this.timer = setInterval(() => this.tick(), this.timings.updateIntervalMs);
+    this.timer.unref?.();
     this.tick();
   }
 
@@ -130,6 +131,7 @@ export class AviatorGameEngine {
           this.transition("SETTLED");
           this.startNextRound(this.now());
         }, this.timings.settledMs);
+        this.settledTimer.unref?.();
         return;
       }
     }
