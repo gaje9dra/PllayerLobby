@@ -10,6 +10,13 @@ const snapshot: AviatorRoundSnapshot = {
   multiplier: 1.25,
   startedAt: 900,
   waitingEndsAt: null,
+  fairness: {
+    roundId: "round-1",
+    serverSeedHash: "a".repeat(64),
+    clientSeed: "playerlobby-aviator-v1",
+    nonce: "1",
+    algorithmVersion: "v1",
+  },
 };
 
 test("aviator emits a distinct round started event", () => {
