@@ -85,6 +85,7 @@ enum WalletTransactionCategory {
   ENTRY_FEE
   ADJUSTMENT
   DEPOSIT
+  AVIATOR_BET
 }
 
 enum WalletReferenceType {
@@ -95,6 +96,7 @@ enum WalletReferenceType {
   ENTRY_PAYMENT
   ADJUSTMENT
   DEPOSIT
+  AVIATOR_BET
 }
 
 enum WalletDepositStatus {
@@ -167,6 +169,13 @@ enum AviatorRoundStatus {
   SETTLED
 }
 
+enum AviatorBetStatus {
+  ACTIVE
+  CASHED_OUT
+  LOST
+  CANCELLED
+}
+
 model User {
   id String @id @default(uuid()) @db.Uuid
   name String?
@@ -185,6 +194,7 @@ model User {
   reviewedWithdrawals WithdrawalRequest[] @relation("WithdrawalReviewer")
   payoutDestinations PayoutDestination[]
   adminAuditEvents AdminAuditLog[]
+  aviatorBets AviatorBet[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -593,5 +603,28 @@ model AviatorRound {
   crashedAt DateTime?
   crashMultiplier Decimal? @db.Decimal(12, 2)
   createdAt DateTime @default(now())
+  bets AviatorBet[]
   @@index([status, crashedAt])
+}
+
+model AviatorBet {
+  id String @id @default(uuid()) @db.Uuid
+  roundId String @db.Uuid
+  userId String @db.Uuid
+  stake Decimal @db.Decimal(20, 2)
+  status AviatorBetStatus @default(ACTIVE)
+  clientRequestId String @db.VarChar(128)
+  placedAt DateTime @default(now())
+  cashedOutAt DateTime?
+  cashoutMultiplier Decimal? @db.Decimal(12, 2)
+  autoCashoutMultiplier Decimal? @db.Decimal(12, 2)
+  payout Decimal @db.Decimal(20, 2) @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  round AviatorRound @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@unique([userId, clientRequestId])
+  @@index([roundId, status])
+  @@index([userId, createdAt])
+  @@index([roundId, userId, createdAt])
 }
