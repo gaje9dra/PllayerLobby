@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { AviatorRoundSnapshot } from "@/lib/games/aviator/engine";
+import type { AviatorRoundSnapshot } from "@/lib/games/aviator/types";
 
 type HistoryItem = { id: string; crashMultiplier: string | number | null; crashedAt: string | null };
 
