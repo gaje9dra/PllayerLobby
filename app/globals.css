@@ -53,8 +53,8 @@ body {
   100% { opacity: 0; }
 }
 
-/* The aircraft is positioned from the same multiplier snapshot as the graph.
-   Transition only the SVG transform; never animate the multiplier separately. */
+/* The aircraft and flight curve are driven by the same authoritative
+   multiplier snapshot. CSS only smooths their visual presentation. */
 main.aviator-phase106 svg > g:first-of-type {
   transform-box: fill-box;
   transform-origin: center;
@@ -85,11 +85,38 @@ main.aviator-phase106.aviator-crash-pulse::after {
   animation: aviator-crash-pulse 720ms ease-out forwards;
 }
 
-main.aviator-phase106.aviator-motion-off *,
-main.aviator-phase106.aviator-motion-off *::before,
-main.aviator-phase106.aviator-motion-off *::after {
+/* Motion OFF is a real reduced-motion mode: stop showing the continuously
+   moving aircraft/flight path rather than merely disabling CSS keyframes.
+   The authoritative multiplier, betting and wallet logic continue normally. */
+main.aviator-phase106.aviator-motion-off svg > g:first-of-type,
+main.aviator-phase106.aviator-motion-off svg > path:first-of-type,
+main.aviator-phase106.aviator-motion-off svg > path:nth-of-type(2),
+main.aviator-phase106.aviator-motion-off svg > g:nth-of-type(2) {
+  opacity: 0 !important;
   animation: none !important;
   transition: none !important;
+}
+
+main.aviator-phase106.aviator-motion-off .tabular-nums {
+  animation: none !important;
+  transition: none !important;
+}
+
+main.aviator-phase106.aviator-motion-off::after {
+  content: "MOTION OFF";
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 45;
+  pointer-events: none;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: .75rem;
+  background: rgba(7,17,31,.9);
+  padding: .45rem .65rem;
+  color: rgb(148 163 184);
+  font-size: .625rem;
+  font-weight: 800;
+  letter-spacing: .12em;
 }
 
 main.aviator-phase106 button,
