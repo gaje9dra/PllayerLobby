@@ -1,7 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { subscribeToAviatorRounds } from "@/lib/games/aviator/server";
+import { getAviatorRoundSnapshot, subscribeToAviatorRounds } from "@/lib/games/aviator/server";
 import { isAviatorClientMessage, type AviatorServerEvent } from "@/lib/games/aviator/state";
 import type { AviatorRoundSnapshot } from "@/lib/games/aviator/types";
 
@@ -23,8 +23,8 @@ type AviatorSocketState = {
 
 function frameText(payload: string) {
   const body = Buffer.from(payload, "utf8");
+  if (body.length > 65_535) throw new Error("WEBSOCKET_FRAME_TOO_LARGE");
   if (body.length > 125) {
-    if (body.length > 65_535) throw new Error("WEBSOCKET_FRAME_TOO_LARGE");
     const frame = Buffer.allocUnsafe(4 + body.length);
     frame[0] = 0x81;
     frame[1] = 126;
@@ -39,12 +39,15 @@ function frameText(payload: string) {
   return frame;
 }
 
+function frameControl(opcode: number, payload = Buffer.alloc(0)) {
+  if (payload.length > 125) throw new Error("WEBSOCKET_CONTROL_FRAME_TOO_LARGE");
+  return Buffer.concat([Buffer.from([0x80 | opcode, payload.length]), payload]);
+}
+
 function frameClose(code = 1000) {
-  const frame = Buffer.allocUnsafe(4);
-  frame[0] = 0x88;
-  frame[1] = 2;
-  frame.writeUInt16BE(code, 2);
-  return frame;
+  const payload = Buffer.allocUnsafe(2);
+  payload.writeUInt16BE(code, 0);
+  return frameControl(0x8, payload);
 }
 
 function send(socket: Duplex, payload: unknown) {
@@ -63,10 +66,17 @@ function parseFrames(socket: SocketLike, chunk: Buffer, onMessage: (value: unkno
   while (state.buffer.length >= 2) {
     const first = state.buffer[0];
     const second = state.buffer[1];
+    const fin = (first & 0x80) !== 0;
     const opcode = first & 0x0f;
     const masked = (second & 0x80) !== 0;
     let offset = 2;
     let length = second & 0x7f;
+
+    if (!fin) {
+      socket.write(frameClose(1003));
+      socket.destroy();
+      return;
+    }
 
     if (length === 126) {
       if (state.buffer.length < 4) return;
@@ -104,7 +114,7 @@ function parseFrames(socket: SocketLike, chunk: Buffer, onMessage: (value: unkno
       return;
     }
     if (opcode === 0x9) {
-      socket.write(Buffer.from([0x8a, payload.length, ...payload]));
+      socket.write(frameControl(0xa, payload));
       continue;
     }
     if (opcode !== 0x1) {
@@ -169,58 +179,42 @@ export function attachAviatorWebSocket(request: IncomingMessage, socket: Duplex,
   };
 
   const state = ws.__playerLobbyAviator;
-  const unsubscribe = subscribeToAviatorRounds((snapshot) => {
-    const event = eventForSnapshot(snapshot, state?.lastPhase ?? null);
-    state!.lastPhase = snapshot.phase;
+  state.unsubscribe = subscribeToAviatorRounds((snapshot) => {
+    const event = eventForSnapshot(snapshot, state.lastPhase);
+    state.lastPhase = snapshot.phase;
     send(ws, event);
   });
-  state.unsubscribe = unsubscribe;
 
-  ws.on("data", (chunk: Buffer) => {
-    parseFrames(ws, chunk, (value) => {
-      const now = Date.now();
-      if (now - state!.windowStartedAt >= MESSAGE_WINDOW_MS) {
-        state!.windowStartedAt = now;
-        state!.messages = 0;
-      }
-      state!.messages += 1;
-      if (state!.messages > MAX_MESSAGES_PER_WINDOW) {
-        sendError(ws, "RATE_LIMITED");
-        ws.write(frameClose(1008));
-        ws.destroy();
-        return;
-      }
+  const handleMessage = (value: unknown) => {
+    const now = Date.now();
+    if (now - state.windowStartedAt >= MESSAGE_WINDOW_MS) {
+      state.windowStartedAt = now;
+      state.messages = 0;
+    }
+    state.messages += 1;
 
-      if (!isAviatorClientMessage(value)) {
-        sendError(ws, "INVALID_MESSAGE");
-        return;
-      }
+    if (state.messages > MAX_MESSAGES_PER_WINDOW) {
+      sendError(ws, "RATE_LIMITED");
+      ws.write(frameClose(1008));
+      ws.destroy();
+      return;
+    }
 
-      const snapshot = state!.lastPhase ? undefined : undefined;
-      if (value.roundId && value.roundId !== getCurrentRoundId()) {
-        sendError(ws, "STALE_ROUND");
-        return;
-      }
+    if (!isAviatorClientMessage(value)) {
+      sendError(ws, "INVALID_MESSAGE");
+      return;
+    }
 
-      send(ws, { type: "round:sync", roundId: getCurrentRoundId(), phase: snapshot ?? state!.lastPhase });
-    });
-  });
+    const current = getAviatorRoundSnapshot();
+    if (value.roundId && value.roundId !== current.roundId) {
+      sendError(ws, "STALE_ROUND");
+      return;
+    }
 
+    send(ws, { type: "round:sync", snapshot: current });
+  };
+
+  ws.on("data", (chunk: Buffer) => parseFrames(ws, chunk, handleMessage));
   ws.on("close", () => state.unsubscribe?.());
   ws.on("error", () => state.unsubscribe?.());
-
-  function getCurrentRoundId() {
-    const current = latestSnapshot;
-    return current?.roundId ?? "";
-  }
-}
-
-let latestSnapshot: AviatorRoundSnapshot | null = null;
-const unsubscribeGlobal = subscribeToAviatorRounds((snapshot) => {
-  latestSnapshot = snapshot;
-});
-void unsubscribeGlobal;
-
-export function aviatorWebSocketHealth() {
-  return { connected: latestSnapshot !== null, instanceId: randomUUID() };
 }
