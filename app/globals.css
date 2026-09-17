@@ -28,26 +28,48 @@ body {
   outline-offset: 3px;
 }
 
-/* Aviator: polish the plane without replacing the authoritative SVG position. */
+/* Aviator motion polish: keep the server-controlled SVG position authoritative,
+   while smoothing visual movement between websocket snapshots. */
 @keyframes aviator-plane-float {
   0%, 100% { translate: 0 0; }
-  50% { translate: 0 -1.5px; }
+  50% { translate: 0 -1.8px; }
 }
 
 @keyframes aviator-plane-glow {
-  0%, 100% { opacity: .92; filter: drop-shadow(0 0 3px rgba(125, 211, 252, .35)); }
-  50% { opacity: 1; filter: drop-shadow(0 0 8px rgba(125, 211, 252, .7)); }
+  0%, 100% {
+    opacity: .94;
+    filter: drop-shadow(0 0 3px rgba(125, 211, 252, .35));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 9px rgba(125, 211, 252, .78));
+  }
 }
 
+@keyframes aviator-trail-flow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -32; }
+}
+
+/* The first group in the Aviator SVG is the aircraft. CSS transition smooths
+   the discrete websocket position updates instead of making the plane jump. */
 main svg > g:first-of-type {
   transform-box: fill-box;
   transform-origin: center;
+  transition: transform 120ms linear;
   animation: aviator-plane-float .72s ease-in-out infinite, aviator-plane-glow 1.1s ease-in-out infinite;
-  will-change: translate, filter, opacity;
+  will-change: transform, translate, filter, opacity;
 }
 
 main svg > g:first-of-type path {
   vector-effect: non-scaling-stroke;
+}
+
+/* The flight curve remains solid, but its edge carries a subtle moving light
+   cue that makes the aircraft feel like it is generating forward motion. */
+main svg > path:nth-of-type(2) {
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, .22));
+  transition: d 120ms linear, filter 180ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
