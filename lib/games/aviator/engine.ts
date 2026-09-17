@@ -16,6 +16,7 @@ export type CrashPointGenerator = {
 };
 
 const WAITING_MS = 5_000;
+const SETTLED_MS = 1_000;
 const UPDATE_INTERVAL_MS = 100;
 
 const defaultCrashPointGenerator: CrashPointGenerator = {
@@ -47,25 +48,25 @@ function canTransition(from: AviatorPhase, to: AviatorPhase) {
 export class AviatorGameEngine {
   private readonly crashPointGenerator: CrashPointGenerator;
   private readonly now: () => number;
+  private readonly onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
   private snapshot: AviatorRoundSnapshot;
-  private crashPoint: number | null = null;
+  private crashPoint: number;
+  private roundCreatedAt: number;
+  private settledTimer: ReturnType<typeof setTimeout> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly listeners = new Set<(snapshot: AviatorRoundSnapshot) => void>();
 
-  constructor(options?: { crashPointGenerator?: CrashPointGenerator; now?: () => number }) {
+  constructor(options?: {
+    crashPointGenerator?: CrashPointGenerator;
+    now?: () => number;
+    onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
+  }) {
     this.crashPointGenerator = options?.crashPointGenerator ?? defaultCrashPointGenerator;
     this.now = options?.now ?? Date.now;
-    this.snapshot = {
-      roundId: crypto.randomUUID(),
-      phase: "WAITING",
-      serverTime: this.now(),
-      multiplier: 1,
-      startedAt: null,
-    };
-    this.crashPoint = this.crashPointGenerator.generate({
-      roundId: this.snapshot.roundId,
-      seed: crypto.randomUUID(),
-    });
+    this.onCrash = options?.onCrash;
+    this.roundCreatedAt = this.now();
+    this.snapshot = this.createWaitingSnapshot(this.roundCreatedAt);
+    this.crashPoint = this.generateCrashPoint();
   }
 
   start() {
@@ -76,7 +77,9 @@ export class AviatorGameEngine {
 
   stop() {
     if (this.timer) clearInterval(this.timer);
+    if (this.settledTimer) clearTimeout(this.settledTimer);
     this.timer = null;
+    this.settledTimer = null;
   }
 
   subscribe(listener: (snapshot: AviatorRoundSnapshot) => void) {
@@ -90,8 +93,7 @@ export class AviatorGameEngine {
   }
 
   getCrashPointForPersistence() {
-    if (this.snapshot.phase !== "CRASHED" && this.snapshot.phase !== "SETTLED") return null;
-    return this.crashPoint;
+    return this.snapshot.phase === "CRASHED" || this.snapshot.phase === "SETTLED" ? this.crashPoint : null;
   }
 
   forceTransition(to: AviatorPhase) {
@@ -105,29 +107,30 @@ export class AviatorGameEngine {
     const now = this.now();
     this.snapshot.serverTime = now;
 
-    if (this.snapshot.phase === "WAITING") {
-      if (now - this.snapshot.serverTime >= WAITING_MS) return;
-      // Waiting is advanced from the round creation timestamp below.
-      const createdAt = this.roundCreatedAt;
-      if (now - createdAt >= WAITING_MS) {
-        this.snapshot.startedAt = now;
-        this.transition("RUNNING");
-      }
-    } else if (this.snapshot.phase === "RUNNING" && this.snapshot.startedAt) {
-      const multiplier = Math.max(1, multiplierAt(this.snapshot.startedAt, now));
-      this.snapshot.multiplier = multiplier;
-      if (this.crashPoint !== null && multiplier >= this.crashPoint) {
-        this.snapshot.multiplier = this.crashPoint;
-        this.transition("CRASHED");
-        this.transition("SETTLED");
-        this.resetRound(now);
-      }
+    if (this.snapshot.phase === "WAITING" && now - this.roundCreatedAt >= WAITING_MS) {
+      this.snapshot.startedAt = now;
+      this.transition("RUNNING");
+      return;
     }
 
-    this.emit();
+    if (this.snapshot.phase === "RUNNING" && this.snapshot.startedAt) {
+      const multiplier = Math.max(1, multiplierAt(this.snapshot.startedAt, now));
+      this.snapshot.multiplier = multiplier;
+      if (multiplier >= this.crashPoint) {
+        this.snapshot.multiplier = this.crashPoint;
+        this.transition("CRASHED");
+        const crashedSnapshot = this.getSnapshot();
+        void this.onCrash?.(crashedSnapshot, this.crashPoint);
+        this.settledTimer = setTimeout(() => {
+          if (this.snapshot.phase !== "CRASHED") return;
+          this.transition("SETTLED");
+          this.startNextRound(this.now());
+        }, SETTLED_MS);
+      }
+    } else {
+      this.emit();
+    }
   }
-
-  private roundCreatedAt = this.now();
 
   private transition(phase: AviatorPhase) {
     if (!canTransition(this.snapshot.phase, phase)) {
@@ -138,19 +141,22 @@ export class AviatorGameEngine {
     this.emit();
   }
 
-  private resetRound(now: number) {
-    this.snapshot = {
-      roundId: crypto.randomUUID(),
-      phase: "WAITING",
-      serverTime: now,
-      multiplier: 1,
-      startedAt: null,
-    };
+  private startNextRound(now: number) {
+    if (this.snapshot.phase !== "SETTLED") return;
+    this.snapshot = this.createWaitingSnapshot(now);
     this.roundCreatedAt = now;
-    this.crashPoint = this.crashPointGenerator.generate({
-      roundId: this.snapshot.roundId,
-      seed: crypto.randomUUID(),
-    });
+    this.crashPoint = this.generateCrashPoint();
+    this.emit();
+  }
+
+  private createWaitingSnapshot(now: number): AviatorRoundSnapshot {
+    return { roundId: crypto.randomUUID(), phase: "WAITING", serverTime: now, multiplier: 1, startedAt: null };
+  }
+
+  private generateCrashPoint() {
+    const point = this.crashPointGenerator.generate({ roundId: this.snapshot.roundId, seed: crypto.randomUUID() });
+    if (!Number.isFinite(point) || point < 1) throw new Error("INVALID_CRASH_POINT");
+    return Number(point.toFixed(2));
   }
 
   private emit() {
