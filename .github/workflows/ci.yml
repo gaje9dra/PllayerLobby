@@ -53,19 +53,17 @@ jobs:
       - name: Install
         run: npm ci
       - name: Dependency security audit
-        # Current high-severity advisories are confined to the Prisma CLI
-        # development toolchain. Do not block application verification on
-        # development-only advisories while still reporting the audit result.
-        run: npm audit --omit=dev --audit-level=high --package-lock=false || true
+        run: npm audit --omit=dev --audit-level=high --package-lock=false
       - name: Prisma generate
         run: npm run prisma:generate
       - name: Prisma validate
         run: npm run db:validate
       - name: Prisma migrate
-        # Run the complete migration chain from an empty PostgreSQL database.
-        # Phase 9.11 MatchResult foreign keys are intentionally deferred until
-        # the MatchResult table has been created by its preceding migration.
         run: npm run db:migrate:deploy
+      - name: Database connection check
+        run: npm run db:check
+      - name: Test environment configuration
+        run: npm run config:check
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint
