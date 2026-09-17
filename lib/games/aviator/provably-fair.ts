@@ -13,9 +13,7 @@ export type AviatorFairnessCommitment = {
   algorithmVersion: typeof AVIATOR_FAIRNESS_ALGORITHM_VERSION;
 };
 
-export type AviatorFairnessSecret = AviatorFairnessCommitment & {
-  serverSeed: string;
-};
+export type AviatorFairnessSecret = AviatorFairnessCommitment & { serverSeed: string };
 
 export type AviatorFairnessVerification = {
   valid: boolean;
@@ -25,7 +23,7 @@ export type AviatorFairnessVerification = {
   message: string;
 };
 
-let bootPrefix = BigInt(`0x${randomBytes(8).toString("hex")}`) << 32n;
+const bootPrefix = BigInt(`0x${randomBytes(8).toString("hex")}`) << 32n;
 let nonceCounter = 0n;
 
 export function nextAviatorNonce() {
@@ -34,31 +32,16 @@ export function nextAviatorNonce() {
   return nonce.toString();
 }
 
-export function generateAviatorServerSeed() {
-  return randomBytes(32).toString("hex");
-}
+export function generateAviatorServerSeed() { return randomBytes(32).toString("hex"); }
+export function hashAviatorServerSeed(serverSeed: string) { return createHash("sha256").update(serverSeed, "utf8").digest("hex"); }
 
-export function hashAviatorServerSeed(serverSeed: string) {
-  return createHash("sha256").update(serverSeed, "utf8").digest("hex");
-}
-
-export function deriveAviatorHmacDigest(input: {
-  serverSeed: string;
-  clientSeed: string;
-  nonce: string;
-  algorithmVersion?: string;
-}) {
+export function deriveAviatorHmacDigest(input: { serverSeed: string; clientSeed: string; nonce: string; algorithmVersion?: string }) {
   const version = input.algorithmVersion ?? AVIATOR_FAIRNESS_ALGORITHM_VERSION;
   if (version !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
   return createHmac("sha256", input.serverSeed).update(`${input.clientSeed}:${input.nonce}`, "utf8").digest("hex");
 }
 
-export function calculateAviatorCrashMultiplier(input: {
-  serverSeed: string;
-  clientSeed: string;
-  nonce: string;
-  algorithmVersion?: string;
-}) {
+export function calculateAviatorCrashMultiplier(input: { serverSeed: string; clientSeed: string; nonce: string; algorithmVersion?: string }) {
   const digest = deriveAviatorHmacDigest(input);
   const value = Number.parseInt(digest.slice(0, 8), 16);
   const unit = value / 0x1_0000_0000;
@@ -68,72 +51,26 @@ export function calculateAviatorCrashMultiplier(input: {
 
 export function createAviatorFairnessRound(roundId: string): AviatorFairnessSecret {
   const serverSeed = generateAviatorServerSeed();
-  const clientSeed = AVIATOR_FAIRNESS_CLIENT_SEED;
-  const nonce = nextAviatorNonce();
-  const algorithmVersion = AVIATOR_FAIRNESS_ALGORITHM_VERSION;
-  return {
-    roundId,
-    serverSeed,
-    serverSeedHash: hashAviatorServerSeed(serverSeed),
-    clientSeed,
-    nonce,
-    algorithmVersion,
-  };
+  return { roundId, serverSeed, serverSeedHash: hashAviatorServerSeed(serverSeed), clientSeed: AVIATOR_FAIRNESS_CLIENT_SEED, nonce: nextAviatorNonce(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION };
 }
 
-export function verifyAviatorFairness(input: {
-  roundId: string;
-  serverSeed: string;
-  serverSeedHash: string;
-  clientSeed: string;
-  nonce: string;
-  algorithmVersion: string;
-  crashMultiplier: number;
-}): AviatorFairnessVerification {
-  if (input.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) {
-    return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification unavailable: unsupported algorithm version." };
-  }
-  if (!input.serverSeed || !input.clientSeed || !input.nonce || !input.roundId) {
-    return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification failed: invalid fairness inputs." };
-  }
+export function verifyAviatorFairness(input: { roundId: string; serverSeed: string; serverSeedHash: string; clientSeed: string; nonce: string; algorithmVersion: string; crashMultiplier: number }): AviatorFairnessVerification {
+  if (input.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification unavailable: unsupported algorithm version." };
+  if (!input.serverSeed || !input.clientSeed || !input.nonce || !input.roundId) return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification failed: invalid fairness inputs." };
   let calculatedCrashMultiplier: number;
-  try {
-    calculatedCrashMultiplier = calculateAviatorCrashMultiplier(input);
-  } catch {
-    return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification failed: crash calculation could not be reproduced." };
-  }
+  try { calculatedCrashMultiplier = calculateAviatorCrashMultiplier(input); } catch { return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification failed: crash calculation could not be reproduced." }; }
   const computedHash = hashAviatorServerSeed(input.serverSeed);
   const hashValid = computedHash === input.serverSeedHash.toLowerCase();
   const calculationValid = calculatedCrashMultiplier === Number(input.crashMultiplier.toFixed(2));
-  return {
-    valid: hashValid && calculationValid,
-    hashValid,
-    calculationValid,
-    calculatedCrashMultiplier,
-    message: hashValid && calculationValid ? "Result verified." : hashValid ? "Verification failed: crash calculation mismatch." : "Verification failed: server seed hash mismatch.",
-  };
+  return { valid: hashValid && calculationValid, hashValid, calculationValid, calculatedCrashMultiplier, message: hashValid && calculationValid ? "Result verified." : hashValid ? "Verification failed: crash calculation mismatch." : "Verification failed: server seed hash mismatch." };
 }
 
 export function toAviatorFairnessCommitment(secret: AviatorFairnessSecret): AviatorFairnessCommitment {
-  return {
-    roundId: secret.roundId,
-    serverSeedHash: secret.serverSeedHash,
-    clientSeed: secret.clientSeed,
-    nonce: secret.nonce,
-    algorithmVersion: secret.algorithmVersion,
-  };
+  return { roundId: secret.roundId, serverSeedHash: secret.serverSeedHash, clientSeed: secret.clientSeed, nonce: secret.nonce, algorithmVersion: secret.algorithmVersion };
 }
 
 export class ProvablyFairService {
-  createRound(roundId: string) {
-    return createAviatorFairnessRound(roundId);
-  }
-
-  calculateCrashMultiplier(input: { serverSeed: string; clientSeed: string; nonce: string; algorithmVersion?: string }) {
-    return calculateAviatorCrashMultiplier(input);
-  }
-
-  verify(input: Parameters<typeof verifyAviatorFairness>[0]) {
-    return verifyAviatorFairness(input);
-  }
+  createRound(roundId: string) { return createAviatorFairnessRound(roundId); }
+  calculateCrashMultiplier(input: { serverSeed: string; clientSeed: string; nonce: string; algorithmVersion?: string }) { return calculateAviatorCrashMultiplier(input); }
+  verify(input: Parameters<typeof verifyAviatorFairness>[0]) { return verifyAviatorFairness(input); }
 }
