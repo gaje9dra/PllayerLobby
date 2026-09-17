@@ -94,7 +94,7 @@ test("active bet becomes LOST on crash and receives no payout", async () => {
     if (!placed.ok) return;
     engine.forceTransition("RUNNING");
     engine.forceTransition("CRASHED");
-    await settleAviatorCrash(engine.getSnapshot(), 1.50);
+    await settleAviatorCrash(engine.getSnapshot().roundId, 1.50);
     const bet = await prisma.aviatorBet.findUniqueOrThrow({ where: { id: placed.bet.id } });
     assert.equal(bet.status, "LOST");
     assert.equal(bet.payout.toString(), "0");
