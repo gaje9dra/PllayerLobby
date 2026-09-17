@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
+import { eventForSnapshot } from "@/lib/games/aviator/events";
 import { getAviatorRoundSnapshot, subscribeToAviatorRounds } from "@/lib/games/aviator/server";
-import { isAviatorClientMessage, type AviatorServerEvent } from "@/lib/games/aviator/state";
+import { isAviatorClientMessage } from "@/lib/games/aviator/state";
 import type { AviatorRoundSnapshot } from "@/lib/games/aviator/types";
 
 export const AVIATOR_WEBSOCKET_PATH = "/api/games/aviator/ws";
@@ -141,14 +142,6 @@ function authorizedOrigin(request: IncomingMessage) {
   } catch {
     return false;
   }
-}
-
-function eventForSnapshot(snapshot: AviatorRoundSnapshot, previousPhase: AviatorRoundSnapshot["phase"] | null): AviatorServerEvent {
-  if (snapshot.phase === "RUNNING" && previousPhase !== "RUNNING") return { type: "round:started", snapshot };
-  if (snapshot.phase === "WAITING") return { type: "round:waiting", snapshot };
-  if (snapshot.phase === "CRASHED") return { type: "round:crashed", snapshot };
-  if (snapshot.phase === "SETTLED") return { type: "round:settled", snapshot };
-  return { type: "multiplier:update", snapshot };
 }
 
 export function attachAviatorWebSocket(request: IncomingMessage, socket: Duplex, head: Buffer) {
