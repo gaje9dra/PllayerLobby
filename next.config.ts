@@ -27,7 +27,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https:",
-      "connect-src 'self' https://accounts.google.com https://*.payu.in https://*.payumoney.com",
+      "connect-src 'self' ws: wss: https://accounts.google.com https://*.payu.in https://*.payumoney.com",
       "frame-src 'self' https://accounts.google.com https://*.payu.in https://*.payumoney.com",
       "form-action 'self' https://*.payu.in https://*.payumoney.com",
       "upgrade-insecure-requests",
