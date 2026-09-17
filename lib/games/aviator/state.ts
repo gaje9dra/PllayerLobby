@@ -12,14 +12,15 @@ export type AviatorServerEvent =
   | { type: "round:started"; snapshot: AviatorRoundSnapshot }
   | { type: "multiplier:update"; snapshot: AviatorRoundSnapshot }
   | { type: "round:crashed"; snapshot: AviatorRoundSnapshot }
-  | { type: "round:settled"; snapshot: AviatorRoundSnapshot };
+  | { type: "round:settled"; snapshot: AviatorRoundSnapshot }
+  | { type: "round:sync"; snapshot: AviatorRoundSnapshot };
 
 export function isAviatorPhase(value: unknown): value is AviatorPhase {
   return value === "WAITING" || value === "RUNNING" || value === "CRASHED" || value === "SETTLED";
 }
 
 export function isAviatorClientMessage(value: unknown): value is AviatorClientMessage {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const message = value as Record<string, unknown>;
   return message.type === "round:sync" && (message.roundId === undefined || typeof message.roundId === "string");
 }
