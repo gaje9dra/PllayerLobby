@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "prisma migrate deploy && prisma generate && next dev",
+    "dev": "prisma migrate deploy && prisma generate && tsx server/index.ts",
     "build": "prisma migrate deploy && prisma generate && next build",
-    "start": "next start",
+    "start": "tsx server/index.ts",
     "test": "node --import ./scripts/test-bootstrap.mjs --import tsx/esm --test",
     "prisma:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
