@@ -19,6 +19,7 @@ export async function Header() {
         <nav className="hidden items-center gap-6 md:flex" aria-label="Primary navigation">
           <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/">Home</Link>
           <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/tournaments">Tournaments</Link>
+          <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/games/aviator">Games</Link>
           {user ? <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/dashboard">Dashboard</Link> : null}
           {user && isAdmin(user) ? <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/admin">Admin Panel</Link> : null}
         </nav>
