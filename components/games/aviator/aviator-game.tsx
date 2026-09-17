@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AviatorRoundSnapshot } from "@/lib/games/aviator/engine";
 
+type HistoryItem = { id: string; crashMultiplier: string | number | null; crashedAt: string | null };
+
 const initial: AviatorRoundSnapshot = {
   roundId: "loading",
   phase: "WAITING",
@@ -13,11 +15,14 @@ const initial: AviatorRoundSnapshot = {
 
 export function AviatorGame() {
   const [snapshot, setSnapshot] = useState(initial);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [connection, setConnection] = useState("Connecting...");
 
   useEffect(() => {
+    let source: EventSource | null = null;
     let active = true;
-    const load = async () => {
+
+    const loadCurrent = async () => {
       try {
         const response = await fetch("/api/games/aviator/round", { cache: "no-store" });
         if (!response.ok) throw new Error("round request failed");
@@ -30,11 +35,38 @@ export function AviatorGame() {
         if (active) setConnection("Disconnected");
       }
     };
-    void load();
-    const interval = window.setInterval(load, 500);
+
+    const loadHistory = async () => {
+      try {
+        const response = await fetch("/api/games/aviator/history", { cache: "no-store" });
+        if (response.ok && active) setHistory((await response.json()) as HistoryItem[]);
+      } catch {
+        // History is supplementary; keep the live round available.
+      }
+    };
+
+    const connect = () => {
+      source = new EventSource("/api/games/aviator/stream");
+      source.onopen = () => setConnection("Connected");
+      source.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as { type: string; snapshot: AviatorRoundSnapshot };
+          if (payload.snapshot) setSnapshot(payload.snapshot);
+          if (payload.type === "round:settled" || payload.type === "round:crashed") void loadHistory();
+        } catch {
+          setConnection("Disconnected");
+        }
+      };
+      source.onerror = () => setConnection("Connecting...");
+    };
+
+    void loadCurrent();
+    void loadHistory();
+    connect();
+
     return () => {
       active = false;
-      window.clearInterval(interval);
+      source?.close();
     };
   }, []);
 
@@ -69,7 +101,11 @@ export function AviatorGame() {
         <h2 className="text-lg font-bold text-white">Recent rounds</h2>
         <p className="mt-2 text-sm text-slate-500">Historical results only; previous rounds do not predict future outcomes.</p>
         <div className="mt-5 flex flex-wrap gap-3" aria-label="Recent rounds">
-          <span className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300">Live round</span>
+          {history.length ? history.map((round) => (
+            <span key={round.id} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300">
+              {Number(round.crashMultiplier ?? 1).toFixed(2)}x
+            </span>
+          )) : <span className="text-sm text-slate-500">No completed rounds yet.</span>}
         </div>
       </section>
     </main>
