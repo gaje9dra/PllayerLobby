@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   if (!user || user.status !== "ACTIVE") return noStore({ error: "AUTHENTICATION_REQUIRED" }, 401);
   const page = Number(new URL(request.url).searchParams.get("page") ?? "1");
   const result = await getAviatorBetHistory(user.id, page);
-  const items = (result.items as HistoryBet[]).map((bet) => ({
+  const items = (result as HistoryBet[]).map((bet) => ({
     ...bet,
     stake: bet.stake.toString(),
     cashoutMultiplier: bet.cashoutMultiplier?.toString() ?? null,
@@ -29,5 +29,5 @@ export async function GET(request: Request) {
     cashedOutAt: bet.cashedOutAt?.toISOString() ?? null,
     createdAt: bet.createdAt.toISOString(),
   }));
-  return noStore({ ...result, items });
+  return noStore({ items });
 }
