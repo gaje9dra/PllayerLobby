@@ -51,6 +51,25 @@ body {
   to { stroke-dashoffset: -32; }
 }
 
+@keyframes aviator-round-start {
+  0% { transform: scale(1); opacity: .82; }
+  45% { transform: scale(1.025); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes aviator-crash-pulse {
+  0% { opacity: 0; }
+  16% { opacity: .16; }
+  38% { opacity: .03; }
+  60% { opacity: .09; }
+  100% { opacity: 0; }
+}
+
+@keyframes aviator-chip-enter {
+  from { opacity: 0; transform: translateX(10px) scale(.96); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
 /* The first group in the Aviator SVG is the aircraft. CSS transition smooths
    the discrete websocket position updates instead of making the plane jump. */
 main svg > g:first-of-type {
@@ -70,6 +89,42 @@ main svg > g:first-of-type path {
 main svg > path:nth-of-type(2) {
   filter: drop-shadow(0 0 4px rgba(56, 189, 248, .22));
   transition: d 120ms linear, filter 180ms ease;
+}
+
+/* Phase 10.6 state feedback. */
+main.aviator-phase106.aviator-round-start .tabular-nums {
+  animation: aviator-round-start 520ms cubic-bezier(.2,.8,.2,1);
+}
+
+main.aviator-phase106.aviator-crash-pulse::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 48%, rgba(248, 113, 113, .24), transparent 34%);
+  animation: aviator-crash-pulse 720ms ease-out forwards;
+}
+
+main.aviator-phase106.aviator-motion-off *,
+main.aviator-phase106.aviator-motion-off *::before,
+main.aviator-phase106.aviator-motion-off *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+main.aviator-phase106 button,
+main.aviator-phase106 a {
+  transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+  transition-duration: 160ms;
+  transition-timing-function: ease;
+}
+
+@media (max-width: 640px) {
+  main.aviator-phase106 .aviator-settings-panel {
+    right: .75rem;
+    width: min(13rem, calc(100vw - 1.5rem));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
