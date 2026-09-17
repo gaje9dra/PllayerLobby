@@ -7,14 +7,16 @@ const globalState = globalThis as typeof globalThis & {
   [globalKey]?: AviatorGameEngine;
 };
 
-function getEngine() {
+export function getAviatorEngine() {
   if (!globalState[globalKey]) {
     globalState[globalKey] = new AviatorGameEngine({
       onCrash: async (snapshot, crashPoint) => {
         try {
+          const { settleAviatorCrash } = await import("./betting");
+          await settleAviatorCrash(snapshot, crashPoint);
           await persistFinalizedAviatorRound(snapshot, crashPoint);
         } catch (error) {
-          console.error("[aviator] failed to persist finalized round", error);
+          console.error("[aviator] failed to settle finalized round", error);
         }
       },
     });
@@ -24,9 +26,9 @@ function getEngine() {
 }
 
 export function getAviatorRoundSnapshot(): AviatorRoundSnapshot {
-  return getEngine().getSnapshot();
+  return getAviatorEngine().getSnapshot();
 }
 
 export function subscribeToAviatorRounds(listener: (snapshot: AviatorRoundSnapshot) => void) {
-  return getEngine().subscribe(listener);
+  return getAviatorEngine().subscribe(listener);
 }
