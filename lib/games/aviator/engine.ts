@@ -84,7 +84,11 @@ export class AviatorGameEngine {
   }
 
   getSnapshot(): AviatorRoundSnapshot {
-    return { ...this.snapshot, fairness: { ...this.snapshot.fairness } };
+    const { roundId, serverSeedHash, clientSeed, nonce, algorithmVersion } = this.snapshot.fairness;
+    return {
+      ...this.snapshot,
+      fairness: { roundId, serverSeedHash, clientSeed, nonce, algorithmVersion },
+    };
   }
 
   getFairnessSecretForPersistence() {
