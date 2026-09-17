@@ -1,4 +1,4 @@
-import type { AviatorRoundSnapshot } from "./engine";
+import type { AviatorRoundSnapshot } from "./types";
 import type { AviatorServerEvent } from "./state";
 
 export function eventForSnapshot(snapshot: AviatorRoundSnapshot): AviatorServerEvent {
@@ -11,5 +11,7 @@ export function eventForSnapshot(snapshot: AviatorRoundSnapshot): AviatorServerE
       return { type: "round:crashed", snapshot };
     case "SETTLED":
       return { type: "round:settled", snapshot };
+    default:
+      throw new Error(`INVALID_GAME_STATE: ${String(snapshot.phase)}`);
   }
 }
