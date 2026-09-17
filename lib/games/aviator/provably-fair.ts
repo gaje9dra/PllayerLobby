@@ -24,8 +24,8 @@ export type AviatorFairnessVerification = {
 };
 
 // PostgreSQL BIGINT is a signed 64-bit integer. Keep the generated nonce
-// inside that range while retaining a per-process random prefix and counter.
-const bootPrefix = (BigInt(`0x${randomBytes(4).toString("hex")}`) & 0x7fffffffn) << 32n;
+// positive and inside that range while retaining a per-process random prefix.
+const bootPrefix = ((BigInt(`0x${randomBytes(4).toString("hex")}`) & 0x7fffffffn) | 1n) << 32n;
 let nonceCounter = 0n;
 
 export function nextAviatorNonce() {
