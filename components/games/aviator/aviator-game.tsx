@@ -92,7 +92,6 @@ export function AviatorGame() {
     };
 
     void loadRound();
-    void loadBets();
     void loadHistory();
     connect();
     return () => { mounted = false; if (reconnectTimer !== null) window.clearTimeout(reconnectTimer); socket?.close(); };
