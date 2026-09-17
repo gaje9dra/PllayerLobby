@@ -1,5 +1,3 @@
-import "server-only";
-
 import { Prisma } from "@/app/generated/prisma/client";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -119,6 +117,7 @@ export async function placeAviatorBetForUser(
   user: Pick<CurrentUser, "id" | "status">,
   input: { roundId: string; amount: unknown; clientRequestId: string; autoCashoutMultiplier?: unknown },
 ): Promise<Result<{ bet: { id: string; roundId: string; stake: string; status: string; serverTime: number; autoCashoutMultiplier: number | null }; walletBalance: string }>> {
+  if (user.status !== "ACTIVE") return { ok: false, code: AVIATOR_BET_RESULT_CODES.AUTHENTICATION_REQUIRED, message: message(AVIATOR_BET_RESULT_CODES.AUTHENTICATION_REQUIRED) };
   if (!UUID.test(input.roundId) || !input.clientRequestId || input.clientRequestId.length > 128) {
     return { ok: false, code: AVIATOR_BET_RESULT_CODES.INVALID_BET_AMOUNT, message: message(AVIATOR_BET_RESULT_CODES.INVALID_BET_AMOUNT) };
   }
