@@ -123,3 +123,17 @@ export function toAviatorFairnessCommitment(secret: AviatorFairnessSecret): Avia
     algorithmVersion: secret.algorithmVersion,
   };
 }
+
+export class ProvablyFairService {
+  createRound(roundId: string) {
+    return createAviatorFairnessRound(roundId);
+  }
+
+  calculateCrashMultiplier(input: { serverSeed: string; clientSeed: string; nonce: string; algorithmVersion?: string }) {
+    return calculateAviatorCrashMultiplier(input);
+  }
+
+  verify(input: Parameters<typeof verifyAviatorFairness>[0]) {
+    return verifyAviatorFairness(input);
+  }
+}
