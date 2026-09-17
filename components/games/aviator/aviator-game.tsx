@@ -8,19 +8,20 @@ type HistoryItem = { id: string; crashMultiplier: string | number | null; crashe
 const initial: AviatorRoundSnapshot = {
   roundId: "loading",
   phase: "WAITING",
-  serverTime: Date.now(),
+  serverTime: 0,
   multiplier: 1,
   startedAt: null,
-  waitingEndsAt: Date.now() + 5_000,
+  waitingEndsAt: null,
 };
 
 export function AviatorGame() {
   const [snapshot, setSnapshot] = useState(initial);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [connection, setConnection] = useState("Connecting...");
-  const [clientNow, setClientNow] = useState(Date.now());
+  const [clientNow, setClientNow] = useState(0);
 
   useEffect(() => {
+    setClientNow(Date.now());
     const clock = window.setInterval(() => setClientNow(Date.now()), 100);
     return () => window.clearInterval(clock);
   }, []);
@@ -84,7 +85,7 @@ export function AviatorGame() {
     return "Round settled";
   }, [snapshot.phase]);
 
-  const countdown = snapshot.phase === "WAITING" && snapshot.waitingEndsAt
+  const countdown = snapshot.phase === "WAITING" && snapshot.waitingEndsAt && clientNow
     ? Math.max(0, (snapshot.waitingEndsAt - clientNow) / 1000).toFixed(1)
     : null;
 
