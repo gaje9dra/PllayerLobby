@@ -137,23 +137,39 @@ export class AviatorGameEngine {
         this.snapshot.multiplier = multiplier;
         if (multiplier >= this.crashPoint) {
           this.snapshot.multiplier = this.crashPoint;
+
+          // Publish CRASHED immediately and start the next-round timer before any
+          // persistence/network callback. A slow database callback must never freeze
+          // the authoritative game state on the crashed screen.
           this.transition("CRASHED");
           const crashedSnapshot = this.getSnapshot();
-          await this.onCrash?.(crashedSnapshot, this.crashPoint);
-          this.settledTimer = setTimeout(() => {
-            void this.withStateLock(async () => {
-              if (this.snapshot.phase !== "CRASHED") return;
-              this.transition("SETTLED");
-              this.startNextRound(this.now());
+          this.scheduleNextRound();
+
+          // Persistence is best-effort and must not block the game loop. Explicitly
+          // handle async failures so they cannot become unhandled rejections.
+          if (this.onCrash) {
+            void Promise.resolve(this.onCrash(crashedSnapshot, this.crashPoint)).catch((error) => {
+              console.error("[aviator] crash persistence failed", error);
             });
-          }, this.timings.settledMs);
-          this.settledTimer.unref?.();
+          }
           return;
         }
       }
 
       this.emit();
     });
+  }
+
+  private scheduleNextRound() {
+    if (this.settledTimer) clearTimeout(this.settledTimer);
+    this.settledTimer = setTimeout(() => {
+      void this.withStateLock(async () => {
+        if (this.snapshot.phase !== "CRASHED") return;
+        this.transition("SETTLED");
+        this.startNextRound(this.now());
+      });
+    }, this.timings.settledMs);
+    this.settledTimer.unref?.();
   }
 
   private transition(phase: AviatorPhase) {
@@ -209,7 +225,9 @@ export class AviatorGameEngine {
 
   private notifyRoundCreated() {
     try {
-      void this.onRoundCreated?.(this.getSnapshot(), this.getFairnessSecretForPersistence());
+      void Promise.resolve(this.onRoundCreated?.(this.getSnapshot(), this.getFairnessSecretForPersistence())).catch((error) => {
+        console.error("[aviator] failed to persist fairness commitment", error);
+      });
     } catch (error) {
       console.error("[aviator] failed to schedule fairness commitment persistence", error);
     }
