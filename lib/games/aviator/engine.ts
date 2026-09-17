@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { ProvablyFairService, type AviatorFairnessSecret } from "./provably-fair";
 import type { AviatorPhase, AviatorRoundSnapshot } from "./types";
 
 type EngineTimings = { waitingMs: number; settledMs: number; updateIntervalMs: number };
@@ -10,16 +11,6 @@ export type CrashPointGenerator = {
 const DEFAULT_TIMINGS: EngineTimings = { waitingMs: 5_000, settledMs: 1_000, updateIntervalMs: 100 };
 const MIN_CRASH_POINT = 1.01;
 const MAX_CRASH_POINT = 50;
-
-const defaultCrashPointGenerator: CrashPointGenerator = {
-  generate({ seed }) {
-    const digest = createHash("sha256").update(seed).digest();
-    const integer = digest.readUInt32BE(0);
-    const unit = integer / 0x1_0000_0000;
-    const point = MIN_CRASH_POINT + unit * unit * (MAX_CRASH_POINT - MIN_CRASH_POINT);
-    return Number(Math.min(MAX_CRASH_POINT, point).toFixed(2));
-  },
-};
 
 function multiplierAt(startedAt: number, now: number) {
   const elapsed = Math.max(0, now - startedAt) / 1000;
@@ -36,11 +27,14 @@ function canTransition(from: AviatorPhase, to: AviatorPhase) {
 }
 
 export class AviatorGameEngine {
-  private readonly crashPointGenerator: CrashPointGenerator;
+  private readonly crashPointGenerator?: CrashPointGenerator;
+  private readonly provablyFairService: ProvablyFairService;
   private readonly now: () => number;
   private readonly onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
+  private readonly onRoundCreated?: (snapshot: AviatorRoundSnapshot, fairness: AviatorFairnessSecret) => void | Promise<void>;
   private readonly timings: EngineTimings;
   private snapshot: AviatorRoundSnapshot;
+  private fairness: AviatorFairnessSecret;
   private crashPoint: number;
   private settledTimer: ReturnType<typeof setTimeout> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -49,17 +43,24 @@ export class AviatorGameEngine {
 
   constructor(options?: {
     crashPointGenerator?: CrashPointGenerator;
+    provablyFairService?: ProvablyFairService;
     now?: () => number;
     onCrash?: (snapshot: AviatorRoundSnapshot, crashPoint: number) => void | Promise<void>;
+    onRoundCreated?: (snapshot: AviatorRoundSnapshot, fairness: AviatorFairnessSecret) => void | Promise<void>;
     timings?: Partial<EngineTimings>;
   }) {
-    this.crashPointGenerator = options?.crashPointGenerator ?? defaultCrashPointGenerator;
+    this.crashPointGenerator = options?.crashPointGenerator;
+    this.provablyFairService = options?.provablyFairService ?? new ProvablyFairService();
     this.now = options?.now ?? Date.now;
     this.onCrash = options?.onCrash;
+    this.onRoundCreated = options?.onRoundCreated;
     this.timings = { ...DEFAULT_TIMINGS, ...options?.timings };
     const now = this.now();
-    this.snapshot = this.createWaitingSnapshot(now);
+    const created = this.createWaitingSnapshot(now);
+    this.snapshot = created.snapshot;
+    this.fairness = created.fairness;
     this.crashPoint = this.generateCrashPoint();
+    this.notifyRoundCreated();
   }
 
   start() {
@@ -83,7 +84,11 @@ export class AviatorGameEngine {
   }
 
   getSnapshot(): AviatorRoundSnapshot {
-    return { ...this.snapshot };
+    return { ...this.snapshot, fairness: { ...this.snapshot.fairness } };
+  }
+
+  getFairnessSecretForPersistence() {
+    return { ...this.fairness };
   }
 
   getCrashPointForPersistence() {
@@ -156,26 +161,52 @@ export class AviatorGameEngine {
 
   private startNextRound(now: number) {
     if (this.snapshot.phase !== "SETTLED") return;
-    this.snapshot = this.createWaitingSnapshot(now);
+    const created = this.createWaitingSnapshot(now);
+    this.snapshot = created.snapshot;
+    this.fairness = created.fairness;
     this.crashPoint = this.generateCrashPoint();
+    this.notifyRoundCreated();
     this.emit();
   }
 
-  private createWaitingSnapshot(now: number): AviatorRoundSnapshot {
+  private createWaitingSnapshot(now: number) {
+    const roundId = randomUUID();
+    const fairness = this.provablyFairService.createRound(roundId);
     return {
-      roundId: randomUUID(),
-      phase: "WAITING",
-      serverTime: now,
-      multiplier: 1,
-      startedAt: null,
-      waitingEndsAt: now + this.timings.waitingMs,
+      fairness,
+      snapshot: {
+        roundId,
+        phase: "WAITING" as const,
+        serverTime: now,
+        multiplier: 1,
+        startedAt: null,
+        waitingEndsAt: now + this.timings.waitingMs,
+        fairness: {
+          roundId: fairness.roundId,
+          serverSeedHash: fairness.serverSeedHash,
+          clientSeed: fairness.clientSeed,
+          nonce: fairness.nonce,
+          algorithmVersion: fairness.algorithmVersion,
+        },
+      },
     };
   }
 
   private generateCrashPoint() {
-    const point = this.crashPointGenerator.generate({ roundId: this.snapshot.roundId, seed: randomUUID() });
-    if (!Number.isFinite(point) || point < MIN_CRASH_POINT || point > MAX_CRASH_POINT) throw new Error("INVALID_CRASH_POINT");
-    return Number(point.toFixed(2));
+    if (this.crashPointGenerator) {
+      const point = this.crashPointGenerator.generate({ roundId: this.snapshot.roundId, seed: this.fairness.serverSeed });
+      if (!Number.isFinite(point) || point < MIN_CRASH_POINT || point > MAX_CRASH_POINT) throw new Error("INVALID_CRASH_POINT");
+      return Number(point.toFixed(2));
+    }
+    return this.provablyFairService.calculateCrashMultiplier(this.fairness);
+  }
+
+  private notifyRoundCreated() {
+    try {
+      void this.onRoundCreated?.(this.getSnapshot(), this.getFairnessSecretForPersistence());
+    } catch (error) {
+      console.error("[aviator] failed to schedule fairness commitment persistence", error);
+    }
   }
 
   private emit() {

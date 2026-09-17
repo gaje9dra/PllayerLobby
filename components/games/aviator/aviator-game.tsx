@@ -4,12 +4,21 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AviatorRoundSnapshot } from "@/lib/games/aviator/types";
 import { multiplyMoneyByMultiplier } from "@/lib/wallet-rules";
+import { AviatorProvablyFairPanel } from "./provably-fair-panel";
 
 type Bet = { id: string; roundId: string; stake: string; status: string; cashoutMultiplier: string | null; autoCashoutMultiplier: string | null; payout: string; createdAt: string };
 type RoundHistoryItem = { id: string; crashMultiplier: string | number | null };
 type ServerEvent = { type: string; snapshot?: AviatorRoundSnapshot; roundId?: string };
 
-const initialSnapshot: AviatorRoundSnapshot = { roundId: "loading", phase: "WAITING", serverTime: 0, multiplier: 1, startedAt: null, waitingEndsAt: null };
+const initialSnapshot: AviatorRoundSnapshot = {
+  roundId: "loading",
+  phase: "WAITING",
+  serverTime: 0,
+  multiplier: 1,
+  startedAt: null,
+  waitingEndsAt: null,
+  fairness: { roundId: "loading", serverSeedHash: "", clientSeed: "", nonce: "0", algorithmVersion: "v1" },
+};
 
 function formatResult(status: string) { return status === "CASHED_OUT" ? "WON" : status; }
 
@@ -139,6 +148,7 @@ export function AviatorGame() {
       </section>
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.035] p-6"><h2 className="text-lg font-bold text-white">Your bet history</h2><div className="mt-5 overflow-x-auto">{history.length ? <table className="w-full min-w-[620px] text-left text-sm"><thead className="text-xs uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Round</th><th>Stake</th><th>Cashout</th><th>Payout</th><th>Result</th><th>Date</th></tr></thead><tbody>{history.map((bet) => <tr key={bet.id} className="border-t border-white/5 text-slate-300"><td className="py-3 font-mono text-xs">{bet.roundId.slice(0, 8)}</td><td>₹{bet.stake}</td><td>{bet.cashoutMultiplier ? `${bet.cashoutMultiplier}x` : "—"}</td><td>₹{bet.payout}</td><td className={bet.status === "CASHED_OUT" ? "text-lime-200" : bet.status === "LOST" ? "text-red-300" : "text-slate-300"}>{formatResult(bet.status)}</td><td>{new Date(bet.createdAt).toLocaleString()}</td></tr>)}</tbody></table> : <p className="text-sm text-slate-500">No bets yet.</p>}</div></section>
       <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.035] p-6"><h2 className="text-lg font-bold text-white">Recent rounds</h2><p className="mt-2 text-sm text-slate-500">Historical results only; previous rounds do not predict future outcomes.</p><div className="mt-5 flex flex-wrap gap-3">{roundHistory.length ? roundHistory.map((round) => <span key={round.id} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300">{Number(round.crashMultiplier ?? 1).toFixed(2)}x</span>) : <span className="text-sm text-slate-500">No completed rounds yet.</span>}</div></section>
+      <AviatorProvablyFairPanel />
     </main>
   );
 }

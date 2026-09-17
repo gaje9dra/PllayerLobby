@@ -32,3 +32,13 @@ test("aviator state lock releases after a rejected operation", async () => {
   await engine.withStateLock(() => { ran = true; });
   assert.equal(ran, true);
 });
+
+test("aviator public snapshot exposes only the fairness commitment", () => {
+  const engine = new AviatorGameEngine({ now: () => 1_000 });
+  const snapshot = engine.getSnapshot();
+  const serialized = JSON.stringify(snapshot);
+  assert.equal("serverSeed" in snapshot.fairness, false);
+  assert.equal(serialized.includes("serverSeed"), false);
+  assert.equal(snapshot.fairness.serverSeedHash.length, 64);
+  assert.equal(snapshot.fairness.algorithmVersion, "v1");
+});

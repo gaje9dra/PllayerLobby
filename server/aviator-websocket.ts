@@ -3,6 +3,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { eventForSnapshot } from "@/lib/games/aviator/events";
 import { subscribeToAviatorBetEvents } from "@/lib/games/aviator/betting-events";
+import { subscribeToAviatorFairnessEvents } from "@/lib/games/aviator/fairness-events";
 import { getAviatorRoundSnapshot, subscribeToAviatorRounds } from "@/lib/games/aviator/server";
 import { isAviatorClientMessage } from "@/lib/games/aviator/state";
 import type { AviatorRoundSnapshot } from "@/lib/games/aviator/types";
@@ -21,6 +22,7 @@ type AviatorSocketState = {
   windowStartedAt: number;
   unsubscribe: (() => void) | null;
   unsubscribeBets: (() => void) | null;
+  unsubscribeFairness: (() => void) | null;
   lastPhase: AviatorRoundSnapshot["phase"] | null;
 };
 
@@ -171,6 +173,7 @@ export function attachAviatorWebSocket(request: IncomingMessage, socket: Duplex,
     windowStartedAt: Date.now(),
     unsubscribe: null,
     unsubscribeBets: null,
+    unsubscribeFairness: null,
     lastPhase: null,
   };
 
@@ -181,6 +184,7 @@ export function attachAviatorWebSocket(request: IncomingMessage, socket: Duplex,
     send(ws, event);
   });
   state.unsubscribeBets = subscribeToAviatorBetEvents((event) => send(ws, event));
+  state.unsubscribeFairness = subscribeToAviatorFairnessEvents((event) => send(ws, event));
 
   const handleMessage = (value: unknown) => {
     const now = Date.now();
@@ -212,8 +216,8 @@ export function attachAviatorWebSocket(request: IncomingMessage, socket: Duplex,
   };
 
   ws.on("data", (chunk: Buffer) => parseFrames(ws, chunk, handleMessage));
-  ws.on("close", () => { state.unsubscribe?.(); state.unsubscribeBets?.(); });
-  ws.on("error", () => { state.unsubscribe?.(); state.unsubscribeBets?.(); });
+  ws.on("close", () => { state.unsubscribe?.(); state.unsubscribeBets?.(); state.unsubscribeFairness?.(); });
+  ws.on("error", () => { state.unsubscribe?.(); state.unsubscribeBets?.(); state.unsubscribeFairness?.(); });
 
   if (head.length) parseFrames(ws, Buffer.from(head), handleMessage);
 }
