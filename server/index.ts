@@ -4,9 +4,10 @@ import { attachAviatorWebSocket, AVIATOR_WEBSOCKET_PATH } from "./aviator-websoc
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOST ?? "0.0.0.0";
+const appHostname = dev ? "localhost" : hostname;
 const port = Number(process.env.PORT ?? 3000);
 
-const app = next({ dev, hostname, port });
+const app = next({ dev, hostname: appHostname, port });
 const handle = app.getRequestHandler();
 
 await app.prepare();
