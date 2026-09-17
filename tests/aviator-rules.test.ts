@@ -45,7 +45,7 @@ test("aviator public snapshot exposes only the fairness commitment", () => {
   const snapshot = engine.getSnapshot();
   const serialized = JSON.stringify(snapshot);
   assert.equal("serverSeed" in snapshot.fairness, false);
-  assert.equal(serialized.includes("serverSeed"), false);
+  assert.equal(serialized.includes('"serverSeed":'), false);
   assert.equal(snapshot.fairness.serverSeedHash.length, 64);
   assert.equal(snapshot.fairness.algorithmVersion, "v1");
 });
