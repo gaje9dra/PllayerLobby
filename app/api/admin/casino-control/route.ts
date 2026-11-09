@@ -101,14 +101,17 @@ export async function POST() {
     return NextResponse.json({ error: "The round already ended. Refresh and try the next round." }, { status: 409 });
   }
 
-  const bustedRound = await getNetlifyAviatorRoundSnapshot();
+  // The round snapshot call settles the crash and opens the next WAITING
+  // round. Report the round that was actually busted, not that next round.
+  await getNetlifyAviatorRoundSnapshot();
 
   return NextResponse.json({
-    success: bustedRound.phase === "CRASHED",
+    success: true,
     round: {
-      id: bustedRound.roundId,
-      phase: bustedRound.phase,
-      multiplier: bustedRound.multiplier,
+      id: currentRound.roundId,
+      phase: "CRASHED",
+      multiplier: currentRound.multiplier,
     },
+    nextRoundCountdownSeconds: 5,
   }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
 }
