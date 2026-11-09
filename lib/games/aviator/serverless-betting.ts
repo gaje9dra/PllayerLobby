@@ -6,6 +6,8 @@ import { recordWalletTransactionInTransaction } from "@/lib/wallet";
 import { compareMoney, isPositiveMoney, multiplyMoneyByMultiplier, normalizeMoney } from "@/lib/wallet-rules";
 import { emitAviatorBetEvent } from "./betting-events";
 import { getNetlifyAviatorRoundSnapshot } from "./serverless";
+import { decryptAviatorServerSeed } from "./secret";
+import { calculateAviatorCrashMultiplier, AVIATOR_FAIRNESS_ALGORITHM_VERSION } from "./provably-fair";
 
 const MIN_BET = "1.00";
 const MAX_BET = "10000.00";
@@ -131,19 +133,41 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const lockedRound = await tx.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`SELECT "id", "status" FROM "AviatorRound" WHERE "id" = ${roundId}::uuid FOR UPDATE`);
-      if (!lockedRound[0]) return { kind: "invalid-round" as const };
-      if (lockedRound[0].status !== "RUNNING") return { kind: "late" as const };
+      const lockedRound = await tx.$queryRaw<Array<{ id: string; status: string; startedAt: Date | null; serverSeedEncrypted: string | null; clientSeed: string | null; nonce: bigint | null; algorithmVersion: string | null }>>(Prisma.sql`SELECT "id", "status", "startedAt", "serverSeedEncrypted", "clientSeed", "nonce", "algorithmVersion" FROM "AviatorRound" WHERE "id" = ${roundId}::uuid FOR UPDATE`);
+      const round = lockedRound[0];
+      if (!round) return { kind: "invalid-round" as const };
+      if (round.status !== "RUNNING" || !round.startedAt) return { kind: "late" as const };
       const bet = await tx.aviatorBet.findUnique({ where: { id: betId } });
       if (!bet || bet.userId !== user.id || bet.roundId !== roundId) return { kind: "not-found" as const };
       if (bet.status !== "ACTIVE") return { kind: "settled" as const };
-      const payout = multiplyMoneyByMultiplier(bet.stake.toString(), snapshot.multiplier.toFixed(2));
-      const updated = await tx.aviatorBet.updateMany({ where: { id: betId, status: "ACTIVE" }, data: { status: "CASHED_OUT", cashedOutAt: new Date(snapshot.serverTime), cashoutMultiplier: snapshot.multiplier, payout } });
+      if (!round.serverSeedEncrypted || !round.clientSeed || round.nonce === null || round.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) {
+        throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
+      }
+
+      // Recalculate at transaction time while holding the round row lock.
+      // Never trust the browser multiplier or a snapshot fetched before this lock.
+      const acceptedAt = Date.now();
+      const serverSeed = decryptAviatorServerSeed(round.serverSeedEncrypted);
+      const crashMultiplier = calculateAviatorCrashMultiplier({
+        serverSeed,
+        clientSeed: round.clientSeed,
+        nonce: round.nonce.toString(),
+        algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION,
+      });
+      const elapsedSeconds = Math.max(0, acceptedAt - round.startedAt.getTime()) / 1000;
+      const acceptedMultiplier = Number(Math.exp(elapsedSeconds * 0.12).toFixed(2));
+      if (acceptedMultiplier >= crashMultiplier) {
+        await tx.aviatorRound.update({ where: { id: roundId }, data: { status: "CRASHED", crashedAt: new Date(acceptedAt), crashMultiplier } });
+        await tx.aviatorBet.updateMany({ where: { roundId, status: "ACTIVE" }, data: { status: "LOST", updatedAt: new Date(acceptedAt) } });
+        return { kind: "late" as const, crashed: true };
+      }
+      const payout = multiplyMoneyByMultiplier(bet.stake.toString(), acceptedMultiplier.toFixed(2));
+      const updated = await tx.aviatorBet.updateMany({ where: { id: betId, status: "ACTIVE" }, data: { status: "CASHED_OUT", cashedOutAt: new Date(acceptedAt), cashoutMultiplier: acceptedMultiplier, payout } });
       if (updated.count !== 1) return { kind: "settled" as const };
       const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
       if (!wallet) throw new Error("WALLET_TRANSACTION_FAILED");
       await recordWalletTransactionInTransaction(tx, { walletId: wallet.id, type: "CREDIT", category: "AVIATOR_BET", amount: payout, currency: "INR", referenceType: "AVIATOR_BET", referenceId: betId, description: `Aviator payout ${betId}` });
-      return { kind: "success" as const, payout, multiplier: snapshot.multiplier };
+      return { kind: "success" as const, payout, multiplier: acceptedMultiplier };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     if (result.kind === "success") {
