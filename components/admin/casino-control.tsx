@@ -30,9 +30,13 @@ export function CasinoControl() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    // Schedule the initial request as a task so state updates happen after the effect completes.
+    const initialRefresh = window.setTimeout(() => void refresh(), 0);
     const timer = window.setInterval(() => void refresh(), 3000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(timer);
+    };
   }, [refresh]);
 
   return (
