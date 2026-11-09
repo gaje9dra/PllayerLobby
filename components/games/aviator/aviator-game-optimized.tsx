@@ -132,8 +132,6 @@ export function AviatorGameOptimized() {
 
   useEffect(() => {
     let mounted = true;
-    let socket: WebSocket | null = null;
-    let reconnectTimer: number | null = null;
     let lastRoundId = "loading";
     let lastPhase = "WAITING";
 
@@ -158,63 +156,29 @@ export function AviatorGameOptimized() {
         const response = await fetch("/api/games/aviator/round", { cache: "no-store" });
         if (!response.ok) throw new Error("round request failed");
         applySnapshot((await response.json()) as AviatorRoundSnapshot);
+        if (mounted) setConnection("Connected");
       } catch {
         if (mounted) setConnection("Disconnected");
       }
     };
 
-    const connect = () => {
-      if (!mounted) return;
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      socket = new WebSocket(`${protocol}//${window.location.host}/api/games/aviator/ws`);
-      socket.onopen = () => {
-        if (!mounted || !socket) return;
-        setConnection("Connected");
-        socket.send(JSON.stringify({ type: "round:sync", roundId: snapshotRef.current.roundId === "loading" ? undefined : snapshotRef.current.roundId }));
-      };
-      socket.onmessage = (message) => {
-        try {
-          const event = JSON.parse(message.data) as ServerEvent;
-          // The WebSocket process may run separately from Netlify's database-backed
-          // round engine. Do not let its in-memory snapshot overwrite the authoritative
-          // snapshot returned by /api/games/aviator/round.
-          if (["bet:cashout", "bet:lost", "bet:settled"].includes(event.type)) {
-            void loadBets(event.roundId); void loadHistory();
-          }
-          if (["round:crashed", "round:settled"].includes(event.type)) {
-            void loadBets(); void loadHistory();
-          }
-        } catch {
-          if (mounted) setConnection("Disconnected");
-        }
-      };
-      socket.onerror = () => { if (mounted) setConnection("Disconnected"); };
-      socket.onclose = () => {
-        if (mounted) {
-          setConnection("Reconnecting");
-          reconnectTimer = window.setTimeout(connect, 1000);
-        }
-      };
-    };
-
+    // Netlify runs the round API as independent serverless requests. A persistent
+    // WebSocket process is not the authority for this deployment, so the UI health
+    // indicator is driven by successful no-store REST snapshots instead.
     void loadRound();
     // Defer stateful data refreshes out of the effect body.
     window.setTimeout(() => {
       void loadHistory();
       void loadBets();
     }, 0);
-    connect();
-    // Always reconcile against the database-backed round endpoint, even while the
-    // WebSocket is open. On Netlify the socket process can be a separate runtime;
-    // its "Connected" state does not guarantee that it shares the cashout API's round.
+    // Poll the authoritative database-backed API. Do not rely on an in-memory
+    // WebSocket runtime that cannot share state with Netlify serverless functions.
     const pollTimer = window.setInterval(() => {
       if (!document.hidden) void loadRound();
     }, 500);
     return () => {
       mounted = false;
-      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       window.clearInterval(pollTimer);
-      socket?.close();
     };
   }, [loadBets, loadHistory]);
 
@@ -261,7 +225,7 @@ export function AviatorGameOptimized() {
   const canBet = authenticated === true && snapshot.phase === "WAITING" && !busy;
   const amountCents = centsFromInput(amount);
   const autoCents = centsFromInput(autoMultiplier);
-  const canConfigureAuto = mode === "auto" && autoCents !== null && autoCents >= 100;
+  const canConfigureAuto = mode === "auto" && autoCents !== null && autoCents >= 101;
   const potentialPayout = useMemo(() => {
     if (amountCents === null || amountCents <= 0) return null;
     try { return multiplyMoneyByMultiplier(amount, mode === "auto" ? autoMultiplier : "1.00"); } catch { return null; }
@@ -283,7 +247,7 @@ export function AviatorGameOptimized() {
 
   const placeBet = async () => {
     if (!canBet || amountCents === null || amountCents <= 0 || (mode === "auto" && !canConfigureAuto)) {
-      if (mode === "auto" && !canConfigureAuto) setError("Enter a valid automatic cashout of at least 1.00x.");
+      if (mode === "auto" && !canConfigureAuto) setError("Enter a valid automatic cashout of at least 1.01x.");
       return;
     }
     setBusy(true); setError(null);
@@ -356,7 +320,7 @@ export function AviatorGameOptimized() {
                 <div className="mt-5 flex items-center justify-between border-t border-white/5 pt-4"><span className="text-xs text-slate-500">Profit on win</span><span className="font-black text-slate-200">₹{potentialPayout ?? "0.00"}</span></div>
               </>}
 
-              {activeBets.length ? <div className="mt-5 space-y-3"><div className="flex items-center justify-between"><h2 className="text-xs font-black uppercase tracking-wider text-slate-500">Active bets</h2><span className="text-[10px] text-slate-600">{activeBets.length}</span></div>{activeBets.map((bet) => { let payout = bet.stake; try { payout = multiplyMoneyByMultiplier(bet.stake, displayMultiplier.toFixed(2)); } catch { /* Keep stake if shared formatter rejects transient data. */ } return <div key={bet.id} className="rounded-2xl border border-white/10 bg-[#101f33] p-3"><div className="flex items-center justify-between"><span className="text-xs text-slate-500">Stake</span><span className="font-black">₹{bet.stake}</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Current payout</span><span className="font-black text-lime-200">₹{payout}</span></div>{bet.autoCashoutMultiplier ? <p className="mt-2 text-[11px] text-slate-500">Auto cashout {bet.autoCashoutMultiplier}x</p> : null}<button type="button" disabled={cashoutBusy === bet.id} onClick={() => void cashOut(bet)} className="mt-3 w-full rounded-lg border border-lime-300/20 bg-lime-300/5 py-2.5 text-xs font-black text-lime-200 disabled:opacity-35">{cashoutBusy === bet.id ? "CASHING OUT…" : `CASH OUT ${bet.autoCashoutMultiplier ? "MANUALLY" : ""}`}</button></div>; })}</div> : null}
+              {activeBets.length ? <div className="mt-5 space-y-3"><div className="flex items-center justify-between"><h2 className="text-xs font-black uppercase tracking-wider text-slate-500">Active bets</h2><span className="text-[10px] text-slate-600">{activeBets.length}</span></div>{activeBets.map((bet) => { let payout = bet.stake; try { payout = multiplyMoneyByMultiplier(bet.stake, displayMultiplier.toFixed(2)); } catch { /* Keep stake if shared formatter rejects transient data. */ } return <div key={bet.id} className="rounded-2xl border border-white/10 bg-[#101f33] p-3"><div className="flex items-center justify-between"><span className="text-xs text-slate-500">Stake</span><span className="font-black">₹{bet.stake}</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Current payout</span><span className="font-black text-lime-200">₹{payout}</span></div>{bet.autoCashoutMultiplier ? <p className="mt-2 text-[11px] text-slate-500">Auto cashout {bet.autoCashoutMultiplier}x</p> : null}<button type="button" disabled={cashoutBusy === bet.id || snapshot.phase !== "RUNNING"} onClick={() => void cashOut(bet)} className="mt-3 w-full rounded-lg border border-lime-300/20 bg-lime-300/5 py-2.5 text-xs font-black text-lime-200 disabled:opacity-35">{cashoutBusy === bet.id ? "CASHING OUT…" : snapshot.phase === "WAITING" ? "WAITING FOR ROUND" : snapshot.phase !== "RUNNING" ? "CASH OUT CLOSED" : "CASH OUT"}</button></div>; })}</div> : null}
             </aside>
 
             <section className="order-1 min-w-0 lg:order-2">
