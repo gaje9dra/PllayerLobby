@@ -30,10 +30,11 @@ export async function createPayoutDestination(input: PayoutDestinationInput) {
     data: {
       userId: user.id,
       type: input.type,
-      status: PayoutDestinationStatus.PENDING_VERIFICATION,
+      status: PayoutDestinationStatus.VERIFIED,
       displayName: normalized.displayName,
       maskedDestination: normalized.maskedDestination,
       encryptedDestinationData,
+      verifiedAt: new Date(),
     },
   });
 
