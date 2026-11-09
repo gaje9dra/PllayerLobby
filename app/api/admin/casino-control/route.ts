@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getNetlifyAviatorRoundSnapshot } from "@/lib/games/aviator/serverless";
+import { isLocalAviatorDemoControlsEnabled, requestLocalAviatorDemoBust } from "@/lib/games/aviator/local-demo-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -75,5 +76,30 @@ export async function GET() {
       payout: bet.payout.toString(),
       placedAt: bet.placedAt.toISOString(),
     })),
+  }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
+}
+
+export async function POST() {
+  await requireAdmin();
+
+  if (!isLocalAviatorDemoControlsEnabled()) {
+    return NextResponse.json({ error: "Local demo controls are disabled." }, { status: 403 });
+  }
+
+  const currentRound = await getNetlifyAviatorRoundSnapshot();
+  if (currentRound.phase !== "RUNNING") {
+    return NextResponse.json({ error: "Bust Now is available only while a round is running." }, { status: 409 });
+  }
+
+  requestLocalAviatorDemoBust(currentRound.roundId);
+  const bustedRound = await getNetlifyAviatorRoundSnapshot();
+
+  return NextResponse.json({
+    success: bustedRound.phase === "CRASHED",
+    round: {
+      id: bustedRound.roundId,
+      phase: bustedRound.phase,
+      multiplier: bustedRound.multiplier,
+    },
   }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
 }
