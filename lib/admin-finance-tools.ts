@@ -86,6 +86,47 @@ export async function createAdminWalletAdjustment(input: { walletId: string; amo
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
+export async function setAdminWalletFreeze(input: { walletId: string; frozen: boolean; reason: string }) {
+  const admin = await requireAdmin();
+  if (!isValidUuid(input.walletId) || typeof input.frozen !== "boolean") throw new Error("INVALID_WALLET");
+  const reason = cleanText(input.reason, 1000);
+  return prisma.$transaction(async (tx) => {
+    const wallet = await tx.wallet.findUnique({ where: { id: input.walletId }, select: { id: true, isFrozen: true, userId: true } });
+    if (!wallet) throw new Error("WALLET_NOT_FOUND");
+    if (wallet.isFrozen === input.frozen) return { changed: false };
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { isFrozen: input.frozen, frozenReason: input.frozen ? reason : null, frozenAt: input.frozen ? new Date() : null },
+    });
+    await recordAdminAuditEventInTransaction(tx, admin.id, {
+      action: input.frozen ? "WALLET_FROZEN" : "WALLET_UNFROZEN",
+      targetType: "WALLET",
+      targetId: wallet.id,
+      metadata: { userId: wallet.userId, reason },
+    });
+    return { changed: true };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+export async function setAdminUserStatus(input: { userId: string; status: UserStatus; reason: string }) {
+  const admin = await requireAdmin();
+  if (!isValidUuid(input.userId) || !Object.values(UserStatus).includes(input.status)) throw new Error("INVALID_USER");
+  const reason = cleanText(input.reason, 1000);
+  return prisma.$transaction(async (tx) => {
+    const target = await tx.user.findUnique({ where: { id: input.userId }, select: { id: true, role: true, status: true } });
+    if (!target || target.role !== "USER" || target.id === admin.id) throw new Error("USER_NOT_MANAGEABLE");
+    if (target.status === input.status) return { changed: false };
+    await tx.user.update({ where: { id: target.id }, data: { status: input.status } });
+    await recordAdminAuditEventInTransaction(tx, admin.id, {
+      action: "USER_STATUS_CHANGED",
+      targetType: "USER",
+      targetId: target.id,
+      metadata: { previousStatus: target.status, newStatus: input.status, reason },
+    });
+    return { changed: true };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
 export async function getAdminAuditEvents(input: { page?: number; action?: string; targetType?: string; query?: string }) {
   await requireAdmin();
   const page = Number.isSafeInteger(input.page) && (input.page ?? 1) > 0 ? input.page! : 1;
