@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AviatorGameOptimized } from "./aviator-game-optimized";
+import { AVIATOR_DISCLAIMER_TITLE, AVIATOR_DISCLAIMER_PARAGRAPHS } from "@/lib/games/aviator/disclaimer";
 
 const SOUND_KEY = "playerlobby-aviator-sound";
 const MOTION_KEY = "playerlobby-aviator-motion";
@@ -55,6 +56,9 @@ export function AviatorGamePhase106() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [motionEnabled, setMotionEnabled] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
+  const [disclaimerLoading, setDisclaimerLoading] = useState(true);
+  const [disclaimerError, setDisclaimerError] = useState("");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -63,6 +67,35 @@ export function AviatorGamePhase106() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/games/aviator/disclaimer", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(response.status === 401 ? "Please sign in to continue to Aviator." : "Could not verify disclaimer acceptance.");
+        if (active) setDisclaimerAccepted(payload.accepted === true);
+      })
+      .catch((error: unknown) => {
+        if (active) setDisclaimerError(error instanceof Error ? error.message : "Could not verify disclaimer acceptance.");
+      })
+      .finally(() => {
+        if (active) setDisclaimerLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const acceptDisclaimer = async () => {
+    setDisclaimerError("");
+    try {
+      const response = await fetch("/api/games/aviator/disclaimer", { method: "POST", cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.accepted !== true) throw new Error(payload.error || "Could not save your acceptance. Please try again.");
+      setDisclaimerAccepted(true);
+    } catch (error) {
+      setDisclaimerError(error instanceof Error ? error.message : "Could not save your acceptance.");
+    }
+  };
 
   useEffect(() => {
     const main = document.querySelector("main");
@@ -160,7 +193,26 @@ export function AviatorGamePhase106() {
 
   return (
     <div className="relative">
-      <AviatorGameOptimized />
+      {disclaimerLoading ? (
+        <div className="grid min-h-[55vh] place-items-center text-sm text-slate-400">Checking game disclaimer…</div>
+      ) : disclaimerAccepted ? (
+        <AviatorGameOptimized />
+      ) : (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-[#020914]/95 p-4 backdrop-blur-md">
+          <section role="dialog" aria-modal="true" aria-labelledby="aviator-disclaimer-title" className="w-full max-w-xl rounded-3xl border border-amber-300/25 bg-[#0a1728] p-6 shadow-2xl sm:p-8">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-300">Required before entry</p>
+            <h1 id="aviator-disclaimer-title" className="mt-3 text-2xl font-black text-white">{AVIATOR_DISCLAIMER_TITLE}</h1>
+            <div className="mt-5 space-y-4 text-sm leading-6 text-slate-300">
+              {AVIATOR_DISCLAIMER_PARAGRAPHS.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            </div>
+            {disclaimerError ? <p role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200">{disclaimerError}</p> : null}
+            <button type="button" onClick={() => void acceptDisclaimer()} className="mt-6 w-full rounded-xl bg-amber-300 px-5 py-3.5 text-sm font-black text-[#101827] transition hover:bg-amber-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200">
+              I Understand &amp; Accept
+            </button>
+            <p className="mt-3 text-center text-xs text-slate-500">You must accept this notice before entering the game.</p>
+          </section>
+        </div>
+      )}
       <div className="pointer-events-none absolute right-4 top-[72px] z-30 sm:right-6">
         <button
           type="button"
