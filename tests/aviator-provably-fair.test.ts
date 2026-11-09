@@ -66,17 +66,11 @@ test("tampered fairness inputs and crash result fail verification", () => {
   assert.equal(verifyAviatorFairness({ ...vector, crashMultiplier: 2.47 }).valid, false);
 });
 
-test("legacy v1 rounds remain independently verifiable", () => {
-  const legacy = {
-    roundId: vector.roundId,
-    serverSeed: "test-server-seed-32-bytes",
-    serverSeedHash: "5e35d1f2f093c39b78b96fc97a7f760ffede7c16eeda6e10d6bcf972a9178d81",
-    clientSeed: "playerlobby-aviator-v1",
-    nonce: "12345",
-    algorithmVersion: "v1",
-    crashMultiplier: 35.46,
-  };
-  assert.equal(verifyAviatorFairness(legacy).valid, true);
+test("v1 algorithm is rejected; only v2 is supported", () => {
+  const result = verifyAviatorFairness({ ...vector, algorithmVersion: "v1" });
+  assert.equal(result.valid, false);
+  assert.equal(result.calculatedCrashMultiplier, null);
+  assert.equal(result.message, "Verification unavailable: unsupported algorithm version.");
 });
 
 test("unsupported algorithm versions fail safely", () => {
