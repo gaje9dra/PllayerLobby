@@ -41,6 +41,7 @@ export async function GET() {
   const totalPayout = grouped.reduce((sum, item) => sum + Number(item._sum.payout ?? 0), 0);
 
   return NextResponse.json({
+    demoControlsEnabled: isLocalAviatorDemoControlsEnabled(),
     round: {
       id: round.roundId,
       phase: round.phase,
