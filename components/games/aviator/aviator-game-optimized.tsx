@@ -133,8 +133,11 @@ export function AviatorGameOptimized() {
     let mounted = true;
     let lastRoundId = "loading";
     let lastPhase = "WAITING";
-    let roundRequestInFlight = false;
+    let requestInFlight = false;
     let consecutiveFailures = 0;
+    let lastSuccessfulAt = 0;
+    const pollingStartedAt = Date.now();
+    let pollTimer: number | null = null;
 
     const applySnapshot = (next: AviatorRoundSnapshot) => {
       const roundChanged = next.roundId !== lastRoundId;
@@ -150,55 +153,79 @@ export function AviatorGameOptimized() {
       setDisplayMultiplier(next.multiplier);
       if (roundChanged || phaseChanged) {
         void loadBets(next.roundId);
-        // Refresh finalized crash results as soon as the authoritative API
-        // reports the crash. The serverless round handler settles CRASHED rows
-        // before returning, so the top strip reads finalized database history.
         if (roundChanged || next.phase === "CRASHED" || next.phase === "SETTLED") void loadHistory();
       }
     };
 
+    const scheduleNextPoll = (delay: number) => {
+      if (!mounted) return;
+      if (pollTimer !== null) window.clearTimeout(pollTimer);
+      pollTimer = window.setTimeout(() => void loadRound(), delay);
+    };
+
     const loadRound = async () => {
-      // Never stack overlapping polls: slow serverless responses must not
-      // create a backlog that makes a healthy connection appear intermittent.
-      if (!mounted || roundRequestInFlight) return;
-      roundRequestInFlight = true;
+      if (!mounted || requestInFlight || document.hidden) return;
+      requestInFlight = true;
+      let nextDelay = 1000;
       try {
-        const response = await fetch("/api/games/aviator/round", { cache: "no-store" });
-        if (!response.ok) throw new Error("round request failed");
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 8000);
+        let response: Response;
+        try {
+          response = await fetch("/api/games/aviator/round", {
+            cache: "no-store",
+            signal: controller.signal,
+            headers: { Accept: "application/json" },
+          });
+        } finally {
+          window.clearTimeout(timeout);
+        }
+        if (!response.ok) throw new Error(`Round API returned ${response.status}`);
         const next = (await response.json()) as AviatorRoundSnapshot;
+        if (!next || typeof next.roundId !== "string" || !["WAITING", "RUNNING", "CRASHED", "SETTLED"].includes(next.phase)) {
+          throw new Error("Round API returned an invalid snapshot");
+        }
         if (!mounted) return;
         consecutiveFailures = 0;
+        lastSuccessfulAt = Date.now();
         applySnapshot(next);
         setConnection("Connected");
       } catch {
         if (!mounted) return;
         consecutiveFailures += 1;
-        // A single transient 5xx/network failure is not a disconnection.
-        // Keep the last known state and only show Disconnected after repeated
-        // consecutive failures; the next successful poll restores Connected.
-        setConnection(consecutiveFailures >= 3 ? "Disconnected" : "Reconnecting");
+        // A failed poll is not itself a lost session. Keep the last confirmed
+        // connection while the last valid snapshot is still reasonably fresh.
+        const staleFor = Date.now() - (lastSuccessfulAt || pollingStartedAt);
+        if (staleFor >= 15_000) setConnection("Disconnected");
+        // Exponential backoff prevents a failing API/database from being
+        // hammered once per second. Successful requests reset the backoff.
+        nextDelay = Math.min(1000 * (2 ** Math.min(consecutiveFailures, 3)), 8000);
       } finally {
-        roundRequestInFlight = false;
+        requestInFlight = false;
+        if (mounted) scheduleNextPoll(nextDelay);
       }
     };
 
-    // Netlify runs the round API as independent serverless requests. A persistent
-    // WebSocket process is not the authority for this deployment, so the UI health
-    // indicator is driven by successful no-store REST snapshots instead.
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        if (pollTimer !== null) window.clearTimeout(pollTimer);
+        void loadRound();
+      }
+    };
+
     void loadRound();
     const initialRefreshTimer = window.setTimeout(() => {
       if (!mounted) return;
       void loadHistory();
       void loadBets();
     }, 0);
-    // Poll at a moderate cadence to avoid unnecessary serverless/database load.
-    const pollTimer = window.setInterval(() => {
-      if (!document.hidden) void loadRound();
-    }, 1000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       mounted = false;
       window.clearTimeout(initialRefreshTimer);
-      window.clearInterval(pollTimer);
+      if (pollTimer !== null) window.clearTimeout(pollTimer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [loadBets, loadHistory]);
 
