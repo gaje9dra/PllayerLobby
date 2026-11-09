@@ -195,7 +195,7 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
         }
         const latest = await getRound(tx, row.id);
         if (latest?.status === "CRASHED") {
-          return { snapshot: toSnapshot(latest, now, Number(latest.crashMultiplier ?? crashPoint)), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
+          return { snapshot: toSnapshot(latest, now, "CRASHED", Number(latest.crashMultiplier ?? crashPoint)), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
         }
       }
       return { snapshot: toSnapshot(row, now, "RUNNING", multiplier), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
