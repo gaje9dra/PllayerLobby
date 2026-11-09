@@ -27,7 +27,7 @@ export function WalletBalanceBadge({ initialBalance }: { initialBalance: string 
       if (document.visibilityState === "visible") void refreshBalance();
     };
 
-    void refreshBalance();
+    const initialTimer = window.setTimeout(() => void refreshBalance(), 0);
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") void refreshBalance();
     }, 5000);
@@ -37,6 +37,7 @@ export function WalletBalanceBadge({ initialBalance }: { initialBalance: string 
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
+      window.clearTimeout(initialTimer);
       window.clearInterval(interval);
       window.removeEventListener("playerlobby:wallet-updated", onWalletUpdated);
       window.removeEventListener("focus", onWalletUpdated);
