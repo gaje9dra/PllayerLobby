@@ -140,7 +140,7 @@ export async function recordWalletTransactionInTransaction(
   const description = validateDescription(input.description);
 
   const wallet = await lockWallet(tx, input.walletId);
-  if (wallet.isFrozen) throw new Error("Wallet is frozen. Transactions are disabled.");
+  if (wallet.isFrozen && input.type === WalletTransactionType.DEBIT) throw new Error("Wallet is frozen. Debits are disabled.");
   if (wallet.currency !== currency) throw new Error("Wallet currency mismatch.");
 
   const existing = await tx.walletTransaction.findFirst({
