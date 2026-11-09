@@ -28,6 +28,7 @@ export function MobileNavigation({ user }: { user: CurrentUser | null }) {
         <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/">Home</Link>
         <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/tournaments">Tournaments</Link>
         <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/games/aviator">Games</Link>
+        {user ? <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/dashboard/wallet">Wallet</Link> : null}
         {user ? <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/dashboard">Dashboard</Link> : null}
         {user ? <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/profile">Profile</Link> : null}
         {user && user.role === "ADMIN" ? <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/admin">Admin Panel</Link> : null}
