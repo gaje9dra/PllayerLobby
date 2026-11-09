@@ -133,6 +133,8 @@ export function AviatorGameOptimized() {
     let mounted = true;
     let lastRoundId = "loading";
     let lastPhase = "WAITING";
+    let roundRequestInFlight = false;
+    let consecutiveFailures = 0;
 
     const applySnapshot = (next: AviatorRoundSnapshot) => {
       const roundChanged = next.roundId !== lastRoundId;
@@ -156,13 +158,27 @@ export function AviatorGameOptimized() {
     };
 
     const loadRound = async () => {
+      // Never stack overlapping polls: slow serverless responses must not
+      // create a backlog that makes a healthy connection appear intermittent.
+      if (!mounted || roundRequestInFlight) return;
+      roundRequestInFlight = true;
       try {
         const response = await fetch("/api/games/aviator/round", { cache: "no-store" });
         if (!response.ok) throw new Error("round request failed");
-        applySnapshot((await response.json()) as AviatorRoundSnapshot);
-        if (mounted) setConnection("Connected");
+        const next = (await response.json()) as AviatorRoundSnapshot;
+        if (!mounted) return;
+        consecutiveFailures = 0;
+        applySnapshot(next);
+        setConnection("Connected");
       } catch {
-        if (mounted) setConnection("Disconnected");
+        if (!mounted) return;
+        consecutiveFailures += 1;
+        // A single transient 5xx/network failure is not a disconnection.
+        // Keep the last known state and only show Disconnected after repeated
+        // consecutive failures; the next successful poll restores Connected.
+        setConnection(consecutiveFailures >= 3 ? "Disconnected" : "Reconnecting");
+      } finally {
+        roundRequestInFlight = false;
       }
     };
 
@@ -170,18 +186,18 @@ export function AviatorGameOptimized() {
     // WebSocket process is not the authority for this deployment, so the UI health
     // indicator is driven by successful no-store REST snapshots instead.
     void loadRound();
-    // Defer stateful data refreshes out of the effect body.
-    window.setTimeout(() => {
+    const initialRefreshTimer = window.setTimeout(() => {
+      if (!mounted) return;
       void loadHistory();
       void loadBets();
     }, 0);
-    // Poll the authoritative database-backed API. Do not rely on an in-memory
-    // WebSocket runtime that cannot share state with Netlify serverless functions.
+    // Poll at a moderate cadence to avoid unnecessary serverless/database load.
     const pollTimer = window.setInterval(() => {
       if (!document.hidden) void loadRound();
-    }, 500);
+    }, 1000);
     return () => {
       mounted = false;
+      window.clearTimeout(initialRefreshTimer);
       window.clearInterval(pollTimer);
     };
   }, [loadBets, loadHistory]);
