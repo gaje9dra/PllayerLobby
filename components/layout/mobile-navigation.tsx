@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { CurrentUser } from "@/lib/auth";
 import { SignOutButton } from "@/components/auth/sign-out-button";
-import { AviatorMenuCard } from "@/components/layout/aviator-menu-card";
 
 export function MobileNavigation({ user }: { user: CurrentUser | null }) {
   const [open, setOpen] = useState(false);
@@ -28,10 +27,7 @@ export function MobileNavigation({ user }: { user: CurrentUser | null }) {
       {open ? <nav id="mobile-navigation" className="border-t border-white/5 px-4 py-3" aria-label="Mobile navigation"><div className="mx-auto grid max-w-7xl gap-1">
         <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/">Home</Link>
         <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/tournaments">Tournaments</Link>
-        <div className="px-1 py-2">
-          <p className="mb-2 px-2 text-xs font-black uppercase tracking-[0.18em] text-lime-300">Games</p>
-          <AviatorMenuCard className="w-full" />
-        </div>
+        <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/games">Games</Link>
         {user ? <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/dashboard">Dashboard</Link> : null}
         {user ? <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/profile">Profile</Link> : null}
         {user && user.role === "ADMIN" ? <Link onClick={() => setOpen(false)} className="rounded-xl px-3 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 hover:text-white" href="/admin">Admin Panel</Link> : null}
