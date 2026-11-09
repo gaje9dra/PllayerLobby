@@ -33,7 +33,7 @@ export async function getAdminWalletDirectory(input: { page?: number; query?: st
   const where: Prisma.WalletWhereInput = Object.keys(userWhere).length ? { user: userWhere } : {};
   const skip = (page - 1) * WALLET_PAGE_SIZE;
   const [items, total] = await Promise.all([
-    prisma.wallet.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WALLET_PAGE_SIZE, select: { id: true, userId: true, currency: true, balance: true, createdAt: true, user: { select: { id: true, name: true, email: true, phone: true, status: true, role: true } } } }),
+    prisma.wallet.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WALLET_PAGE_SIZE, select: { id: true, userId: true, currency: true, balance: true, isFrozen: true, frozenReason: true, createdAt: true, user: { select: { id: true, name: true, email: true, phone: true, status: true, role: true } } } }),
     prisma.wallet.count({ where }),
   ]);
   return { items, total, page, totalPages: Math.max(1, Math.ceil(total / WALLET_PAGE_SIZE)) };
