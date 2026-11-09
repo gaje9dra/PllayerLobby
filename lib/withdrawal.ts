@@ -3,6 +3,7 @@ import "server-only";
 import { Prisma, WithdrawalRequestStatus } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireActiveUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { decryptPayoutData } from "@/lib/payout-crypto";
 import { addMoney, compareMoney, isValidUuid } from "@/lib/wallet-rules";
 import { DAILY_WITHDRAWAL_LIMIT, MAX_WITHDRAWAL_AMOUNT, MIN_WITHDRAWAL_AMOUNT, WITHDRAWAL_CURRENCY, WITHDRAWAL_PAGE_SIZE, evaluateWithdrawalAmount, getAvailableWithdrawalBalance, validateWithdrawalAmount } from "@/lib/withdrawal-rules";
 
@@ -72,10 +73,23 @@ export async function getCurrentUserWithdrawals(page = 1) {
   if (!wallet) return { items: [], page: safePage, total: 0, totalPages: 1 };
   const skip = (safePage - 1) * WITHDRAWAL_PAGE_SIZE;
   const [items, total] = await Promise.all([
-    prisma.withdrawalRequest.findMany({ where: { userId: user.id, walletId: wallet.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WITHDRAWAL_PAGE_SIZE, select: { id: true, amount: true, currency: true, status: true, rejectionReason: true, createdAt: true, updatedAt: true, reviewedAt: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, payouts: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, provider: true, paymentType: true, status: true, providerReference: true, providerTransferId: true, initiatedAt: true, completedAt: true, reversedAt: true, failureReason: true } } } }),
+    prisma.withdrawalRequest.findMany({ where: { userId: user.id, walletId: wallet.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WITHDRAWAL_PAGE_SIZE, select: { id: true, amount: true, currency: true, status: true, createdAt: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, encryptedDestinationSnapshot: true, payouts: { orderBy: { createdAt: "desc" }, take: 1, select: { providerReference: true, providerTransferId: true } } } }),
     prisma.withdrawalRequest.count({ where: { userId: user.id, walletId: wallet.id } }),
   ]);
-  return { items: items.map((item) => ({ ...item, payout: item.payouts[0] ?? null })), page: safePage, total, totalPages: Math.max(1, Math.ceil(total / WITHDRAWAL_PAGE_SIZE)) };
+  return { items: items.map((item) => {
+    let destinationUpi: string | null = null;
+    if (item.encryptedDestinationSnapshot && item.destinationTypeSnapshot === "UPI") {
+      try {
+        const snapshot = JSON.parse(decryptPayoutData(item.encryptedDestinationSnapshot)) as { version?: unknown; type?: unknown; upiId?: unknown };
+        if (snapshot.version === 1 && snapshot.type === "UPI" && typeof snapshot.upiId === "string") destinationUpi = snapshot.upiId;
+      } catch {
+        destinationUpi = null;
+      }
+    }
+    const payout = item.payouts[0] ?? null;
+    const { encryptedDestinationSnapshot: _encrypted, payouts: _payouts, ...safeItem } = item;
+    return { ...safeItem, destinationUpi, utrId: payout?.providerReference ?? payout?.providerTransferId ?? null };
+  }), page: safePage, total, totalPages: Math.max(1, Math.ceil(total / WITHDRAWAL_PAGE_SIZE)) };
 }
 
 export async function createWithdrawalRequest(_amountInput: string, _idempotencyKeyInput: string) { throw new Error("PAYOUT_DESTINATION_REQUIRED"); }
