@@ -57,8 +57,11 @@ export function AviatorGamePhase106() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    setSoundEnabled(readPreference(SOUND_KEY, true));
-    setMotionEnabled(readPreference(MOTION_KEY, true));
+    const timer = window.setTimeout(() => {
+      setSoundEnabled(readPreference(SOUND_KEY, true));
+      setMotionEnabled(readPreference(MOTION_KEY, true));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
