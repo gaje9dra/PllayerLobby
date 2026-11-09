@@ -17,7 +17,7 @@ const initialSnapshot: AviatorRoundSnapshot = {
   multiplier: 1,
   startedAt: null,
   waitingEndsAt: null,
-  fairness: { roundId: "loading", serverSeedHash: "", clientSeed: "", nonce: "0", algorithmVersion: "v1" },
+  fairness: { roundId: "loading", serverSeedHash: "", clientSeed: "", nonce: "0", algorithmVersion: "v2" },
 };
 
 function formatResult(status: string) { return status === "CASHED_OUT" ? "WON" : status; }

@@ -12,7 +12,7 @@ export type CrashPointGenerator = {
 // smooth multiplier updates without turning the engine into a tight CPU loop.
 const DEFAULT_TIMINGS: EngineTimings = { waitingMs: 5_000, settledMs: 1_000, updateIntervalMs: 33 };
 const MIN_CRASH_POINT = 1.01;
-const MAX_CRASH_POINT = 50;
+const MAX_CRASH_POINT = 120;
 
 function multiplierAt(startedAt: number, now: number) {
   const elapsed = Math.max(0, now - startedAt) / 1000;

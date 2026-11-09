@@ -31,7 +31,7 @@ type Result<T> = ({ ok: true } & T) | { ok: false; code: ResultCode; message: st
 const MIN_BET = "1.00";
 const MAX_BET = "10000.00";
 const MIN_AUTO = 1.01;
-const MAX_AUTO = 50;
+const MAX_AUTO = 120;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type ActiveBetRuntime = { userId: string; autoCashoutMultiplier: number | null; autoCashoutInFlight: boolean };
@@ -52,7 +52,7 @@ function message(code: ResultCode) {
     CASHOUT_TOO_LATE: "The round crashed before the cashout could be accepted.",
     DUPLICATE_REQUEST: "This request has already been processed.",
     WALLET_TRANSACTION_FAILED: "The wallet transaction could not be completed.",
-    INVALID_AUTO_CASHOUT: "Auto cashout must be between 1.01x and 50.00x.",
+    INVALID_AUTO_CASHOUT: "Auto cashout must be between 1.01x and 120.00x.",
     RATE_LIMITED: "Too many requests. Please wait a moment.",
   };
   return messages[code];
