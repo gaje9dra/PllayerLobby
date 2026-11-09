@@ -42,7 +42,7 @@ function randomNonce() {
 }
 
 async function getRound(tx: Db, id: string) {
-  const rows = await tx.$queryRaw<RoundRow[]>\`
+  const rows = await tx.$queryRaw<RoundRow[]>`
     SELECT
       "id", "status", "startedAt", "crashedAt", "crashMultiplier", "createdAt",
       "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion",
@@ -50,12 +50,12 @@ async function getRound(tx: Db, id: string) {
     FROM "AviatorRound"
     WHERE "id" = ${id}::uuid
     LIMIT 1
-  \`;
+  `;
   return rows[0] ?? null;
 }
 
 async function getLatestActiveRound(tx: Db) {
-  const rows = await tx.$queryRaw<RoundRow[]>\`
+  const rows = await tx.$queryRaw<RoundRow[]>`
     SELECT
       "id", "status", "startedAt", "crashedAt", "crashMultiplier", "createdAt",
       "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion",
@@ -64,7 +64,7 @@ async function getLatestActiveRound(tx: Db) {
     WHERE "status" IN ('WAITING'::"AviatorRoundStatus", 'RUNNING'::"AviatorRoundStatus", 'CRASHED'::"AviatorRoundStatus")
     ORDER BY "createdAt" DESC
     LIMIT 1
-  \`;
+  `;
   return rows[0] ?? null;
 }
 
@@ -72,14 +72,14 @@ async function createRound(tx: Db) {
   const id = randomUUID();
   const fairness = createAviatorFairnessRound(id);
   const encryptedSeed = encryptAviatorServerSeed(fairness.serverSeed);
-  await tx.$executeRaw\`
+  await tx.$executeRaw`
     INSERT INTO "AviatorRound" (
       "id", "status", "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion"
     ) VALUES (
       ${id}::uuid, 'WAITING'::"AviatorRoundStatus", ${encryptedSeed}, ${fairness.serverSeedHash},
       ${fairness.clientSeed}, ${BigInt(randomNonce())}, ${fairness.algorithmVersion}
     )
-  \`;
+  `;
   const row = await getRound(tx, id);
   if (!row) throw new Error("AVIATOR_ROUND_CREATE_FAILED");
   return row;
@@ -137,7 +137,7 @@ async function settleCrashedRound(tx: Db, row: RoundRow) {
 
 async function withLifecycleLock<T>(work: (tx: Db) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw\`SELECT pg_advisory_xact_lock(${ROUND_LIFECYCLE_LOCK})\`;
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${ROUND_LIFECYCLE_LOCK})`;
     return work(tx);
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10_000, timeout: 20_000 });
 }
@@ -195,7 +195,7 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
         }
         const latest = await getRound(tx, row.id);
         if (latest?.status === "CRASHED") {
-          return { snapshot: toSnapshot(latest, now, Number(latest.crashMultiplier ?? crashPoint)), lostBetIds: [] as string[] };
+          return { snapshot: toSnapshot(latest, now, Number(latest.crashMultiplier ?? crashPoint)), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
         }
       }
       return { snapshot: toSnapshot(row, now, "RUNNING", multiplier), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
