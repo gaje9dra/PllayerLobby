@@ -5,6 +5,7 @@ import { siteConfig } from "@/config/site";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/layout/user-menu";
 import { MobileNavigation } from "@/components/layout/mobile-navigation";
+import { WalletBalanceBadge } from "@/components/layout/wallet-balance-badge";
 
 export async function Header() {
   const user = await getCurrentUser();
@@ -29,15 +30,7 @@ export async function Header() {
 
         {user ? (
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {walletBalance !== null ? (
-              <Link
-                href="/dashboard/wallet"
-                aria-label={`Wallet balance ₹${walletBalance}`}
-                className="inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-xl border border-white/10 bg-white/[0.035] px-3 text-xs font-bold tracking-tight text-slate-200 shadow-sm transition hover:border-lime-300/30 hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 sm:min-h-10 sm:px-3.5 sm:text-sm"
-              >
-                Wallet ₹{walletBalance}
-              </Link>
-            ) : null}
+            {wallet ? <WalletBalanceBadge initialBalance={wallet.balance.toString()} /> : null}
             <UserMenu user={user} />
           </div>
         ) : <Button href="/login" variant="secondary" className="min-h-10 px-4">Login with Google</Button>}
