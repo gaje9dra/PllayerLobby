@@ -74,6 +74,7 @@ export function AviatorGameOptimized() {
   const betsRef = useRef<Bet[]>([]);
   const cashoutBusyRef = useRef<string | null>(null);
   const requestId = useRef<string | null>(null);
+  const historyRequestVersion = useRef(0);
 
   const loadBets = useCallback(async (roundId?: string) => {
     try {
@@ -93,13 +94,20 @@ export function AviatorGameOptimized() {
   }, []);
 
   const loadHistory = useCallback(async () => {
+    const requestVersion = ++historyRequestVersion.current;
     try {
       const [betsResponse, roundsResponse] = await Promise.all([
         fetch("/api/games/aviator/bets/history?page=1", { cache: "no-store" }),
         fetch("/api/games/aviator/history", { cache: "no-store" }),
       ]);
-      if (betsResponse.ok) setHistory(((await betsResponse.json()).items ?? []) as Bet[]);
-      if (roundsResponse.ok) setRoundHistory((await roundsResponse.json()) as RoundHistoryItem[]);
+      const [betsData, roundsData] = await Promise.all([
+        betsResponse.ok ? betsResponse.json() : Promise.resolve(null),
+        roundsResponse.ok ? roundsResponse.json() : Promise.resolve(null),
+      ]);
+      // A slower response from an earlier phase must never replace newer history.
+      if (requestVersion !== historyRequestVersion.current) return;
+      if (betsData) setHistory((betsData.items ?? []) as Bet[]);
+      if (Array.isArray(roundsData)) setRoundHistory(roundsData as RoundHistoryItem[]);
     } catch { /* History is supplementary. */ }
   }, []);
 
@@ -139,7 +147,8 @@ export function AviatorGameOptimized() {
     let pollTimer: number | null = null;
 
     const applySnapshot = (next: AviatorRoundSnapshot) => {
-      const roundChanged = next.roundId !== lastRoundId;
+      const previousRoundId = lastRoundId;
+      const roundChanged = next.roundId !== previousRoundId;
       const phaseChanged = next.phase !== lastPhase;
       lastRoundId = next.roundId;
       lastPhase = next.phase;
@@ -151,8 +160,11 @@ export function AviatorGameOptimized() {
       setDisplayMultiplier(next.multiplier);
       if (roundChanged || phaseChanged) {
         void loadBets(next.roundId);
-        if (roundChanged || next.phase === "CRASHED" || next.phase === "SETTLED") void loadHistory();
       }
+      // The backend exposes CRASHED for 2.5 seconds before committing SETTLED.
+      // Refresh only after it advances to a new round, which proves settlement
+      // completed; refreshing on CRASHED returns the previous round's history.
+      if (roundChanged && previousRoundId !== "loading") void loadHistory();
     };
 
     const scheduleNextPoll = (delay: number) => {
