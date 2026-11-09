@@ -37,6 +37,7 @@ export function validatePayoutDestinationInput(input: PayoutDestinationInput): {
   const accountHolderName = cleanText(input.accountHolderName, 100);
   const bankName = cleanText(input.bankName, 100);
   if (/[\u0000-\u001f\u007f]/.test(input.accountNumber) || /[\u0000-\u001f\u007f]/.test(input.ifsc)) return null;
+  if (input.accountNumber.length > 22) return null;
   const accountNumber = input.accountNumber.replace(/[\s-]/g, "");
   const ifsc = input.ifsc.trim().toUpperCase();
   if (!accountHolderName || !NAME_PATTERN.test(accountHolderName) || !bankName || !ACCOUNT_PATTERN.test(accountNumber) || !IFSC_PATTERN.test(ifsc)) return null;
