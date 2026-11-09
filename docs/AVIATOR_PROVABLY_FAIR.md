@@ -40,7 +40,7 @@ These are per-round probabilities. They describe the distribution over repeated 
 
 ## Verification
 
-A result is valid only if both the SHA-256 commitment and the complete v2 crash calculation match. The browser verifier independently repeats the same rejection sampling, band selection, and point selection. Unsupported versions fail closed; historical v1 rounds remain verifiable using their original v1 verifier only if that verifier is retained.
+A result is valid only if both the SHA-256 commitment and the complete v2 crash calculation match. The browser verifier independently repeats the same rejection sampling, band selection, and point selection. Only v2 is supported by the active server and browser verifier. Records created under v1 are not recalculated or rewritten, but their old algorithm is no longer available for verification in this application.
 
 ## Security boundaries
 
