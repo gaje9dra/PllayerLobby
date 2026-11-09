@@ -166,7 +166,7 @@ export function AviatorGameOptimized() {
     const loadRound = async () => {
       if (!mounted || requestInFlight || document.hidden) return;
       requestInFlight = true;
-      let nextDelay = 1000;
+      let nextDelay = 750;
       try {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 8000);
@@ -189,6 +189,7 @@ export function AviatorGameOptimized() {
         consecutiveFailures = 0;
         lastSuccessfulAt = Date.now();
         applySnapshot(next);
+        nextDelay = next.phase === "RUNNING" ? 500 : 750;
         setConnection("Connected");
       } catch {
         if (!mounted) return;
@@ -236,14 +237,13 @@ export function AviatorGameOptimized() {
     const tick = (time: number) => {
       const current = snapshotRef.current;
       if (current.phase === "RUNNING" && current.startedAt !== null) {
-        // Interpolate from server time locally for smooth visuals between server snapshots.
-        const serverNow = Date.now() + serverClockOffsetRef.current;
-        const elapsedSeconds = Math.max(0, serverNow - current.startedAt) / 1000;
-        const nextMultiplier = Number(Math.exp(elapsedSeconds * 0.12).toFixed(2));
-        liveMultiplierRef.current = Math.max(current.multiplier, nextMultiplier);
+        // The server snapshot is authoritative. Do not extrapolate the curve
+        // from the local clock: doing so can render above the actual crash point
+        // between polls, while history correctly shows the persisted result.
+        liveMultiplierRef.current = current.multiplier;
         if (time - lastRender >= 33) {
           lastRender = time;
-          setDisplayMultiplier(liveMultiplierRef.current);
+          setDisplayMultiplier(current.multiplier);
         }
         if (time - lastAutoCheck >= 100) {
           lastAutoCheck = time;
