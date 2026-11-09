@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SectionContainer } from "@/components/ui/section-container";
 import { siteConfig } from "@/config/site";
@@ -45,17 +46,40 @@ export default async function HomePage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-lime-300">Games</p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Built for competitive play</h2>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">Pick your next game</h2>
           </div>
-          <p className="max-w-md text-sm leading-6 text-slate-500">More titles can be added later without changing the core platform.</p>
+          <p className="max-w-md text-sm leading-6 text-slate-500">Jump into Aviator now. More tournament titles can be added as they become available.</p>
         </div>
         <div className="mt-8 grid gap-4 md:grid-cols-2">
+          <Link
+            href="/games/aviator"
+            aria-label="Play Aviator"
+            className="group relative isolate flex min-h-[280px] flex-col justify-between overflow-hidden rounded-2xl border border-lime-300/25 bg-[#071523] p-7 transition duration-200 hover:-translate-y-1 hover:border-lime-300/50 hover:shadow-2xl hover:shadow-lime-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300"
+          >
+            <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_80%_15%,rgba(163,230,53,0.2),transparent_42%),linear-gradient(135deg,rgba(8,25,40,0.1),rgba(2,6,23,0.9))]" />
+            <div className="flex items-start justify-between gap-4">
+              <span className="inline-flex items-center gap-2 rounded-full border border-lime-300/25 bg-lime-300/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-lime-200">
+                <span className="size-1.5 rounded-full bg-lime-300" /> Playable now
+              </span>
+              <span className="grid size-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-2xl text-lime-200" aria-hidden="true">✈</span>
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">PlayerLobby original</p>
+              <h3 className="mt-2 text-4xl font-black tracking-tight text-white sm:text-5xl">Aviator</h3>
+              <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">Watch the multiplier climb, place your bet, and cash out before the flight ends.</p>
+              <span className="mt-6 inline-flex items-center gap-2 rounded-xl bg-lime-300 px-5 py-3 text-sm font-black text-slate-950 transition group-hover:bg-lime-200">
+                Play Aviator <span aria-hidden="true">→</span>
+              </span>
+            </div>
+            <span className="pointer-events-none absolute -right-8 bottom-12 -z-10 select-none text-[170px] font-black leading-none text-white/[0.035]" aria-hidden="true">A</span>
+          </Link>
+
           {siteConfig.games.map((game, index) => (
-            <div key={game} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-7 transition hover:border-lime-300/30 hover:bg-white/[0.05]">
-              <span className="text-sm font-bold text-slate-600">0{index + 1}</span>
+            <div key={game} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-7 transition hover:border-white/20 hover:bg-white/[0.05]">
+              <span className="text-sm font-bold text-slate-600">0{index + 2}</span>
               <h3 className="mt-14 text-3xl font-black tracking-tight text-white">{game}</h3>
-              <p className="mt-2 text-sm text-slate-500">Tournament support planned.</p>
-              <div className="absolute right-6 top-6 size-20 rounded-full border border-lime-300/10 bg-lime-300/5 blur-[1px] transition group-hover:scale-110" />
+              <p className="mt-2 text-sm text-slate-500">Tournament support coming soon.</p>
+              <div className="absolute right-6 top-6 size-20 rounded-full border border-white/10 bg-white/[0.03] blur-[1px] transition group-hover:scale-110" />
             </div>
           ))}
         </div>
