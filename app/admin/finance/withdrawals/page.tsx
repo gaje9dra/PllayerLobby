@@ -20,8 +20,8 @@ export default async function AdminWithdrawalsPage({ searchParams }: { searchPar
     const reserved = await prisma.withdrawalRequest.aggregate({ where: { walletId: item.wallet.id, status: { in: [WithdrawalRequestStatus.PENDING, WithdrawalRequestStatus.APPROVED, WithdrawalRequestStatus.PAYOUT_INITIATED, WithdrawalRequestStatus.PROCESSING] } }, _sum: { amount: true } });
     const reservedWithoutCurrent = subtractMoney(reserved._sum.amount?.toString() ?? "0.00", ([WithdrawalRequestStatus.PENDING, WithdrawalRequestStatus.APPROVED, WithdrawalRequestStatus.PAYOUT_INITIATED, WithdrawalRequestStatus.PROCESSING] as WithdrawalRequestStatus[]).includes(item.status) ? item.amount.toString() : "0.00");
     const available = subtractMoney(item.wallet.balance.toString(), reservedWithoutCurrent);
-    const eligible = item.status === WithdrawalRequestStatus.PENDING && item.user.status === "ACTIVE" && item.wallet.currency === item.currency && item.payoutDestination?.status === "VERIFIED" && compareMoney(item.amount.toString(), available) <= 0;
-    return { ...item, payout: item.payouts[0] ?? null, eligibility: eligible ? "ELIGIBLE" : item.status !== WithdrawalRequestStatus.PENDING ? "" : item.payoutDestination?.status !== "VERIFIED" ? "DESTINATION NOT VERIFIED" : item.user.status !== "ACTIVE" ? "USER NOT ACTIVE" : "NOT ELIGIBLE" };
+    const eligible = item.status === WithdrawalRequestStatus.PENDING && item.user.status === "ACTIVE" && item.wallet.currency === item.currency && item.payoutDestination?.status !== "DISABLED" && compareMoney(item.amount.toString(), available) <= 0;
+    return { ...item, payout: item.payouts[0] ?? null, eligibility: eligible ? "ELIGIBLE" : item.status !== WithdrawalRequestStatus.PENDING ? "" : item.payoutDestination?.status === "DISABLED" ? "DESTINATION DISABLED" : item.user.status !== "ACTIVE" ? "USER NOT ACTIVE" : "NOT ELIGIBLE" };
   }));
 
   return <SectionContainer className="py-10 sm:py-14">
