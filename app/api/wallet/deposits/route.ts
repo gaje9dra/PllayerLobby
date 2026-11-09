@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@/app/generated/prisma/client";
 import { requireActiveUser } from "@/lib/auth";
 import { createWalletDeposit, formatDepositError } from "@/lib/wallet-deposit";
+import { createPayUWalletDepositPayment } from "@/lib/payu-wallet-deposit";
 
 function infrastructureError(error: unknown) {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -33,6 +34,18 @@ export async function POST(request: Request) {
     const amount = typeof body?.amount === "string" || typeof body?.amount === "number" ? String(body.amount) : "";
     const idempotencyKey = typeof body?.idempotencyKey === "string" ? body.idempotencyKey : "";
     const result = await createWalletDeposit(amount, idempotencyKey);
+
+    // Create the PayU request in the same request as deposit creation. The
+    // browser receives the hosted-checkout form fields and posts directly to
+    // PayU, without visiting an intermediate PlayerLobby deposit page.
+    const checkout = await createPayUWalletDepositPayment(result.deposit.id);
+    if (!checkout.ok) {
+      return NextResponse.json({
+        error: checkout.message,
+        deposit: { id: result.deposit.id, status: result.deposit.status },
+      }, { status: 400 });
+    }
+
     return NextResponse.json({
       deposit: {
         id: result.deposit.id,
@@ -40,9 +53,11 @@ export async function POST(request: Request) {
         currency: result.deposit.currency,
         status: result.deposit.status,
         reference: result.deposit.reference,
-        providerReference: result.deposit.providerReference,
         createdAt: result.deposit.createdAt,
-        updatedAt: result.deposit.updatedAt,
+      },
+      checkout: {
+        url: checkout.checkoutUrl,
+        fields: checkout.fields,
       },
       idempotent: result.idempotent,
     }, { status: result.idempotent ? 200 : 201 });
