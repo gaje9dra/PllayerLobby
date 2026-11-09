@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
 
-import { decryptPayoutDataWithKey, encryptPayoutDataWithKey } from "../lib/payout-crypto-core";
+import { decodePayoutEncryptionKey, decryptPayoutDataWithKey, encryptPayoutDataWithKey } from "../lib/payout-crypto-core";
 import { validatePayoutDestinationInput } from "../lib/payout-destination-validation";
 
 const key = randomBytes(32);
@@ -15,6 +15,31 @@ const validBank = (overrides: Partial<{ displayName: string; accountHolderName: 
   ifsc: "ABCD0123456",
   bankName: "Example Bank",
   ...overrides,
+});
+
+test("decodes a 64-character hexadecimal payout key", () => {
+  const hex = key.toString("hex");
+  assert.deepEqual(decodePayoutEncryptionKey(hex), key);
+});
+
+test("decodes a canonical Base64 payout key", () => {
+  const base64 = key.toString("base64");
+  assert.deepEqual(decodePayoutEncryptionKey(base64), key);
+});
+
+test("decodes a canonical Base64URL payout key", () => {
+  const base64url = key.toString("base64url");
+  assert.deepEqual(decodePayoutEncryptionKey(base64url), key);
+});
+
+test("trims surrounding whitespace from a payout key", () => {
+  assert.deepEqual(decodePayoutEncryptionKey(`  ${key.toString("hex")}\r\n`), key);
+});
+
+test("rejects weak, malformed, and wrong-length payout keys", () => {
+  for (const invalid of ["", "password", "a".repeat(32), "a".repeat(63), "a".repeat(65), "zz".repeat(32)]) {
+    assert.throws(() => decodePayoutEncryptionKey(invalid), { message: "PAYOUT_ENCRYPTION_KEY_INVALID" });
+  }
 });
 
 test("payout encryption round-trips plaintext", () => {

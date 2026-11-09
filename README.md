@@ -40,9 +40,17 @@ PAYU_PAYOUT_MERCHANT_ID="your-test-payout-merchant-id"
 PAYU_PAYOUT_CLIENT_ID="your-test-payout-client-id"
 PAYU_PAYOUT_CLIENT_SECRET="your-test-payout-client-secret"
 PAYU_PAYOUT_WEBHOOK_SECRET="your-test-payout-webhook-secret"
-PAYOUT_ENCRYPTION_KEY="base64-encoded-32-byte-key"
+PAYOUT_ENCRYPTION_KEY="64-character-hex-or-base64-encoded-32-byte-key"
 PAYOUTS_ENABLED=true
 ```
+
+Generate a payout encryption key on Windows PowerShell with Node.js installed:
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+This prints a 64-character hexadecimal key. Copy it into `.env.local` as `PAYOUT_ENCRYPTION_KEY`. The application also accepts canonical Base64 and Base64URL encodings of exactly 32 random bytes. Keep the same key for the lifetime of stored payout destinations: changing it makes previously encrypted bank/UPI details unreadable. Never share this key or commit it to source control.
 
 Never commit `.env`, `.env.local`, `.env.production`, or real credentials. Server secrets must never use `NEXT_PUBLIC_*`. The PayU merchant salt, payout credentials, OAuth secret, database URL, encryption key, and webhook secret are server-only.
 
