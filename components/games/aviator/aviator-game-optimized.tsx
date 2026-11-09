@@ -70,7 +70,6 @@ export function AviatorGameOptimized() {
   const [displayMultiplier, setDisplayMultiplier] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(initialSnapshot);
-  const serverClockOffsetRef = useRef(0);
   const liveMultiplierRef = useRef(1);
   const betsRef = useRef<Bet[]>([]);
   const cashoutBusyRef = useRef<string | null>(null);
@@ -146,7 +145,6 @@ export function AviatorGameOptimized() {
       lastPhase = next.phase;
       snapshotRef.current = next;
       const nextClockOffset = next.serverTime - Date.now();
-      serverClockOffsetRef.current = nextClockOffset;
       setServerClockOffset(nextClockOffset);
       liveMultiplierRef.current = next.multiplier;
       setSnapshot(next);
