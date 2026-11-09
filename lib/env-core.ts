@@ -1,5 +1,3 @@
-import { decodePayoutEncryptionKey } from "./payout-crypto-core";
-
 export type AppEnvironment = "development" | "test" | "staging" | "production";
 
 const REQUIRED_SERVER_VARS = [
@@ -11,6 +9,15 @@ const REQUIRED_SERVER_VARS = [
   "PAYU_MERCHANT_SALT",
   "PAYOUT_ENCRYPTION_KEY",
 ] as const;
+
+function hasValidPayoutEncryptionKeyFormat(raw: string) {
+  const key = raw.trim();
+  // 32-byte keys are represented by exactly 64 hex chars, 43 unpadded
+  // Base64URL chars, or 44 canonical Base64 chars with one trailing '='.
+  return /^[0-9a-fA-F]{64}$/.test(key)
+    || /^[A-Za-z0-9_-]{43}$/.test(key)
+    || /^[A-Za-z0-9+/]{43}=$/.test(key);
+}
 
 function value(name: string) {
   return process.env[name]?.trim() || "";
@@ -29,12 +36,8 @@ export function validateServerEnvironment(options: { requireProduction?: boolean
   const missing = REQUIRED_SERVER_VARS.filter((name) => !value(name));
   const errors: string[] = missing.map((name) => `${name} is missing.`);
 
-  if (value("PAYOUT_ENCRYPTION_KEY")) {
-    try {
-      decodePayoutEncryptionKey(value("PAYOUT_ENCRYPTION_KEY"));
-    } catch {
-      errors.push("PAYOUT_ENCRYPTION_KEY must be a 64-character hexadecimal key or a canonical Base64/Base64URL encoding of exactly 32 random bytes.");
-    }
+  if (value("PAYOUT_ENCRYPTION_KEY") && !hasValidPayoutEncryptionKeyFormat(value("PAYOUT_ENCRYPTION_KEY"))) {
+    errors.push("PAYOUT_ENCRYPTION_KEY must be a 64-character hexadecimal key or a canonical Base64/Base64URL encoding of exactly 32 random bytes.");
   }
 
   if (!value("NEXT_PUBLIC_APP_URL")) errors.push("NEXT_PUBLIC_APP_URL is missing.");
