@@ -121,12 +121,15 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
   let now = row.serverNow.getTime();
 
   if (row.status === "CRASHED") {
-    if (row.crashedAt && now - row.crashedAt.getTime() >= SETTLED_MS) {
-      await prisma.aviatorRound.update({ where: { id: row.id }, data: { status: "SETTLED" } });
-      row = await getOrCreateRound();
-    } else {
-      return toSnapshot(row, now, "CRASHED", row.crashMultiplier ? Number(row.crashMultiplier) : 1.01);
-    }
+    // A manual admin bust persists CRASHED before this request runs. Finalize
+    // that round through the same settlement + history pipeline as a natural
+    // crash; otherwise active bets can remain ACTIVE and the history strip
+    // will never receive a finalized result.
+    const crashPoint = row.crashMultiplier ? Number(row.crashMultiplier) : 1.01;
+    const crashedSnapshot = toSnapshot(row, now, "CRASHED", crashPoint);
+    await settleAviatorCrash(crashedSnapshot, crashPoint);
+    await persistFinalizedAviatorRound(crashedSnapshot, crashPoint);
+    return crashedSnapshot;
   }
 
   if (row.status === "WAITING") {
