@@ -9,8 +9,6 @@ import { AviatorProvablyFairPanel } from "./provably-fair-panel";
 
 type Bet = { id: string; roundId: string; stake: string; status: string; cashoutMultiplier: string | null; autoCashoutMultiplier: string | null; payout: string; createdAt: string };
 type RoundHistoryItem = { id: string; crashMultiplier: string | number | null };
-type ServerEvent = { type: string; snapshot?: AviatorRoundSnapshot; roundId?: string };
-
 const initialSnapshot: AviatorRoundSnapshot = {
   roundId: "loading",
   phase: "WAITING",
@@ -68,6 +66,7 @@ export function AviatorGameOptimized() {
   const [busy, setBusy] = useState(false);
   const [cashoutBusy, setCashoutBusy] = useState<string | null>(null);
   const [now, setNow] = useState(0);
+  const [serverClockOffset, setServerClockOffset] = useState(0);
   const [displayMultiplier, setDisplayMultiplier] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(initialSnapshot);
@@ -141,7 +140,9 @@ export function AviatorGameOptimized() {
       lastRoundId = next.roundId;
       lastPhase = next.phase;
       snapshotRef.current = next;
-      serverClockOffsetRef.current = next.serverTime - Date.now();
+      const nextClockOffset = next.serverTime - Date.now();
+      serverClockOffsetRef.current = nextClockOffset;
+      setServerClockOffset(nextClockOffset);
       liveMultiplierRef.current = next.multiplier;
       setSnapshot(next);
       setDisplayMultiplier(next.multiplier);
@@ -339,7 +340,7 @@ export function AviatorGameOptimized() {
                   {snapshot.phase === "CRASHED" ? <g><circle cx={planeX} cy={planeY} r="20" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-300/60" /><path d={`M ${planeX - 12} ${planeY - 12} L ${planeX + 12} ${planeY + 12} M ${planeX + 12} ${planeY - 12} L ${planeX - 12} ${planeY + 12}`} stroke="currentColor" strokeWidth="3" className="text-red-300" /></g> : null}
                 </svg>
 
-                <div className="absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 text-center"><p className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">{snapshot.phase === "CRASHED" ? "CRASHED" : snapshot.phase === "SETTLED" ? "SETTLED" : snapshot.phase === "WAITING" ? "NEXT ROUND" : "CURRENT MULTIPLIER"}</p><div className={`mt-2 text-6xl font-black tracking-tight tabular-nums sm:text-8xl ${snapshot.phase === "CRASHED" ? "text-red-300" : "text-white"}`}>{displayMultiplier.toFixed(2)}x</div>{snapshot.phase === "WAITING" && snapshot.waitingEndsAt ? <p className="mt-2 text-sm font-bold text-slate-400">Starting in {Math.max(0, (snapshot.waitingEndsAt - (now + serverClockOffsetRef.current)) / 1000).toFixed(1)}s</p> : null}<p className="mt-3 text-[10px] font-mono text-slate-600">Round {snapshot.roundId}</p></div>
+                <div className="absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 text-center"><p className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">{snapshot.phase === "CRASHED" ? "CRASHED" : snapshot.phase === "SETTLED" ? "SETTLED" : snapshot.phase === "WAITING" ? "NEXT ROUND" : "CURRENT MULTIPLIER"}</p><div className={`mt-2 text-6xl font-black tracking-tight tabular-nums sm:text-8xl ${snapshot.phase === "CRASHED" ? "text-red-300" : "text-white"}`}>{displayMultiplier.toFixed(2)}x</div>{snapshot.phase === "WAITING" && snapshot.waitingEndsAt ? <p className="mt-2 text-sm font-bold text-slate-400">Starting in {Math.max(0, (snapshot.waitingEndsAt - (now + serverClockOffset)) / 1000).toFixed(1)}s</p> : null}<p className="mt-3 text-[10px] font-mono text-slate-600">Round {snapshot.roundId}</p></div>
               </div>
 
               <div className="grid grid-cols-2 divide-x divide-white/5 border-t border-white/5 bg-[#0b192b] sm:grid-cols-3 sm:divide-x"><div className="p-4"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Wallet</p><p className="mt-1 font-black text-slate-200">{walletBalance !== null ? `₹${walletBalance}` : "—"}</p></div><div className="p-4"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Players</p><p className="mt-1 font-black text-slate-300">—</p><p className="text-[10px] text-slate-600">Not exposed by backend</p></div><div className="col-span-2 p-4 sm:col-span-1"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Controls</p><div className="mt-1 flex flex-wrap gap-3 text-xs font-bold"><a href="#fairness" className="text-sky-300 hover:text-sky-200">Provably Fair</a><a href="#history" className="text-sky-300 hover:text-sky-200">History</a><Link href="/dashboard/wallet" className="text-sky-300 hover:text-sky-200">Wallet</Link></div></div></div>
