@@ -136,6 +136,7 @@ export function AviatorGameOptimized() {
     let requestInFlight = false;
     let consecutiveFailures = 0;
     let lastSuccessfulAt = 0;
+    const pollingStartedAt = Date.now();
     let pollTimer: number | null = null;
 
     const applySnapshot = (next: AviatorRoundSnapshot) => {
@@ -194,7 +195,7 @@ export function AviatorGameOptimized() {
         consecutiveFailures += 1;
         // A failed poll is not itself a lost session. Keep the last confirmed
         // connection while the last valid snapshot is still reasonably fresh.
-        const staleFor = lastSuccessfulAt === 0 ? Date.now() : Date.now() - lastSuccessfulAt;
+        const staleFor = Date.now() - (lastSuccessfulAt || pollingStartedAt);
         if (staleFor >= 15_000) setConnection("Disconnected");
         // Exponential backoff prevents a failing API/database from being
         // hammered once per second. Successful requests reset the backoff.
