@@ -57,6 +57,7 @@ export function AviatorGameOptimized() {
   const [bets, setBets] = useState<Bet[]>([]);
   const [history, setHistory] = useState<Bet[]>([]);
   const [roundHistory, setRoundHistory] = useState<RoundHistoryItem[]>([]);
+  const [selectedFairnessRoundId, setSelectedFairnessRoundId] = useState("");
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [connection, setConnection] = useState("Connecting");
@@ -107,7 +108,11 @@ export function AviatorGameOptimized() {
       // A slower response from an earlier phase must never replace newer history.
       if (requestVersion !== historyRequestVersion.current) return;
       if (betsData) setHistory((betsData.items ?? []) as Bet[]);
-      if (Array.isArray(roundsData)) setRoundHistory(roundsData as RoundHistoryItem[]);
+      if (Array.isArray(roundsData)) {
+        const completedRounds = roundsData as RoundHistoryItem[];
+        setRoundHistory(completedRounds);
+        setSelectedFairnessRoundId(completedRounds[0]?.id ?? "");
+      }
     } catch { /* History is supplementary. */ }
   }, []);
 
@@ -353,7 +358,7 @@ export function AviatorGameOptimized() {
             <div className="flex items-center gap-2 overflow-x-auto" aria-label="Latest finalized crash multipliers">
               {roundHistory.length ? roundHistory.slice(0, 16).map((round) => {
                 const value = Number(round.crashMultiplier ?? 0);
-                return <a key={round.id} href="#fairness" title={`Round ${round.id} · Open fairness verification`} className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-black transition hover:brightness-125 ${historyTone(value)}`}>{value.toFixed(2)}x</a>;
+                return <button key={round.id} type="button" onClick={() => setSelectedFairnessRoundId(round.id)} title={`Verify round ${round.id}`} className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-black transition hover:brightness-125 ${historyTone(value)} ${selectedFairnessRoundId === round.id ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-[#0c1b2f]" : ""}`}>{value.toFixed(2)}x</button>;
               }) : <span className="px-2 text-xs text-slate-500">No finalized crashes yet</span>}
             </div>
           </div>
@@ -410,9 +415,9 @@ export function AviatorGameOptimized() {
 
         <section id="history" className="mt-4 rounded-[24px] border border-white/10 bg-[#0a1728] p-4 sm:p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-600">Activity</p><h2 className="mt-1 text-lg font-black">Your bet history</h2></div><span className="text-xs text-slate-600">Recent activity</span></div><div className="mt-4 overflow-x-auto">{history.length ? <table className="w-full min-w-[650px] text-left text-xs"><thead className="text-[10px] uppercase tracking-wider text-slate-600"><tr><th className="pb-3">Round</th><th>Stake</th><th>Cashout</th><th>Payout</th><th>Result</th><th>Date</th></tr></thead><tbody>{history.map((bet) => <tr key={bet.id} className="border-t border-white/5 text-slate-300"><td className="py-3 font-mono">{bet.roundId.slice(0, 10)}</td><td>₹{bet.stake}</td><td>{bet.cashoutMultiplier ? `${bet.cashoutMultiplier}x` : "—"}</td><td>₹{bet.payout}</td><td className={bet.status === "CASHED_OUT" ? "font-bold text-lime-200" : bet.status === "LOST" ? "font-bold text-red-300" : "text-slate-400"}>{formatResult(bet.status)}</td><td>{new Date(bet.createdAt).toLocaleString()}</td></tr>)}</tbody></table> : <p className="py-6 text-sm text-slate-600">No bets yet.</p>}</div></section>
 
-        <section className="mt-4 rounded-[24px] border border-white/10 bg-[#0a1728] p-4 sm:p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-600">Completed rounds</p><h2 className="mt-1 text-lg font-black">Round history</h2></div><span className="text-xs text-slate-600">Historical results only</span></div><div className="mt-4 flex gap-2 overflow-x-auto pb-1">{roundHistory.length ? roundHistory.slice(0, 30).map((round) => { const value = Number(round.crashMultiplier ?? 0); return <a key={round.id} href="#fairness" className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-black ${historyTone(value)}`}>{value.toFixed(2)}x</a>; }) : <span className="text-sm text-slate-600">No completed rounds yet.</span>}</div></section>
+        <section className="mt-4 rounded-[24px] border border-white/10 bg-[#0a1728] p-4 sm:p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-600">Completed rounds</p><h2 className="mt-1 text-lg font-black">Round history</h2></div><span className="text-xs text-slate-600">Historical results only</span></div><div className="mt-4 flex gap-2 overflow-x-auto pb-1">{roundHistory.length ? roundHistory.slice(0, 30).map((round) => { const value = Number(round.crashMultiplier ?? 0); return <button key={round.id} type="button" onClick={() => { setSelectedFairnessRoundId(round.id); document.getElementById("fairness")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} aria-pressed={selectedFairnessRoundId === round.id} className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-black ${historyTone(value)} ${selectedFairnessRoundId === round.id ? "ring-2 ring-sky-300" : ""}`}>{value.toFixed(2)}x</button>; }) : <span className="text-sm text-slate-600">No completed rounds yet.</span>}</div></section>
 
-        <div id="fairness" className="mt-4"><AviatorProvablyFairPanel /></div>
+        <div id="fairness" className="mt-4"><AviatorProvablyFairPanel rounds={roundHistory} selectedRoundId={selectedFairnessRoundId} onSelectRound={setSelectedFairnessRoundId} /></div>
       </div>
     </main>
   );
