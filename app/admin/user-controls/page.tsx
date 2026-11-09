@@ -8,7 +8,7 @@ export default async function AdminUserControlsPage({ searchParams }: { searchPa
   const data = await getAdminWalletDirectory({ page: 1, query: params.query, status: params.status });
   const notices: Record<string, string> = {
     wallet: "Wallet adjustment recorded in the ledger.",
-    frozen: "Wallet frozen. All wallet credits and debits are now blocked.",
+    frozen: "Wallet frozen. Outgoing wallet debits are now blocked.",
     unfrozen: "Wallet unfrozen. Wallet transactions are enabled again.",
     status: "User account status updated.",
   };
@@ -40,8 +40,8 @@ export default async function AdminUserControlsPage({ searchParams }: { searchPa
             {wallet.isFrozen ? <p className="text-xs text-rose-300">Unfreeze this wallet before making an adjustment.</p> : null}
           </form>
           <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
-            <h3 className="text-sm font-bold text-white">Wallet transaction lock</h3>
-            <p className="text-xs leading-5 text-slate-500">Freezing blocks every wallet credit and debit, including deposits, withdrawals and game transactions. Existing balance is preserved.</p>
+            <h3 className="text-sm font-bold text-white">Outgoing transaction lock</h3>
+            <p className="text-xs leading-5 text-slate-500">Freezing blocks outgoing debits such as bets and new withdrawals. Incoming deposits, prizes and reversals can still be credited so financial reconciliation remains correct. Existing balance is preserved.</p>
             {wallet.isFrozen ? <><p className="text-xs text-rose-200">Reason: {wallet.frozenReason || "Not provided"}</p><form action={unfreezeUserWalletAction} className="space-y-2"><input type="hidden" name="walletId" value={wallet.id} /><input name="reason" required maxLength={1000} placeholder="Reason for unfreezing" className="min-h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-sm text-white" /><button className="min-h-10 w-full rounded-lg border border-emerald-300/30 px-4 text-sm font-bold text-emerald-200">Unfreeze wallet</button></form></> : <form action={freezeUserWalletAction} className="space-y-2"><input type="hidden" name="walletId" value={wallet.id} /><input name="reason" required maxLength={1000} placeholder="Reason for freezing" className="min-h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-sm text-white" /><button className="min-h-10 w-full rounded-lg border border-rose-300/30 px-4 text-sm font-bold text-rose-200">Freeze wallet</button></form>}
           </div>
           <form action={changeUserStatusAction} className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
