@@ -165,8 +165,6 @@ export async function recordWalletTransactionInTransaction(
   });
 
   if (existing) {
-    // Prisma Decimal normalizes numeric values, so `500.00` may come back as
-    // `500`. Compare canonical money strings instead of Decimal.toString().
     const existingAmount = normalizeMoney(existing.amount.toString());
     if (existingAmount !== amount || existing.currency !== currency) {
       throw new Error("Financial reference already exists with different transaction terms.");
@@ -347,5 +345,11 @@ export async function getAdminWalletTransactions(walletId: string, page = 1) {
 export async function getCurrentUserWalletSummary() {
   const user = await getCurrentUser();
   if (!user || user.status !== "ACTIVE") return null;
-  return getOrCreateWalletForUser(user.id);
+
+  // The shared header renders on every route. It must never create or upsert a
+  // wallet during navigation; wallet creation stays in the wallet workflows.
+  return prisma.wallet.findUnique({
+    where: { userId: user.id },
+    select: { id: true, userId: true, currency: true, balance: true, createdAt: true, updatedAt: true },
+  });
 }
