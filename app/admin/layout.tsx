@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { requireAdmin } from "@/lib/auth";
+import { AdminShell } from "@/components/admin/admin-shell";
 
 export const metadata: Metadata = {
   robots: {
@@ -11,6 +12,11 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  await requireAdmin();
-  return children;
+  const admin = await requireAdmin();
+
+  return (
+    <AdminShell adminEmail={admin.email ?? "Administrator"} adminRole={admin.role}>
+      {children}
+    </AdminShell>
+  );
 }
