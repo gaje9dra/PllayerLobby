@@ -40,9 +40,19 @@ PAYU_PAYOUT_MERCHANT_ID="your-test-payout-merchant-id"
 PAYU_PAYOUT_CLIENT_ID="your-test-payout-client-id"
 PAYU_PAYOUT_CLIENT_SECRET="your-test-payout-client-secret"
 PAYU_PAYOUT_WEBHOOK_SECRET="your-test-payout-webhook-secret"
-PAYOUT_ENCRYPTION_KEY="base64-encoded-32-byte-key"
+PAYOUT_ENCRYPTION_KEY="64-character-hex-or-base64-encoded-32-byte-key"
 PAYOUTS_ENABLED=true
 ```
+
+Generate a payout encryption key on Windows PowerShell with Node.js installed:
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+This prints a 64-character hexadecimal key. Copy the value into `.env.local` as `PAYOUT_ENCRYPTION_KEY`, without adding spaces or line breaks. The application also accepts canonical Base64 and Base64URL encodings of exactly 32 random bytes. Never share this key or commit it to source control.
+
+**Important:** Keep the same key for the lifetime of the stored payout destinations. Changing it makes previously encrypted bank/UPI details unreadable. Do not rotate it without a planned decrypt-and-re-encrypt migration.
 
 Never commit `.env`, `.env.local`, `.env.production`, or real credentials. Server secrets must never use `NEXT_PUBLIC_*`. The PayU merchant salt, payout credentials, OAuth secret, database URL, encryption key, and webhook secret are server-only.
 
@@ -55,7 +65,7 @@ npm run config:check
 npm run config:check:production
 ```
 
-The production checker reports only configuration status; it never prints secret values.
+The checker validates that the payout key decodes to exactly 32 bytes and reports only status/errors; it never prints secret values.
 
 Generate a strong Auth.js secret with:
 
@@ -188,101 +198,3 @@ Do not treat browser-local date/time strings as UTC. Keep all tournament schedul
 
 GitHub Actions verifies the application with Node 22, Prisma generation/validation/migrations, typecheck, lint, tests, and a production build against an ephemeral PostgreSQL service. Production deployment is intentionally not automatic.
 
-## Phase 2.1 — Tournament database architecture
-
-The database contains `Game` and `Tournament` models. Games have an `isActive` flag, while tournaments reference games through `gameId` and use the `TournamentFormat` and `TournamentStatus` enums. Tournament money uses PostgreSQL Decimal fields rather than floating-point values.
-
-## Phase 2.2 — Admin tournament creation
-
-Active administrators can create tournament records from `/admin/tournaments/create`. The server-side creation action re-checks the authenticated user's role and status, validates the selected active game, validates the slug and schedule, validates money and participant limits, and creates the tournament with `DRAFT` status.
-
-The admin list at `/admin/tournaments` reads actual tournament records from PostgreSQL and shows the game, status, schedule, entry fee, prize pool, and participant limit. Tournament editing, deletion, publishing, registration, payments, room credentials, and participant workflows remain deferred to later phases.
-
-## Current authentication database scope
-
-Phase 1.3 adds only the database structures required by Auth.js:
-
-- `User`
-- `Account`
-- `Session`
-- `VerificationToken`
-- `UserRole`
-- `UserStatus`
-
-## AUTHORIZATION SETUP — PHASE 1.4
-
-Authorization is enforced server-side for protected application areas.
-
-- `/dashboard` requires an authenticated user with `ACTIVE` status.
-- `/admin` requires an authenticated `ADMIN` with `ACTIVE` status.
-- Suspended and banned accounts are redirected to `/access-denied`.
-- Unauthenticated protected requests are redirected to `/login`.
-- Role and status are re-read from PostgreSQL through the server-side authorization helpers.
-
-Reusable helpers are available from `lib/auth.ts`:
-
-- `getCurrentUser()`
-- `requireUser()`
-- `requireActiveUser()`
-- `requireAdmin()`
-- `isAdmin()`
-- `isActiveUser()`
-
-### Development admin setup
-
-Do not create an admin account through the application. For local testing, use Prisma Studio or another secure database administration workflow to change a test user's `role` from `USER` to `ADMIN`. Keep `status` set to `ACTIVE` for normal admin access.
-
-## Phase 1.4 database migration
-
-Phase 1.4 does not change the Prisma schema, so no new database migration is required for this phase. Existing Phase 1.2/1.3 migrations remain the source of truth.
-
-## Phase 1.5 — User Dashboard, Profile and Navigation
-
-Phase 1.5 adds the user-facing account interface while preserving the Phase 1.3 authentication and Phase 1.4 authorization architecture.
-
-### Added
-- Server-protected `/profile` page using the existing `requireUser()` helper.
-- Dashboard account overview using trusted server-side user data.
-- Reusable profile card, dashboard cards, empty states, quick actions, and dashboard header components.
-- Professional user dropdown with Dashboard, Profile, optional Admin Panel, and Logout.
-- Responsive collapsible mobile navigation.
-- Real empty states for My Tournaments, Payment History, and Notifications; no fake records or future database models.
-- Dashboard/profile loading states and user-safe error states.
-- Request-level caching for `getCurrentUser()` to avoid redundant user queries between the dashboard layout/page and shared layout.
-
-### Intentionally not implemented
-Tournament registration/creation/management beyond the Phase 2.2 admin creation flow, payment verification, registration codes, rooms, joining windows, payouts, refunds, notification persistence, and complete admin management remain future-phase work.
-
-## Phase 3.1 — PayU Payment Architecture & Secure Checkout
-
-Phase 3.1 adds a `Payment` model linked to `Registration`, server-side PayU hosted checkout initiation, SHA-512 request hashing, callback response-hash validation, duplicate payment protection, and safe dashboard payment status display.
-
-Paid tournament flow:
-
-```text
-Register
-  → Registration = PENDING
-  → Proceed to Payment
-  → server derives amount from PostgreSQL
-  → Payment = PENDING
-  → PayU hosted checkout
-  → PayU callback
-  → response/hash/transaction/amount checks
-  → success remains PENDING until the next verification phase
-```
-
-The application never collects card data directly and never sends the merchant salt to the browser. See `docs/payu.md` for merchant setup, environment configuration, callback configuration, hashing, testing, and the Phase 3.1 boundary.
-
-## Local setup
-
-After pulling the latest phase, run:
-
-```bash
-npx prisma generate
-npm run db:validate
-npm run db:migrate:deploy
-npm test
-npx tsc --noEmit
-npm run lint
-npm run build
-```
