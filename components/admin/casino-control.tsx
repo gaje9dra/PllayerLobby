@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 type CasinoData = {
+  demoControlsEnabled: boolean;
   round: { id: string; phase: string; multiplier: number; serverTime: number; startedAt: number | null };
   summary: { users: number; bets: number; totalStake: string; totalPayout: string; activeBets: number; activeStake: string };
   users: Array<{ userId: string; name: string; email: string; bets: number; stake: string; payout: string }>;
@@ -15,6 +16,8 @@ export function CasinoControl() {
   const [data, setData] = useState<CasinoData | null>(null);
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [busting, setBusting] = useState(false);
+  const [actionMessage, setActionMessage] = useState("");
 
   const refresh = useCallback(async () => {
     try {
@@ -28,6 +31,23 @@ export function CasinoControl() {
       setError(caught instanceof Error ? caught.message : "Could not load live round data.");
     }
   }, []);
+
+  const bustCurrentRound = useCallback(async () => {
+    if (!window.confirm("Bust the current local demo round immediately? Active bets will be settled as losses.")) return;
+    setBusting(true);
+    setActionMessage("");
+    try {
+      const response = await fetch("/api/admin/casino-control", { method: "POST", cache: "no-store" });
+      const payload = (await response.json()) as { error?: string; success?: boolean; round?: { multiplier: number } };
+      if (!response.ok || !payload.success) throw new Error(payload.error || "Could not bust the round.");
+      setActionMessage(`Local demo round busted at ${Number(payload.round?.multiplier ?? 1).toFixed(2)}x.`);
+      await refresh();
+    } catch (caught) {
+      setActionMessage(caught instanceof Error ? caught.message : "Could not bust the round.");
+    } finally {
+      setBusting(false);
+    }
+  }, [refresh]);
 
   useEffect(() => {
     // Schedule the initial request as a task so state updates happen after the effect completes.
@@ -61,6 +81,20 @@ export function CasinoControl() {
         </> : !error && <div className="mt-6 animate-pulse rounded-xl bg-white/[0.04] p-12 text-center text-sm text-slate-500">Loading live round data…</div>}
         <div className="mt-4 flex items-center justify-between text-xs text-slate-600"><span>Read-only monitoring · no wallet or bet controls</span><span>{updatedAt ? `Updated ${updatedAt.toLocaleTimeString()}` : "Waiting for data"}</span></div>
       </section>
+
+      {data?.demoControlsEnabled && <section className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.04] p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-300">Local demo mode only</p>
+            <h2 className="mt-2 text-xl font-black text-white">Manual round control</h2>
+            <p className="mt-1 max-w-2xl text-sm text-slate-400">Bust the currently running local test round immediately. This settles active demo bets as losses and is unavailable outside development.</p>
+          </div>
+          <button type="button" onClick={() => void bustCurrentRound()} disabled={busting || data.round.phase !== "RUNNING"} className="rounded-xl border border-rose-400/30 bg-rose-500/15 px-5 py-3 text-sm font-black text-rose-200 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-40">
+            {busting ? "Busting round…" : "Bust Now"}
+          </button>
+        </div>
+        <p aria-live="polite" className="mt-3 text-xs text-amber-200/80">{actionMessage || (data.round.phase === "RUNNING" ? "Available while a round is running." : "Start a round to enable Bust Now.")}</p>
+      </section>}
 
       {data && <>
         <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
