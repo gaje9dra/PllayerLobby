@@ -1,3 +1,5 @@
+import { decodePayoutEncryptionKey } from "./payout-crypto-core";
+
 export type AppEnvironment = "development" | "test" | "staging" | "production";
 
 const REQUIRED_SERVER_VARS = [
@@ -30,6 +32,14 @@ export function validateServerEnvironment(options: { requireProduction?: boolean
   const production = options.requireProduction || environment === "production";
   const missing = REQUIRED_SERVER_VARS.filter((name) => !value(name));
   const errors: string[] = missing.map((name) => `${name} is missing.`);
+
+  if (value("PAYOUT_ENCRYPTION_KEY")) {
+    try {
+      decodePayoutEncryptionKey(value("PAYOUT_ENCRYPTION_KEY"));
+    } catch {
+      errors.push("PAYOUT_ENCRYPTION_KEY must be a 64-character hexadecimal key or a canonical Base64/Base64URL encoding of exactly 32 random bytes.");
+    }
+  }
 
   if (!value("NEXT_PUBLIC_APP_URL")) errors.push("NEXT_PUBLIC_APP_URL is missing.");
   if (!value("APP_TIMEZONE")) errors.push("APP_TIMEZONE is missing.");
