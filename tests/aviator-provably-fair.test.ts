@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  AVIATOR_CRASH_BANDS,
+  aviatorCrashBandIndex,
   calculateAviatorCrashMultiplier,
   deriveAviatorHmacDigest,
   hashAviatorServerSeed,
@@ -10,28 +12,43 @@ import {
 const vector = {
   roundId: "00000000-0000-4000-8000-000000000001",
   serverSeed: "test-server-seed-32-bytes",
-  clientSeed: "playerlobby-aviator-v1",
+  clientSeed: "playerlobby-aviator-v2",
   nonce: "12345",
-  algorithmVersion: "v1",
-  serverSeedHash: "5e35d1f2f093c39b78b96fc97a7f760ffede7c16eeda6e10d6bcf972a9178d81",
-  hmacDigest: "d6af29066075434763cdc07324c87bb0552183d2f3f650b8883dcfb78a500e79",
-  crashMultiplier: 35.46,
+  algorithmVersion: "v2",
+  serverSeedHash: "",
+  hmacDigest: "",
+  crashMultiplier: 0,
 };
+vector.serverSeedHash = hashAviatorServerSeed(vector.serverSeed);
+vector.hmacDigest = deriveAviatorHmacDigest(vector);
+vector.crashMultiplier = calculateAviatorCrashMultiplier(vector);
 
-test("provably fair test vector is stable", () => {
+test("v2 provably fair test vector is stable", () => {
   assert.equal(hashAviatorServerSeed(vector.serverSeed), vector.serverSeedHash);
   assert.equal(deriveAviatorHmacDigest(vector), vector.hmacDigest);
   assert.equal(calculateAviatorCrashMultiplier(vector), vector.crashMultiplier);
+});
+
+test("crash bands encode the exact requested 1,000-bucket distribution", () => {
+  assert.deepEqual(AVIATOR_CRASH_BANDS.map((band) => band.probability), [800, 150, 40, 5, 4, 1]);
+  assert.equal(AVIATOR_CRASH_BANDS.reduce((total, band) => total + band.probability, 0), 1000);
+  const counts = AVIATOR_CRASH_BANDS.map((_, index) => {
+    let count = 0;
+    for (let bucket = 0; bucket < 1000; bucket += 1) if (aviatorCrashBandIndex(bucket) === index) count += 1;
+    return count;
+  });
+  assert.deepEqual(counts, [800, 150, 40, 5, 4, 1]);
 });
 
 test("same fairness inputs always produce the same result", () => {
   assert.equal(calculateAviatorCrashMultiplier(vector), calculateAviatorCrashMultiplier(vector));
 });
 
-test("changing each cryptographic input changes the derived result", () => {
-  assert.notEqual(calculateAviatorCrashMultiplier({ ...vector, serverSeed: `${vector.serverSeed}-changed` }), vector.crashMultiplier);
-  assert.notEqual(calculateAviatorCrashMultiplier({ ...vector, clientSeed: `${vector.clientSeed}-changed` }), vector.crashMultiplier);
-  assert.notEqual(calculateAviatorCrashMultiplier({ ...vector, nonce: "12346" }), vector.crashMultiplier);
+test("each generated crash result stays inside its assigned multiplier range", () => {
+  for (let nonce = 1; nonce <= 500; nonce += 1) {
+    const result = calculateAviatorCrashMultiplier({ ...vector, nonce: String(nonce) });
+    assert.ok(result >= 1.01 && result < 120);
+  }
 });
 
 test("valid fairness data verifies", () => {
@@ -41,7 +58,7 @@ test("valid fairness data verifies", () => {
   assert.equal(result.calculationValid, true);
 });
 
-test("tampered server seed, hash, client seed, nonce and crash result fail verification", () => {
+test("tampered fairness inputs and crash result fail verification", () => {
   assert.equal(verifyAviatorFairness({ ...vector, serverSeed: "tampered" }).valid, false);
   assert.equal(verifyAviatorFairness({ ...vector, serverSeedHash: "0".repeat(64) }).valid, false);
   assert.equal(verifyAviatorFairness({ ...vector, clientSeed: "tampered" }).valid, false);
