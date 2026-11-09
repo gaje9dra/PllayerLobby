@@ -86,10 +86,27 @@ export async function getAdminWithdrawalsWithDestination(input: { page?: number;
   const take = 20;
   const where = input.status ? { status: input.status } : {};
   const [items, total] = await Promise.all([
-    prisma.withdrawalRequest.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * take, take, select: { id: true, amount: true, currency: true, status: true, payoutDestinationId: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, rejectionReason: true, createdAt: true, reviewedAt: true, reviewedBy: { select: { name: true, email: true } }, user: { select: { id: true, name: true, email: true, status: true } }, wallet: { select: { id: true, currency: true, balance: true } }, payoutDestination: { select: { id: true, type: true, status: true, maskedDestination: true, userId: true } }, payouts: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, provider: true, merchantTransferId: true, providerTransferId: true, providerReference: true, previousPayoutId: true, amount: true, currency: true, paymentType: true, status: true, reconciliationStatus: true, reconciliationMessage: true, lastReconciledAt: true, failureCode: true, failureReason: true, initiatedAt: true, completedAt: true, reversedAt: true, createdAt: true } } } }),
+    prisma.withdrawalRequest.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * take, take, select: { id: true, amount: true, currency: true, status: true, payoutDestinationId: true, destinationTypeSnapshot: true, destinationMaskedSnapshot: true, encryptedDestinationSnapshot: true, rejectionReason: true, createdAt: true, reviewedAt: true, reviewedBy: { select: { name: true, email: true } }, user: { select: { id: true, name: true, email: true, status: true } }, wallet: { select: { id: true, currency: true, balance: true } }, payoutDestination: { select: { id: true, type: true, status: true, maskedDestination: true, userId: true } }, payouts: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, provider: true, merchantTransferId: true, providerTransferId: true, providerReference: true, previousPayoutId: true, amount: true, currency: true, paymentType: true, status: true, reconciliationStatus: true, reconciliationMessage: true, lastReconciledAt: true, failureCode: true, failureReason: true, initiatedAt: true, completedAt: true, reversedAt: true, createdAt: true } } } }),
     prisma.withdrawalRequest.count({ where }),
   ]);
-  return { items, page, total, totalPages: Math.max(1, Math.ceil(total / take)) };
+  const safeItems = items.map((item) => {
+    let destinationDetails: Record<string, string> | null = null;
+    if (item.encryptedDestinationSnapshot && item.destinationTypeSnapshot) {
+      try {
+        const raw = JSON.parse(decryptPayoutData(item.encryptedDestinationSnapshot)) as Record<string, unknown>;
+        if (raw && raw.type === item.destinationTypeSnapshot) {
+          destinationDetails = item.destinationTypeSnapshot === "UPI"
+            ? { type: "UPI", displayName: String(raw.displayName ?? ""), upiId: String(raw.upiId ?? "") }
+            : { type: "BANK_ACCOUNT", displayName: String(raw.displayName ?? ""), accountHolderName: String(raw.accountHolderName ?? ""), accountNumber: String(raw.accountNumber ?? ""), ifsc: String(raw.ifsc ?? ""), bankName: String(raw.bankName ?? "") };
+        }
+      } catch {
+        destinationDetails = null;
+      }
+    }
+    const { encryptedDestinationSnapshot: _encrypted, ...safeItem } = item;
+    return { ...safeItem, destinationDetails };
+  });
+  return { items: safeItems, page, total, totalPages: Math.max(1, Math.ceil(total / take)) };
 }
 
 export async function reconcileWithdrawalDestinations() {
