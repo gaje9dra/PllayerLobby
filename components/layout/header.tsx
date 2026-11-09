@@ -5,11 +5,12 @@ import { siteConfig } from "@/config/site";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/layout/user-menu";
 import { MobileNavigation } from "@/components/layout/mobile-navigation";
+import { AviatorMenuCard } from "@/components/layout/aviator-menu-card";
 
 export async function Header() {
   const user = await getCurrentUser();
   const wallet = user && isActiveUser(user) ? await getOrCreateWalletForUser(user.id) : null;
-  const walletBalance = wallet ? wallet.balance.toFixed(2).replace(/\.00$/, "") : null;
+  const walletBalance = wallet ? wallet.balance.toFixed(2).replace(/\\.00$/, "") : null;
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/90 backdrop-blur-xl">
@@ -22,7 +23,15 @@ export async function Header() {
         <nav className="hidden items-center gap-6 md:flex" aria-label="Primary navigation">
           <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/">Home</Link>
           <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/tournaments">Tournaments</Link>
-          <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/games/aviator">Games</Link>
+          <details className="group relative">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-slate-300 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 [&::-webkit-details-marker]:hidden">
+              Games
+              <span aria-hidden="true" className="text-[10px] transition group-open:rotate-180">▼</span>
+            </summary>
+            <div className="absolute left-1/2 top-full z-50 mt-4 w-[340px] -translate-x-1/2 rounded-2xl border border-white/10 bg-slate-950 p-2 shadow-2xl shadow-black/50">
+              <AviatorMenuCard className="min-h-0" />
+            </div>
+          </details>
           {user ? <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/dashboard">Dashboard</Link> : null}
           {user && isAdmin(user) ? <Link className="text-sm font-medium text-slate-300 transition hover:text-white" href="/admin">Admin Panel</Link> : null}
         </nav>
