@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateWalletForUser } from "@/lib/wallet";
 import { getCurrentUserAviatorBets } from "@/lib/games/aviator/betting";
 import { placeNetlifyAviatorBetForUser } from "@/lib/games/aviator/serverless-betting";
+import { AVIATOR_DISCLAIMER_VERSION } from "@/lib/games/aviator/disclaimer";
 
 function noStore(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store, max-age=0" } });
@@ -20,6 +21,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user || user.status !== "ACTIVE") return noStore({ error: "AUTHENTICATION_REQUIRED" }, 401);
+  if (user.aviatorDisclaimerVersion !== AVIATOR_DISCLAIMER_VERSION || !user.aviatorDisclaimerAcceptedAt) {
+    return noStore({ error: "AVIATOR_DISCLAIMER_REQUIRED", message: "Please read and accept the Aviator game disclaimer before placing a bet." }, 403);
+  }
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return noStore({ error: "INVALID_BET_AMOUNT" }, 400);
   const clientRequestId = typeof body.clientRequestId === "string" ? body.clientRequestId : request.headers.get("idempotency-key") ?? "";

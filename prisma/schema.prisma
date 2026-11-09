@@ -185,6 +185,8 @@ model User {
   image String?
   role UserRole @default(USER)
   status UserStatus @default(ACTIVE)
+  aviatorDisclaimerAcceptedAt DateTime?
+  aviatorDisclaimerVersion String? @db.VarChar(32)
   accounts Account[]
   sessions Session[]
   registrations Registration[]

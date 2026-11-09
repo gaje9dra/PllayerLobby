@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 type CasinoData = {
-  demoControlsEnabled: boolean;
   round: { id: string; phase: string; multiplier: number; serverTime: number; startedAt: number | null };
   summary: { users: number; bets: number; totalStake: string; totalPayout: string; activeBets: number; activeStake: string };
   users: Array<{ userId: string; name: string; email: string; bets: number; stake: string; payout: string }>;
@@ -33,14 +32,14 @@ export function CasinoControl() {
   }, []);
 
   const bustCurrentRound = useCallback(async () => {
-    if (!window.confirm("Bust the current local demo round immediately? Active bets will be settled as losses.")) return;
+    if (!window.confirm("Bust the currently running Aviator round now? All unsettled active bets will be settled as losses. This action cannot be undone.")) return;
     setBusting(true);
     setActionMessage("");
     try {
       const response = await fetch("/api/admin/casino-control", { method: "POST", cache: "no-store" });
       const payload = (await response.json()) as { error?: string; success?: boolean; round?: { multiplier: number } };
       if (!response.ok || !payload.success) throw new Error(payload.error || "Could not bust the round.");
-      setActionMessage(`Local demo round busted at ${Number(payload.round?.multiplier ?? 1).toFixed(2)}x.`);
+      setActionMessage(`Round busted at ${Number(payload.round?.multiplier ?? 1).toFixed(2)}x. Active bets are being settled.`);
       await refresh();
     } catch (caught) {
       setActionMessage(caught instanceof Error ? caught.message : "Could not bust the round.");
@@ -82,19 +81,19 @@ export function CasinoControl() {
         <div className="mt-4 flex items-center justify-between text-xs text-slate-600"><span>Read-only monitoring · no wallet or bet controls</span><span>{updatedAt ? `Updated ${updatedAt.toLocaleTimeString()}` : "Waiting for data"}</span></div>
       </section>
 
-      {data?.demoControlsEnabled && <section className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.04] p-5 sm:p-6">
+      <section className="rounded-2xl border border-rose-400/30 bg-rose-400/[0.035] p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-300">Local demo mode only</p>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-300">Administrator action</p>
             <h2 className="mt-2 text-xl font-black text-white">Manual round control</h2>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">Bust the currently running local test round immediately. This settles active demo bets as losses and is unavailable outside development.</p>
+            <p className="mt-1 max-w-2xl text-sm text-slate-400">Immediately end the current running round at its live multiplier. All unsettled active bets will be settled through the normal crash settlement process.</p>
           </div>
-          <button type="button" onClick={() => void bustCurrentRound()} disabled={busting || data.round.phase !== "RUNNING"} className="rounded-xl border border-rose-400/30 bg-rose-500/15 px-5 py-3 text-sm font-black text-rose-200 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-40">
-            {busting ? "Busting round…" : "Bust Now"}
+          <button type="button" onClick={() => void bustCurrentRound()} disabled={busting || data?.round.phase !== "RUNNING"} className="rounded-xl border border-rose-400/30 bg-rose-500/15 px-5 py-3 text-sm font-black text-rose-200 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-40">
+            {busting ? "Ending round…" : "Bust Now"}
           </button>
         </div>
-        <p aria-live="polite" className="mt-3 text-xs text-amber-200/80">{actionMessage || (data.round.phase === "RUNNING" ? "Available while a round is running." : "Start a round to enable Bust Now.")}</p>
-      </section>}
+        <p aria-live="polite" className="mt-3 text-xs text-rose-200/80">{actionMessage || (data?.round.phase === "RUNNING" ? "Available while a round is running." : "Bust Now becomes available when a round is running.")}</p>
+      </section>
 
       {data && <>
         <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">

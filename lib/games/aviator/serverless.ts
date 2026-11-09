@@ -5,7 +5,6 @@ import { calculateAviatorCrashMultiplier, createAviatorFairnessRound, AVIATOR_FA
 import { settleAviatorCrash } from "./settlement";
 import { persistFinalizedAviatorRound } from "./persistence";
 import type { AviatorRoundSnapshot } from "./types";
-import { consumeLocalAviatorDemoBust } from "./local-demo-controls";
 
 const WAITING_MS = 5_000;
 const SETTLED_MS = 1_000;
@@ -139,21 +138,6 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
   }
 
   if (row.status === "RUNNING") {
-    if (consumeLocalAviatorDemoBust(row.id)) {
-      const startedAt = row.startedAt ?? new Date(waitingEndsAt(row));
-      const demoCrashPoint = Math.max(1, multiplierAt(startedAt, now));
-      const claim = await prisma.aviatorRound.updateMany({
-        where: { id: row.id, status: "RUNNING" },
-        data: { status: "CRASHED", crashedAt: new Date(now), crashMultiplier: demoCrashPoint },
-      });
-      if (claim.count === 1) {
-        const crashedRow = (await getRound(row.id)) ?? row;
-        return settleCrashIfNeeded(crashedRow, now, demoCrashPoint);
-      }
-      const latest = await getRound(row.id);
-      if (latest?.status === "CRASHED") return toSnapshot(latest, now, "CRASHED", latest.crashMultiplier ? Number(latest.crashMultiplier) : demoCrashPoint);
-    }
-
     if (!row.serverSeedEncrypted || !row.clientSeed || row.nonce === null || !row.algorithmVersion) throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
     if (row.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
     const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);

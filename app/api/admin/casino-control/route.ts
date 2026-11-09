@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getNetlifyAviatorRoundSnapshot } from "@/lib/games/aviator/serverless";
-import { isLocalAviatorDemoControlsEnabled, requestLocalAviatorDemoBust } from "@/lib/games/aviator/local-demo-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +40,6 @@ export async function GET() {
   const totalPayout = grouped.reduce((sum, item) => sum + Number(item._sum.payout ?? 0), 0);
 
   return NextResponse.json({
-    demoControlsEnabled: isLocalAviatorDemoControlsEnabled(),
     round: {
       id: round.roundId,
       phase: round.phase,
@@ -83,16 +81,26 @@ export async function GET() {
 export async function POST() {
   await requireAdmin();
 
-  if (!isLocalAviatorDemoControlsEnabled()) {
-    return NextResponse.json({ error: "Local demo controls are disabled." }, { status: 403 });
-  }
-
   const currentRound = await getNetlifyAviatorRoundSnapshot();
   if (currentRound.phase !== "RUNNING") {
     return NextResponse.json({ error: "Bust Now is available only while a round is running." }, { status: 409 });
   }
 
-  requestLocalAviatorDemoBust(currentRound.roundId);
+  // The conditional database update is the single-writer claim. It works across
+  // serverless instances and cannot be consumed by a different function process.
+  const claim = await prisma.aviatorRound.updateMany({
+    where: { id: currentRound.roundId, status: "RUNNING" },
+    data: {
+      status: "CRASHED",
+      crashedAt: new Date(currentRound.serverTime),
+      crashMultiplier: Math.max(1, currentRound.multiplier),
+    },
+  });
+
+  if (claim.count !== 1) {
+    return NextResponse.json({ error: "The round already ended. Refresh and try the next round." }, { status: 409 });
+  }
+
   const bustedRound = await getNetlifyAviatorRoundSnapshot();
 
   return NextResponse.json({
