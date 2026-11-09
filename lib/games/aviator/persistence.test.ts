@@ -7,9 +7,9 @@ import type { AviatorRoundSnapshot } from "./types";
 const fairness = {
   roundId: "round-test",
   serverSeedHash: "a".repeat(64),
-  clientSeed: "playerlobby-aviator-v1",
+  clientSeed: "playerlobby-aviator-v2",
   nonce: "1",
-  algorithmVersion: "v1" as const,
+  algorithmVersion: "v2" as const,
 };
 
 test("finalized aviator rounds are persisted without tick-level records", async () => {
