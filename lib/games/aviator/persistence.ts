@@ -85,7 +85,7 @@ export async function getAviatorFairnessReveal(roundId: string): Promise<{ ok: t
   const row = rows[0];
   if (!row) return { ok: false, code: "ROUND_NOT_FOUND" };
   if (row.status !== "SETTLED") return { ok: false, code: "ROUND_NOT_COMPLETE" };
-  if (!row.serverSeedEncrypted || !row.serverSeedHash || !row.clientSeed || row.nonce === null || !row.algorithmVersion || row.crashMultiplier === null) {
+  if (!row.serverSeedEncrypted || !row.serverSeedHash || !row.clientSeed || row.nonce === null || !row.algorithmVersion || row.crashMultiplier === null || !row.fairnessRevealedAt) {
     return { ok: false, code: "FAIRNESS_DATA_NOT_FOUND" };
   }
 
@@ -109,46 +109,89 @@ export async function getAviatorFairnessReveal(roundId: string): Promise<{ ok: t
   return { ok: true, reveal, verification };
 }
 
+/**
+ * Finalize the round and publish its fairness reveal timestamp in one UPDATE.
+ * The database trigger intentionally rejects changes to fairnessRevealedAt
+ * after a row is already SETTLED, so the timestamp must be written during the
+ * transition into SETTLED rather than in a second query after the transition.
+ */
 export async function persistFinalizedAviatorRound(snapshot: AviatorRoundSnapshot, crashMultiplier: number) {
-  const round = await prisma.aviatorRound.upsert({
-    where: { id: snapshot.roundId },
-    create: {
-      id: snapshot.roundId,
-      status: "SETTLED",
-      startedAt: snapshot.startedAt ? new Date(snapshot.startedAt) : new Date(snapshot.serverTime),
-      crashedAt: new Date(snapshot.serverTime),
-      crashMultiplier,
-    },
-    update: { status: "SETTLED", crashedAt: new Date(snapshot.serverTime), crashMultiplier },
-  });
-
-  const rows = await prisma.$queryRaw<Array<{ serverSeed: string | null; serverSeedHash: string | null; clientSeed: string | null; nonce: bigint | null; algorithmVersion: string | null }>>`
-    SELECT "serverSeedEncrypted" AS "serverSeed", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion"
-    FROM "AviatorRound"
-    WHERE "id" = ${snapshot.roundId}::uuid
-    LIMIT 1
+  const finalizedAt = new Date(snapshot.serverTime);
+  const rows = await prisma.$queryRaw<Array<{
+    id: string;
+    status: string;
+    startedAt: Date | null;
+    crashedAt: Date | null;
+    crashMultiplier: string | null;
+    serverSeedEncrypted: string | null;
+    serverSeedHash: string | null;
+    clientSeed: string | null;
+    nonce: bigint | null;
+    algorithmVersion: string | null;
+    fairnessRevealedAt: Date | null;
+  }>>`
+    INSERT INTO "AviatorRound" (
+      "id", "status", "startedAt", "crashedAt", "crashMultiplier"
+    ) VALUES (
+      ${snapshot.roundId}::uuid,
+      'SETTLED'::"AviatorRoundStatus",
+      ${snapshot.startedAt ? new Date(snapshot.startedAt) : finalizedAt},
+      ${finalizedAt},
+      ${crashMultiplier}
+    )
+    ON CONFLICT ("id") DO UPDATE SET
+      "status" = 'SETTLED'::"AviatorRoundStatus",
+      "startedAt" = COALESCE("AviatorRound"."startedAt", EXCLUDED."startedAt"),
+      "crashedAt" = EXCLUDED."crashedAt",
+      "crashMultiplier" = EXCLUDED."crashMultiplier",
+      "fairnessRevealedAt" = CASE
+        WHEN "AviatorRound"."status" <> 'SETTLED'::"AviatorRoundStatus"
+          AND "AviatorRound"."serverSeedEncrypted" IS NOT NULL
+          AND "AviatorRound"."serverSeedHash" IS NOT NULL
+          AND "AviatorRound"."clientSeed" IS NOT NULL
+          AND "AviatorRound"."nonce" IS NOT NULL
+          AND "AviatorRound"."algorithmVersion" IS NOT NULL
+        THEN EXCLUDED."crashedAt"
+        ELSE "AviatorRound"."fairnessRevealedAt"
+      END
+    RETURNING
+      "id",
+      "status"::text AS "status",
+      "startedAt",
+      "crashedAt",
+      "crashMultiplier"::text AS "crashMultiplier",
+      "serverSeedEncrypted",
+      "serverSeedHash",
+      "clientSeed",
+      "nonce",
+      "algorithmVersion",
+      "fairnessRevealedAt"
   `;
-  const fairness = rows[0];
-  if (fairness?.serverSeed && fairness.serverSeedHash && fairness.clientSeed && fairness.nonce !== null && fairness.algorithmVersion) {
-    const serverSeed = decryptAviatorServerSeed(fairness.serverSeed);
-    await prisma.$executeRaw`
-      UPDATE "AviatorRound"
-      SET "fairnessRevealedAt" = COALESCE("fairnessRevealedAt", ${new Date(snapshot.serverTime)})
-      WHERE "id" = ${snapshot.roundId}::uuid AND "status" = 'SETTLED'::"AviatorRoundStatus"
-    `;
+
+  const round = rows[0];
+  if (!round) throw new Error("AVIATOR_ROUND_FINALIZATION_FAILED");
+
+  if (round.fairnessRevealedAt && round.serverSeedEncrypted && round.serverSeedHash && round.clientSeed && round.nonce !== null && round.algorithmVersion) {
+    const serverSeed = decryptAviatorServerSeed(round.serverSeedEncrypted);
     emitAviatorFairnessEvent({
       type: "fairness:revealed",
-      roundId: snapshot.roundId,
+      roundId: round.id,
       serverSeed,
-      serverSeedHash: fairness.serverSeedHash,
-      clientSeed: fairness.clientSeed,
-      nonce: fairness.nonce.toString(),
-      algorithmVersion: fairness.algorithmVersion,
-      crashMultiplier,
+      serverSeedHash: round.serverSeedHash,
+      clientSeed: round.clientSeed,
+      nonce: round.nonce.toString(),
+      algorithmVersion: round.algorithmVersion,
+      crashMultiplier: Number(round.crashMultiplier ?? crashMultiplier),
     });
   }
 
-  return round;
+  return {
+    id: round.id,
+    status: "SETTLED" as const,
+    startedAt: round.startedAt,
+    crashedAt: round.crashedAt,
+    crashMultiplier: round.crashMultiplier,
+  };
 }
 
 export async function getAviatorHistory(limit = 20) {

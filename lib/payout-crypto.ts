@@ -5,10 +5,13 @@ import { decryptPayoutDataWithKey, encryptPayoutDataWithKey } from "@/lib/payout
 const KEY_LENGTH = 32;
 
 function getKey() {
-  const raw = process.env.PAYOUT_ENCRYPTION_KEY;
-  if (!raw) throw new Error("PAYOUT_ENCRYPTION_KEY is not configured.");
+  const raw = process.env.PAYOUT_ENCRYPTION_KEY?.trim();
+  if (!raw) throw new Error("PAYOUT_ENCRYPTION_KEY_MISSING");
+
   const key = Buffer.from(raw, "base64");
-  if (key.length !== KEY_LENGTH) throw new Error("PAYOUT_ENCRYPTION_KEY must decode to exactly 32 bytes.");
+  if (key.length !== KEY_LENGTH || key.toString("base64") !== raw) {
+    throw new Error("PAYOUT_ENCRYPTION_KEY_INVALID");
+  }
   return key;
 }
 
