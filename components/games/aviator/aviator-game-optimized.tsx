@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AviatorRoundSnapshot } from "@/lib/games/aviator/types";
 import { multiplyMoneyByMultiplier } from "@/lib/wallet-rules";
@@ -53,6 +54,7 @@ function graphGeometry(multiplier: number, phase: AviatorRoundSnapshot["phase"])
 }
 
 export function AviatorGameOptimized() {
+  const router = useRouter();
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [bets, setBets] = useState<Bet[]>([]);
   const [history, setHistory] = useState<Bet[]>([]);
@@ -118,13 +120,15 @@ export function AviatorGameOptimized() {
       if (!response.ok) throw new Error(data.message ?? data.error ?? "Cashout failed.");
       await loadBets(snapshotRef.current.roundId);
       await loadHistory();
+      window.dispatchEvent(new Event("playerlobby:wallet-updated"));
+      router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Cashout failed.");
     } finally {
       cashoutBusyRef.current = null;
       setCashoutBusy(null);
     }
-  }, [loadBets, loadHistory]);
+  }, [loadBets, loadHistory, router]);
 
   useEffect(() => {
     let mounted = true;
@@ -291,6 +295,8 @@ export function AviatorGameOptimized() {
       requestId.current = null;
       setWalletBalance(String(data.walletBalance ?? walletBalance ?? "0.00"));
       await loadBets(snapshot.roundId);
+      window.dispatchEvent(new Event("playerlobby:wallet-updated"));
+      router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to place bet.");
     } finally {
