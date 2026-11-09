@@ -19,12 +19,14 @@ export function decodePayoutEncryptionKey(raw: string) {
 
   if (/^[0-9a-fA-F]{64}$/.test(value)) {
     key = Buffer.from(value, "hex");
+  } else if (/^[A-Za-z0-9_-]{43}$/.test(value)) {
+    // Check Base64URL first: a valid 43-character Base64URL key may contain
+    // only alphanumeric characters and would otherwise be misclassified as Base64.
+    const decoded = Buffer.from(value, "base64url");
+    if (decoded.length === KEY_LENGTH && decoded.toString("base64url") === value) key = decoded;
   } else if (/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
     const decoded = Buffer.from(value, "base64");
     if (decoded.length === KEY_LENGTH && decoded.toString("base64") === value) key = decoded;
-  } else if (/^[A-Za-z0-9_-]{43}$/.test(value)) {
-    const decoded = Buffer.from(value, "base64url");
-    if (decoded.length === KEY_LENGTH && decoded.toString("base64url") === value) key = decoded;
   }
 
   if (!key || key.length !== KEY_LENGTH) {
