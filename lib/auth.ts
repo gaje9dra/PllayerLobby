@@ -14,6 +14,8 @@ const protectedUserSelect = {
   image: true,
   role: true,
   status: true,
+  aviatorDisclaimerAcceptedAt: true,
+  aviatorDisclaimerVersion: true,
   createdAt: true,
   updatedAt: true,
 } as const;
