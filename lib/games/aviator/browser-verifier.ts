@@ -33,17 +33,25 @@ export async function verifyAviatorFairnessInBrowser(input: {
   roundId: string; serverSeed: string; serverSeedHash: string; clientSeed: string;
   nonce: string; algorithmVersion: string; crashMultiplier: number;
 }) {
-  if (input.algorithmVersion !== ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
+  if (input.algorithmVersion !== "v1" && input.algorithmVersion !== ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
   if (!input.roundId || !input.serverSeed || !input.clientSeed || !input.nonce) throw new Error("INVALID_FAIRNESS_INPUT");
   const computedHash = await sha256Hex(input.serverSeed);
   const base = `${input.clientSeed}:${input.nonce}`;
-  const bucket = await uniformIntFromHmac(input.serverSeed, `${base}:band`, 1000);
-  let boundary = 0;
-  const band = BANDS.find((candidate) => { boundary += candidate.probability; return bucket < boundary; });
-  if (!band) throw new Error("INVALID_CRASH_BUCKET");
-  const pointCount = band.maxCentsExclusive - band.minCents;
-  const offset = await uniformIntFromHmac(input.serverSeed, `${base}:point`, pointCount);
-  const calculatedCrashMultiplier = Number(((band.minCents + offset) / 100).toFixed(2));
+  let calculatedCrashMultiplier: number;
+  if (input.algorithmVersion === "v1") {
+    const digest = await hmacSha256Hex(input.serverSeed, base);
+    const value = Number.parseInt(digest.slice(0, 8), 16);
+    const unit = value / 0x1_0000_0000;
+    calculatedCrashMultiplier = Number(Math.min(50, 1.01 + unit * unit * (50 - 1.01)).toFixed(2));
+  } else {
+    const bucket = await uniformIntFromHmac(input.serverSeed, `${base}:band`, 1000);
+    let boundary = 0;
+    const band = BANDS.find((candidate) => { boundary += candidate.probability; return bucket < boundary; });
+    if (!band) throw new Error("INVALID_CRASH_BUCKET");
+    const pointCount = band.maxCentsExclusive - band.minCents;
+    const offset = await uniformIntFromHmac(input.serverSeed, `${base}:point`, pointCount);
+    calculatedCrashMultiplier = Number(((band.minCents + offset) / 100).toFixed(2));
+  }
   const hashValid = computedHash === input.serverSeedHash.toLowerCase();
   const calculationValid = calculatedCrashMultiplier === Number(input.crashMultiplier.toFixed(2));
   return { valid: hashValid && calculationValid, hashValid, calculationValid, computedHash, calculatedCrashMultiplier };
