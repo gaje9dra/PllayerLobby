@@ -16,6 +16,7 @@ type RoundRow = {
   crashedAt: Date | null;
   crashMultiplier: string | null;
   createdAt: Date;
+  serverNow: Date;
   serverSeedEncrypted: string | null;
   serverSeedHash: string | null;
   clientSeed: string | null;
@@ -23,11 +24,10 @@ type RoundRow = {
   algorithmVersion: string | null;
 };
 
-function waitingEndsAt(row: RoundRow, now: number) {
-  // Database timestamps can be ahead of the application clock after a timezone or
-  // clock-configuration change. Never let a future createdAt extend the betting
-  // window beyond the configured five seconds from the server's current time.
-  return Math.min(row.createdAt.getTime(), now) + WAITING_MS;
+function waitingEndsAt(row: RoundRow) {
+  // Use an absolute deadline derived from the database-created timestamp.
+  // The caller supplies database time, so a clock skew cannot create a sliding window.
+  return row.createdAt.getTime() + WAITING_MS;
 }
 
 function multiplierAt(startedAt: Date, now: number) {
@@ -58,7 +58,8 @@ async function getRound(id: string) {
   const rows = await prisma.$queryRaw<RoundRow[]>`
     SELECT
       "id", "status", "startedAt", "crashedAt", "crashMultiplier", "createdAt",
-      "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion"
+      "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion",
+      clock_timestamp() AS "serverNow"
     FROM "AviatorRound"
     WHERE "id" = ${id}::uuid
     LIMIT 1
@@ -70,7 +71,8 @@ async function getLatestActiveRound() {
   const rows = await prisma.$queryRaw<RoundRow[]>`
     SELECT
       "id", "status", "startedAt", "crashedAt", "crashMultiplier", "createdAt",
-      "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion"
+      "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion",
+      clock_timestamp() AS "serverNow"
     FROM "AviatorRound"
     WHERE "status" IN ('WAITING'::"AviatorRoundStatus", 'RUNNING'::"AviatorRoundStatus", 'CRASHED'::"AviatorRoundStatus")
     ORDER BY "createdAt" DESC
@@ -102,7 +104,7 @@ function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["pha
     serverTime: now,
     multiplier,
     startedAt: row.startedAt?.getTime() ?? null,
-    waitingEndsAt: phase === "WAITING" ? waitingEndsAt(row, now) : null,
+    waitingEndsAt: phase === "WAITING" ? waitingEndsAt(row) : null,
     fairness: { roundId: row.id, serverSeedHash: row.serverSeedHash, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION },
   };
 }
@@ -116,7 +118,7 @@ async function settleCrashIfNeeded(row: RoundRow, now: number, crashPoint: numbe
 
 export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnapshot> {
   let row = await getOrCreateRound();
-  const now = Date.now();
+  let now = row.serverNow.getTime();
 
   if (row.status === "CRASHED") {
     if (row.crashedAt && now - row.crashedAt.getTime() >= SETTLED_MS) {
@@ -128,10 +130,11 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
   }
 
   if (row.status === "WAITING") {
-    const roundWaitingEndsAt = waitingEndsAt(row, now);
+    const roundWaitingEndsAt = waitingEndsAt(row);
     if (now < roundWaitingEndsAt) return toSnapshot(row, now, "WAITING", 1);
     await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "WAITING" }, data: { status: "RUNNING", startedAt: new Date(roundWaitingEndsAt) } });
     row = (await getRound(row.id)) ?? row;
+    now = row.serverNow.getTime();
   }
 
   if (row.status === "RUNNING") {
@@ -139,7 +142,7 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
     if (row.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
     const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);
     const crashPoint = calculateAviatorCrashMultiplier({ serverSeed, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION });
-    const startedAt = row.startedAt ?? new Date(waitingEndsAt(row, now));
+    const startedAt = row.startedAt ?? new Date(waitingEndsAt(row));
     const multiplier = Math.max(1, multiplierAt(startedAt, now));
 
     if (multiplier >= crashPoint) {
