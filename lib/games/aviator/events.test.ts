@@ -13,9 +13,9 @@ const snapshot: AviatorRoundSnapshot = {
   fairness: {
     roundId: "round-1",
     serverSeedHash: "a".repeat(64),
-    clientSeed: "playerlobby-aviator-v1",
+    clientSeed: "playerlobby-aviator-v2",
     nonce: "1",
-    algorithmVersion: "v1",
+    algorithmVersion: "v2",
   },
 };
 
