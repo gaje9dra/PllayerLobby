@@ -106,7 +106,7 @@ export function AviatorGameOptimized() {
   }, []);
 
   const cashOut = useCallback(async (bet: Bet) => {
-    if (cashoutBusyRef.current || snapshotRef.current.phase !== "RUNNING") return;
+    if (cashoutBusyRef.current) return;
     cashoutBusyRef.current = bet.id;
     setCashoutBusy(bet.id);
     setError(null);
@@ -114,7 +114,7 @@ export function AviatorGameOptimized() {
       const response = await fetch(`/api/games/aviator/bets/${bet.id}/cashout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roundId: snapshotRef.current.roundId }),
+        body: JSON.stringify({ roundId: bet.roundId }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message ?? data.error ?? "Cashout failed.");
@@ -351,7 +351,7 @@ export function AviatorGameOptimized() {
                 <div className="mt-5 flex items-center justify-between border-t border-white/5 pt-4"><span className="text-xs text-slate-500">Profit on win</span><span className="font-black text-slate-200">₹{potentialPayout ?? "0.00"}</span></div>
               </>}
 
-              {activeBets.length ? <div className="mt-5 space-y-3"><div className="flex items-center justify-between"><h2 className="text-xs font-black uppercase tracking-wider text-slate-500">Active bets</h2><span className="text-[10px] text-slate-600">{activeBets.length}</span></div>{activeBets.map((bet) => { let payout = bet.stake; try { payout = multiplyMoneyByMultiplier(bet.stake, displayMultiplier.toFixed(2)); } catch { /* Keep stake if shared formatter rejects transient data. */ } return <div key={bet.id} className="rounded-2xl border border-white/10 bg-[#101f33] p-3"><div className="flex items-center justify-between"><span className="text-xs text-slate-500">Stake</span><span className="font-black">₹{bet.stake}</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Current payout</span><span className="font-black text-lime-200">₹{payout}</span></div>{bet.autoCashoutMultiplier ? <p className="mt-2 text-[11px] text-slate-500">Auto cashout {bet.autoCashoutMultiplier}x</p> : null}<button type="button" disabled={snapshot.phase !== "RUNNING" || cashoutBusy === bet.id} onClick={() => void cashOut(bet)} className="mt-3 w-full rounded-lg border border-lime-300/20 bg-lime-300/5 py-2.5 text-xs font-black text-lime-200 disabled:opacity-35">{cashoutBusy === bet.id ? "CASHING OUT…" : `CASH OUT ${bet.autoCashoutMultiplier ? "MANUALLY" : ""}`}</button></div>; })}</div> : null}
+              {activeBets.length ? <div className="mt-5 space-y-3"><div className="flex items-center justify-between"><h2 className="text-xs font-black uppercase tracking-wider text-slate-500">Active bets</h2><span className="text-[10px] text-slate-600">{activeBets.length}</span></div>{activeBets.map((bet) => { let payout = bet.stake; try { payout = multiplyMoneyByMultiplier(bet.stake, displayMultiplier.toFixed(2)); } catch { /* Keep stake if shared formatter rejects transient data. */ } return <div key={bet.id} className="rounded-2xl border border-white/10 bg-[#101f33] p-3"><div className="flex items-center justify-between"><span className="text-xs text-slate-500">Stake</span><span className="font-black">₹{bet.stake}</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Current payout</span><span className="font-black text-lime-200">₹{payout}</span></div>{bet.autoCashoutMultiplier ? <p className="mt-2 text-[11px] text-slate-500">Auto cashout {bet.autoCashoutMultiplier}x</p> : null}<button type="button" disabled={cashoutBusy === bet.id} onClick={() => void cashOut(bet)} className="mt-3 w-full rounded-lg border border-lime-300/20 bg-lime-300/5 py-2.5 text-xs font-black text-lime-200 disabled:opacity-35">{cashoutBusy === bet.id ? "CASHING OUT…" : `CASH OUT ${bet.autoCashoutMultiplier ? "MANUALLY" : ""}`}</button></div>; })}</div> : null}
             </aside>
 
             <section className="order-1 min-w-0 lg:order-2">
