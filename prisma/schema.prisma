@@ -603,6 +603,12 @@ model AviatorRound {
   crashedAt DateTime?
   crashMultiplier Decimal? @db.Decimal(12, 2)
   createdAt DateTime @default(now())
+  algorithmVersion String? @db.VarChar(16)
+  clientSeed String? @db.Text
+  fairnessRevealedAt DateTime? @db.Timestamp(6)
+  nonce BigInt?
+  serverSeedEncrypted String? @db.Text
+  serverSeedHash String? @db.Text
   bets AviatorBet[]
   @@index([status, crashedAt])
 }
