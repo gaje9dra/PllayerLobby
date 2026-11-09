@@ -88,15 +88,20 @@ export async function placeNetlifyAviatorBetForUser(
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`SELECT "id", "status" FROM "AviatorRound" WHERE "id" = ${snapshot.roundId}::uuid FOR UPDATE`);
+      const locked = await tx.$queryRaw<Array<{ id: string; status: string; createdAt: Date; serverNow: Date }>>(Prisma.sql`SELECT "id", "status", "createdAt", clock_timestamp() AS "serverNow" FROM "AviatorRound" WHERE "id" = ${snapshot.roundId}::uuid FOR UPDATE`);
       if (!locked[0] || locked[0].status !== "WAITING") throw new Error("ROUND_NOT_ACCEPTING_BETS");
+      const bettingDeadline = locked[0].createdAt.getTime() + 5_000;
+      if (locked[0].serverNow.getTime() >= bettingDeadline) {
+        await tx.aviatorRound.update({ where: { id: locked[0].id }, data: { status: "RUNNING", startedAt: new Date(bettingDeadline) } });
+        return { expired: true as const };
+      }
 
       const existing = await tx.aviatorBet.findUnique({ where: { userId_clientRequestId: { userId: user.id, clientRequestId: input.clientRequestId } } });
       if (existing) {
         const existingAuto = existing.autoCashoutMultiplier ? Number(existing.autoCashoutMultiplier) : null;
         if (normalizeMoney(existing.stake.toString()) !== amount || existingAuto !== auto) throw new Error("DUPLICATE_REQUEST");
         const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { balance: true } });
-        return { duplicate: true as const, bet: existing, walletBalance: wallet?.balance.toString() ?? "0.00" };
+        return { duplicate: true as const, expired: false as const, bet: existing, walletBalance: wallet?.balance.toString() ?? "0.00" };
       }
 
       const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true, balance: true, currency: true } });
@@ -104,9 +109,10 @@ export async function placeNetlifyAviatorBetForUser(
       const bet = await tx.aviatorBet.create({ data: { roundId: snapshot.roundId, userId: user.id, stake: amount, status: "ACTIVE", clientRequestId: input.clientRequestId, autoCashoutMultiplier: auto } });
       await recordWalletTransactionInTransaction(tx, { walletId: wallet.id, type: "DEBIT", category: "AVIATOR_BET", amount, currency: "INR", referenceType: "AVIATOR_BET", referenceId: bet.id, description: `Aviator bet ${bet.id}` });
       const updatedWallet = await tx.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true } });
-      return { duplicate: false as const, bet, walletBalance: updatedWallet?.balance.toString() ?? "0.00" };
+      return { duplicate: false as const, expired: false as const, bet, walletBalance: updatedWallet?.balance.toString() ?? "0.00" };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
+    if ("expired" in result && result.expired) return { ok: false, code: SERVERLESS_AVIATOR_CODES.ROUND_ALREADY_RUNNING, message: message(SERVERLESS_AVIATOR_CODES.ROUND_ALREADY_RUNNING) };
     if (!result.duplicate) emitAviatorBetEvent({ type: "bet:placed", roundId: result.bet.roundId, betId: result.bet.id, stake: result.bet.stake.toString(), status: "ACTIVE" });
     return { ok: true, bet: { id: result.bet.id, roundId: result.bet.roundId, stake: result.bet.stake.toString(), status: result.bet.status, serverTime: Date.now(), autoCashoutMultiplier: result.bet.autoCashoutMultiplier ? Number(result.bet.autoCashoutMultiplier) : null }, walletBalance: result.walletBalance };
   } catch (error) {
