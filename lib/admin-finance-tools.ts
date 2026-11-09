@@ -33,7 +33,7 @@ export async function getAdminWalletDirectory(input: { page?: number; query?: st
   const where: Prisma.WalletWhereInput = Object.keys(userWhere).length ? { user: userWhere } : {};
   const skip = (page - 1) * WALLET_PAGE_SIZE;
   const [items, total] = await Promise.all([
-    prisma.wallet.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WALLET_PAGE_SIZE, select: { id: true, userId: true, currency: true, balance: true, createdAt: true, user: { select: { id: true, name: true, email: true, phone: true, status: true, role: true } } } }),
+    prisma.wallet.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip, take: WALLET_PAGE_SIZE, select: { id: true, userId: true, currency: true, balance: true, isFrozen: true, frozenReason: true, createdAt: true, user: { select: { id: true, name: true, email: true, phone: true, status: true, role: true } } } }),
     prisma.wallet.count({ where }),
   ]);
   return { items, total, page, totalPages: Math.max(1, Math.ceil(total / WALLET_PAGE_SIZE)) };
@@ -83,6 +83,47 @@ export async function createAdminWalletAdjustment(input: { walletId: string; amo
     const transaction = await recordWalletTransactionInTransaction(tx, { walletId: wallet.id, type: input.direction, category: WalletTransactionCategory.ADJUSTMENT, amount, currency: wallet.currency, referenceType: WalletReferenceType.ADJUSTMENT, referenceId, description: reason });
     const audit = await recordAdminAuditEventInTransaction(tx, admin.id, { action: "WALLET_ADJUSTMENT", targetType: "WALLET", targetId: input.walletId, metadata: { transactionId: transaction.id, amount, direction: input.direction, reason } });
     return { transaction, idempotent: false, auditId: audit.id };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+export async function setAdminWalletFreeze(input: { walletId: string; frozen: boolean; reason: string }) {
+  const admin = await requireAdmin();
+  if (!isValidUuid(input.walletId) || typeof input.frozen !== "boolean") throw new Error("INVALID_WALLET");
+  const reason = cleanText(input.reason, 1000);
+  return prisma.$transaction(async (tx) => {
+    const wallet = await tx.wallet.findUnique({ where: { id: input.walletId }, select: { id: true, isFrozen: true, userId: true } });
+    if (!wallet) throw new Error("WALLET_NOT_FOUND");
+    if (wallet.isFrozen === input.frozen) return { changed: false };
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { isFrozen: input.frozen, frozenReason: input.frozen ? reason : null, frozenAt: input.frozen ? new Date() : null },
+    });
+    await recordAdminAuditEventInTransaction(tx, admin.id, {
+      action: input.frozen ? "WALLET_FROZEN" : "WALLET_UNFROZEN",
+      targetType: "WALLET",
+      targetId: wallet.id,
+      metadata: { userId: wallet.userId, reason },
+    });
+    return { changed: true };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+export async function setAdminUserStatus(input: { userId: string; status: UserStatus; reason: string }) {
+  const admin = await requireAdmin();
+  if (!isValidUuid(input.userId) || !Object.values(UserStatus).includes(input.status)) throw new Error("INVALID_USER");
+  const reason = cleanText(input.reason, 1000);
+  return prisma.$transaction(async (tx) => {
+    const target = await tx.user.findUnique({ where: { id: input.userId }, select: { id: true, role: true, status: true } });
+    if (!target || target.role !== "USER" || target.id === admin.id) throw new Error("USER_NOT_MANAGEABLE");
+    if (target.status === input.status) return { changed: false };
+    await tx.user.update({ where: { id: target.id }, data: { status: input.status } });
+    await recordAdminAuditEventInTransaction(tx, admin.id, {
+      action: "USER_STATUS_CHANGED",
+      targetType: "USER",
+      targetId: target.id,
+      metadata: { previousStatus: target.status, newStatus: input.status, reason },
+    });
+    return { changed: true };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 

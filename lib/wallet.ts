@@ -107,8 +107,8 @@ export async function getCurrentUserWalletTransactions(page = 1) {
 }
 
 async function lockWallet(tx: Prisma.TransactionClient, walletId: string) {
-  const rows = await tx.$queryRaw<Array<{ id: string; userId: string; currency: string; balance: string }>>(
-    Prisma.sql`SELECT "id", "userId", "currency", "balance"::text AS "balance" FROM "Wallet" WHERE "id" = ${walletId}::uuid FOR UPDATE`,
+  const rows = await tx.$queryRaw<Array<{ id: string; userId: string; currency: string; balance: string; isFrozen: boolean }>>(
+    Prisma.sql`SELECT "id", "userId", "currency", "balance"::text AS "balance", "isFrozen" FROM "Wallet" WHERE "id" = ${walletId}::uuid FOR UPDATE`,
   );
   const wallet = rows[0];
   if (!wallet) throw new Error("Wallet not found.");
@@ -140,6 +140,7 @@ export async function recordWalletTransactionInTransaction(
   const description = validateDescription(input.description);
 
   const wallet = await lockWallet(tx, input.walletId);
+  if (wallet.isFrozen && input.type === WalletTransactionType.DEBIT) throw new Error("Wallet is frozen. Debits are disabled.");
   if (wallet.currency !== currency) throw new Error("Wallet currency mismatch.");
 
   const existing = await tx.walletTransaction.findFirst({

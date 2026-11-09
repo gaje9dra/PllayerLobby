@@ -30,6 +30,7 @@ const groups = [
       { label: "Withdrawals", href: "/admin/finance/withdrawals", icon: "↗" },
       { label: "Deposits", href: "/admin/finance/deposits", icon: "↙" },
       { label: "Wallets", href: "/admin/finance/wallets", icon: "▣" },
+      { label: "User & wallet controls", href: "/admin/user-controls", icon: "⚙" },
       { label: "Transactions", href: "/admin/finance/transactions", icon: "≋" },
       { label: "Audit & reconciliation", href: "/admin/finance/audit", icon: "⌕" },
       { label: "Adjustments", href: "/admin/finance/adjustments", icon: "±" },
