@@ -199,3 +199,12 @@ test("bank account mask exposes only final four digits", () => {
   const result = validatePayoutDestinationInput(validBank({ accountNumber: "1234567890123456" }));
   assert.equal(result?.maskedDestination, "••••••••3456");
 });
+
+test("bank account input with more than 22 raw characters is rejected", () => {
+  assert.equal(validatePayoutDestinationInput(validBank({ accountNumber: "1 ".repeat(12) + "123456789" })), null);
+});
+
+test("bank account input accepts optional separators within the form limit", () => {
+  const result = validatePayoutDestinationInput(validBank({ accountNumber: "1234 5678-9012" }));
+  assert.equal(result?.data.type === "BANK_ACCOUNT" ? result.data.accountNumber : "", "123456789012");
+});
