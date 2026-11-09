@@ -1,51 +1,50 @@
-# Withdrawal Requests — Phase 5.3
+# Manual Withdrawal Requests
 
-Phase 5.3 adds withdrawal-request recording and admin review. It does not perform an external payout.
+PlayerLobby withdrawals are administered manually. The application never sends a bank or UPI transfer and does not call PayU payout APIs for new withdrawal requests.
+
+## User workflow
+
+1. A user saves a UPI ID or bank account as a payout destination.
+2. The user requests a withdrawal against the server-calculated available wallet balance.
+3. The amount remains reserved while the request is pending or approved.
+4. An active admin reviews the request and approves or rejects it.
+5. After approval, the admin sends the exact amount outside PlayerLobby using their bank or UPI application.
+6. Only after the transfer succeeds, the admin enters the bank/UPI transaction reference and confirms manual payment in the admin panel.
+7. The application atomically records the manual payout, debits the wallet ledger once, and marks the withdrawal PAID. The user sees the paid status and transaction reference.
 
 ## State flow
 
-`PENDING -> APPROVED`
+New manual requests use:
+
+`PENDING -> APPROVED -> PAID`
+
+or:
 
 `PENDING -> REJECTED`
 
-`PENDING -> CANCELLED`
+Users may cancel only their own pending requests. Approved requests remain reserved until the admin records a successful manual transfer. Rejection and cancellation release the reservation without creating a wallet transaction.
 
-Approval is an authorization/review state only. There is intentionally no `PAID`, `COMPLETED`, payout webhook, UPI transfer, bank transfer, or payout-provider integration in this phase.
+Legacy PayU payout statuses and records remain readable for historical reconciliation. New manual payout records use provider `MANUAL`; no new PayU beneficiary creation, transfer initiation, retry, status polling, or payout webhook is part of this workflow.
 
-## Ownership and authorization
+## Admin controls and sensitive data
 
-User operations derive the user from the authenticated session and derive the wallet from `User -> Wallet`. Client-supplied user IDs, wallet IDs, balances, and currencies are not authoritative. Active users can create requests and cancel only their own pending requests. Only active admins can approve or reject requests.
+Admin withdrawal management is available at `/admin/finance/withdrawals`. Only an active admin can view the decrypted payout destination snapshot, approve/reject requests, or record a manual payment. The full UPI ID or bank account number is not exposed to normal user-facing views.
 
-## Reservation model
+The manual payment confirmation requires a 4–128 character bank/UPI transaction reference. It must be entered only after the real-world transfer has succeeded. The reference is stored with the payout record and in the admin audit event. It is not proof from a bank API; the admin is responsible for verifying the transfer in their bank/UPI application before confirming.
 
-The wallet balance is not debited when a request is created. A withdrawal request reserves funds logically while it is `PENDING` or `APPROVED`:
+## Accounting and concurrency
 
-`available for withdrawal = Wallet.balance - SUM(PENDING + APPROVED withdrawals)`
+The wallet row is locked with PostgreSQL `FOR UPDATE` inside a serializable transaction. The payout record, immutable wallet debit, wallet balance update, and withdrawal PAID status commit together or roll back together. The payout row ID is the unique wallet-ledger reference, preventing duplicate debits. The request must still be APPROVED and must not already have a payout record.
 
-The wallet row is locked with PostgreSQL `FOR UPDATE` inside a serializable transaction before a new request is accepted. This prevents concurrent requests or wallet ledger changes from overspending the same balance. Rejection and cancellation release the reservation by changing status; they do not create a compensating wallet credit or debit.
+`available for withdrawal = Wallet.balance - SUM(PENDING + APPROVED + legacy active payout withdrawals)`
 
-Approved requests remain reserved because actual payout is a later phase.
+Amounts use exact two-decimal wallet arithmetic. Client-supplied user IDs, wallet IDs, balances, or currencies are never authoritative.
 
-## Idempotency
+## Security and operational rules
 
-Creation accepts a per-user idempotency key. Reusing the same key with the same amount returns the existing request; reusing it with a different amount is rejected. The database also has a scoped unique constraint.
-
-## Money and limits
-
-Amounts use the existing exact two-decimal wallet money implementation and the wallet currency. The minimum is centralized at `MIN_WITHDRAWAL_AMOUNT` and defaults to `1.00` because the current product specification does not define a higher business minimum. Maximum and daily limits are centralized but disabled (`null`) until a product requirement enables them.
-
-## Eligibility
-
-`checkWithdrawalEligibility()` is reusable and returns structured eligibility information without exposing internal implementation details to the browser. It is designed so future compliance checks can be inserted before approval/payout.
-
-## Admin review
-
-Admin withdrawal management is available at `/admin/finance/withdrawals` with pagination and a status filter. Approval revalidates account status, wallet ownership, currency, request state, and available reserved funds. Rejection requires a bounded reason and preserves the request record.
-
-## Audit limitation
-
-The existing project does not have a general audit-log subsystem. Phase 5.3 therefore preserves `createdAt`, `updatedAt`, `reviewedAt`, `reviewedById`, status, and rejection reason on the withdrawal record instead of introducing a separate audit framework.
-
-## Explicit exclusions
-
-This phase does not store bank-account numbers, IFSC, UPI IDs/PINs, card data, KYC data, tax/TDS calculations, withdrawal fees, refunds, automatic redistribution, payout provider credentials, or external money-transfer data. No external payout API is called.
+- Never mark a request PAID before the transfer is actually completed.
+- Verify the recipient name, destination, and exact amount before sending.
+- Never request or store a UPI PIN, OTP, card PIN, or banking password.
+- Never manually edit or delete wallet ledger rows.
+- If the bank/UPI transfer is pending or uncertain, do not mark it paid. Verify it with the bank first.
+- If the destination snapshot cannot be decrypted, do not send payment; resolve the encryption configuration without replacing the key used for existing records.
