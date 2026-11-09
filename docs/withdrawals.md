@@ -7,7 +7,7 @@ PlayerLobby withdrawals are administered manually. The application never sends a
 1. A user saves a UPI ID or bank account as a payout destination.
 2. The user requests a withdrawal against the server-calculated available wallet balance.
 3. The amount remains reserved while the request is pending or approved.
-4. An active admin reviews the request and approves or rejects it.
+4. An active admin reviews the request and the decrypted UPI/bank destination details. Approving also marks that payout destination as verified; rejecting releases the reservation.
 5. After approval, the admin sends the exact amount outside PlayerLobby using their bank or UPI application.
 6. Only after the transfer succeeds, the admin enters the bank/UPI transaction reference and confirms manual payment in the admin panel.
 7. The application atomically records the manual payout, debits the wallet ledger once, and marks the withdrawal PAID. The user sees the paid status and transaction reference.
