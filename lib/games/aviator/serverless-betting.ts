@@ -25,6 +25,7 @@ export const SERVERLESS_AVIATOR_CODES = {
   BET_NOT_FOUND: "BET_NOT_FOUND",
   BET_ALREADY_SETTLED: "BET_ALREADY_SETTLED",
   CASHOUT_TOO_LATE: "CASHOUT_TOO_LATE",
+  CASHOUT_MULTIPLIER_NOT_REACHED: "CASHOUT_MULTIPLIER_NOT_REACHED",
   DUPLICATE_REQUEST: "DUPLICATE_REQUEST",
   WALLET_TRANSACTION_FAILED: "WALLET_TRANSACTION_FAILED",
   INVALID_AUTO_CASHOUT: "INVALID_AUTO_CASHOUT",
@@ -45,6 +46,7 @@ function message(code: Code) {
     BET_NOT_FOUND: "Bet not found.",
     BET_ALREADY_SETTLED: "This bet has already been settled.",
     CASHOUT_TOO_LATE: "The round crashed before the cashout could be accepted.",
+    CASHOUT_MULTIPLIER_NOT_REACHED: "The requested cash-out multiplier was not reached before the server accepted the request.",
     DUPLICATE_REQUEST: "This request has already been processed.",
     WALLET_TRANSACTION_FAILED: "The wallet transaction could not be completed.",
     INVALID_AUTO_CASHOUT: "Auto cashout must be between 1.01x and 50.00x.",
@@ -125,9 +127,13 @@ export async function placeNetlifyAviatorBetForUser(
   }
 }
 
-export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "id" | "status">, betId: string, roundId: string): Promise<Result<{ betId: string; roundId: string; multiplier: number; payout: string; status: string }>> {
+export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "id" | "status">, betId: string, roundId: string, requestedMultiplier: unknown): Promise<Result<{ betId: string; roundId: string; multiplier: number; payout: string; status: string }>> {
   if (user.status !== "ACTIVE") return { ok: false, code: SERVERLESS_AVIATOR_CODES.AUTHENTICATION_REQUIRED, message: message(SERVERLESS_AVIATOR_CODES.AUTHENTICATION_REQUIRED) };
   if (!UUID.test(betId) || !UUID.test(roundId)) return { ok: false, code: SERVERLESS_AVIATOR_CODES.BET_NOT_FOUND, message: message(SERVERLESS_AVIATOR_CODES.BET_NOT_FOUND) };
+  const targetMultiplier = typeof requestedMultiplier === "number" ? requestedMultiplier : Number(requestedMultiplier);
+  if (!Number.isFinite(targetMultiplier) || targetMultiplier < 1 || targetMultiplier > MAX_AUTO || Math.round(targetMultiplier * 100) !== targetMultiplier * 100) {
+    return { ok: false, code: SERVERLESS_AVIATOR_CODES.CASHOUT_MULTIPLIER_NOT_REACHED, message: message(SERVERLESS_AVIATOR_CODES.CASHOUT_MULTIPLIER_NOT_REACHED) };
+  }
   const rate = await consumeSecurityRateLimit({ namespace: "aviator-cashout", key: user.id, limit: 30, windowSeconds: 10 });
   if (!rate.allowed) return { ok: false, code: SERVERLESS_AVIATOR_CODES.RATE_LIMITED, message: message(SERVERLESS_AVIATOR_CODES.RATE_LIMITED) };
 
@@ -150,8 +156,9 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
         throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
       }
 
-      // Recalculate at transaction time while holding the round row lock.
-      // Never trust the browser multiplier or a snapshot fetched before this lock.
+      // Validate the exact multiplier captured by the click against the authoritative
+      // server multiplier while holding the round lock. A request can cash out at its
+      // clicked value (never a later value), but cannot claim a multiplier not yet reached.
       const acceptedAt = round.serverNow.getTime();
       const serverSeed = decryptAviatorServerSeed(round.serverSeedEncrypted);
       const crashMultiplier = calculateAviatorCrashMultiplier({
@@ -168,13 +175,15 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
         await tx.aviatorBet.updateMany({ where: { roundId, status: "ACTIVE" }, data: { status: "LOST", updatedAt: new Date(acceptedAt) } });
         return { kind: "late" as const, crashed: true, lostBetIds: activeBets.map((item) => item.id) };
       }
-      const payout = multiplyMoneyByMultiplier(bet.stake.toString(), acceptedMultiplier.toFixed(2));
-      const updated = await tx.aviatorBet.updateMany({ where: { id: betId, status: "ACTIVE" }, data: { status: "CASHED_OUT", cashedOutAt: new Date(acceptedAt), cashoutMultiplier: acceptedMultiplier, payout } });
+      if (targetMultiplier > acceptedMultiplier) return { kind: "multiplier-not-reached" as const };
+      if (targetMultiplier >= crashMultiplier) return { kind: "late" as const };
+      const payout = multiplyMoneyByMultiplier(bet.stake.toString(), targetMultiplier.toFixed(2));
+      const updated = await tx.aviatorBet.updateMany({ where: { id: betId, status: "ACTIVE" }, data: { status: "CASHED_OUT", cashedOutAt: new Date(acceptedAt), cashoutMultiplier: targetMultiplier, payout } });
       if (updated.count !== 1) return { kind: "settled" as const };
       const wallet = await tx.wallet.findUnique({ where: { userId: user.id }, select: { id: true } });
       if (!wallet) throw new Error("WALLET_TRANSACTION_FAILED");
       await recordWalletTransactionInTransaction(tx, { walletId: wallet.id, type: "CREDIT", category: "AVIATOR_BET", amount: payout, currency: "INR", referenceType: "AVIATOR_BET", referenceId: betId, description: `Aviator payout ${betId}` });
-      return { kind: "success" as const, payout, multiplier: acceptedMultiplier };
+      return { kind: "success" as const, payout, multiplier: targetMultiplier };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     if (result.kind === "success") {
@@ -185,6 +194,7 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
     if (result.kind === "late" && "crashed" in result && result.crashed) {
       for (const lostBetId of result.lostBetIds) emitAviatorBetEvent({ type: "bet:lost", roundId, betId: lostBetId, status: "LOST" });
     }
+    if (result.kind === "multiplier-not-reached") return { ok: false, code: SERVERLESS_AVIATOR_CODES.CASHOUT_MULTIPLIER_NOT_REACHED, message: message(SERVERLESS_AVIATOR_CODES.CASHOUT_MULTIPLIER_NOT_REACHED) };
     if (result.kind === "settled") return { ok: false, code: SERVERLESS_AVIATOR_CODES.BET_ALREADY_SETTLED, message: message(SERVERLESS_AVIATOR_CODES.BET_ALREADY_SETTLED) };
     if (result.kind === "late") return { ok: false, code: SERVERLESS_AVIATOR_CODES.CASHOUT_TOO_LATE, message: message(SERVERLESS_AVIATOR_CODES.CASHOUT_TOO_LATE) };
     return { ok: false, code: SERVERLESS_AVIATOR_CODES.BET_NOT_FOUND, message: message(SERVERLESS_AVIATOR_CODES.BET_NOT_FOUND) };
