@@ -10,7 +10,7 @@ import { AviatorMenuCard } from "@/components/layout/aviator-menu-card";
 export async function Header() {
   const user = await getCurrentUser();
   const wallet = user && isActiveUser(user) ? await getOrCreateWalletForUser(user.id) : null;
-  const walletBalance = wallet ? wallet.balance.toFixed(2).replace(/\\.00$/, "") : null;
+  const walletBalance = wallet ? wallet.balance.toFixed(2).replace(/\.00$/, "") : null;
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/90 backdrop-blur-xl">
