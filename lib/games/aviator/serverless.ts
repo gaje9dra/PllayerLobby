@@ -7,7 +7,6 @@ import { persistFinalizedAviatorRound } from "./persistence";
 import type { AviatorRoundSnapshot } from "./types";
 
 const WAITING_MS = 5_000;
-const SETTLED_MS = 1_000;
 
 type RoundRow = {
   id: string;
@@ -121,12 +120,20 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
   let now = row.serverNow.getTime();
 
   if (row.status === "CRASHED") {
-    if (row.crashedAt && now - row.crashedAt.getTime() >= SETTLED_MS) {
-      await prisma.aviatorRound.update({ where: { id: row.id }, data: { status: "SETTLED" } });
-      row = await getOrCreateRound();
-    } else {
-      return toSnapshot(row, now, "CRASHED", row.crashMultiplier ? Number(row.crashMultiplier) : 1.01);
+    // Finalize and settle the crashed round before opening the next one. The
+    // next row is created as WAITING, whose database-created deadline enforces
+    // the full five-second countdown before it can transition to RUNNING.
+    const crashPoint = row.crashMultiplier ? Number(row.crashMultiplier) : 1.01;
+    await settleCrashIfNeeded(row, now, crashPoint);
+
+    const nextRound = await getOrCreateRound();
+    const nextNow = nextRound.serverNow.getTime();
+    if (nextRound.status === "WAITING") {
+      return toSnapshot(nextRound, nextNow, "WAITING", 1);
     }
+    // Another request may already have advanced the next round; let the normal
+    // state machine report its authoritative phase.
+    return getNetlifyAviatorRoundSnapshot();
   }
 
   if (row.status === "WAITING") {

@@ -148,7 +148,10 @@ export function AviatorGameOptimized() {
       setDisplayMultiplier(next.multiplier);
       if (roundChanged || phaseChanged) {
         void loadBets(next.roundId);
-        if (roundChanged || next.phase === "CRASHED") void loadHistory();
+        // Refresh finalized crash results as soon as the authoritative API
+        // reports the crash. The serverless round handler settles CRASHED rows
+        // before returning, so the top strip reads finalized database history.
+        if (roundChanged || next.phase === "CRASHED" || next.phase === "SETTLED") void loadHistory();
       }
     };
 
@@ -290,11 +293,15 @@ export function AviatorGameOptimized() {
 
         <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#0a1728] shadow-2xl">
           <div className="border-b border-white/5 bg-[#0c1b2f] px-3 py-3 sm:px-5">
-            <div className="flex items-center gap-2 overflow-x-auto" aria-label="Recent multipliers">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Latest crash history</p>
+              <span className="text-[9px] text-slate-600">Finalized rounds · newest first</span>
+            </div>
+            <div className="flex items-center gap-2 overflow-x-auto" aria-label="Latest finalized crash multipliers">
               {roundHistory.length ? roundHistory.slice(0, 16).map((round) => {
                 const value = Number(round.crashMultiplier ?? 0);
-                return <a key={round.id} href="#fairness" title="Open fairness verification" className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-black transition hover:brightness-125 ${historyTone(value)}`}>{value.toFixed(2)}x</a>;
-              }) : <span className="px-2 text-xs text-slate-500">No completed rounds yet</span>}
+                return <a key={round.id} href="#fairness" title={`Round ${round.id} · Open fairness verification`} className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-black transition hover:brightness-125 ${historyTone(value)}`}>{value.toFixed(2)}x</a>;
+              }) : <span className="px-2 text-xs text-slate-500">No finalized crashes yet</span>}
             </div>
           </div>
 
