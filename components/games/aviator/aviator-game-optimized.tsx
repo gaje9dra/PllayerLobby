@@ -66,8 +66,11 @@ export function AviatorGameOptimized() {
   const [busy, setBusy] = useState(false);
   const [cashoutBusy, setCashoutBusy] = useState<string | null>(null);
   const [now, setNow] = useState(0);
+  const [displayMultiplier, setDisplayMultiplier] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(initialSnapshot);
+  const serverClockOffsetRef = useRef(0);
+  const liveMultiplierRef = useRef(1);
   const betsRef = useRef<Bet[]>([]);
   const cashoutBusyRef = useRef<string | null>(null);
   const requestId = useRef<string | null>(null);
@@ -136,7 +139,10 @@ export function AviatorGameOptimized() {
       lastRoundId = next.roundId;
       lastPhase = next.phase;
       snapshotRef.current = next;
+      serverClockOffsetRef.current = next.serverTime - Date.now();
+      liveMultiplierRef.current = next.multiplier;
       setSnapshot(next);
+      setDisplayMultiplier(next.multiplier);
       if (roundChanged || phaseChanged) {
         void loadBets(next.roundId);
         if (roundChanged || next.phase === "CRASHED") void loadHistory();
@@ -206,12 +212,24 @@ export function AviatorGameOptimized() {
   useEffect(() => {
     let frame = 0;
     let lastAutoCheck = 0;
+    let lastRender = 0;
     const tick = (time: number) => {
       const current = snapshotRef.current;
-      if (time - lastAutoCheck >= 100) {
-        lastAutoCheck = time;
-        const autoBet = betsRef.current.find((bet) => bet.status === "ACTIVE" && bet.roundId === current.roundId && bet.autoCashoutMultiplier && current.multiplier >= Number(bet.autoCashoutMultiplier));
-        if (current.phase === "RUNNING" && autoBet && !cashoutBusyRef.current) void cashOut(autoBet);
+      if (current.phase === "RUNNING" && current.startedAt !== null) {
+        // Interpolate from server time locally for smooth visuals between server snapshots.
+        const serverNow = Date.now() + serverClockOffsetRef.current;
+        const elapsedSeconds = Math.max(0, serverNow - current.startedAt) / 1000;
+        const nextMultiplier = Number(Math.exp(elapsedSeconds * 0.12).toFixed(2));
+        liveMultiplierRef.current = Math.max(current.multiplier, nextMultiplier);
+        if (time - lastRender >= 33) {
+          lastRender = time;
+          setDisplayMultiplier(liveMultiplierRef.current);
+        }
+        if (time - lastAutoCheck >= 100) {
+          lastAutoCheck = time;
+          const autoBet = betsRef.current.find((bet) => bet.status === "ACTIVE" && bet.roundId === current.roundId && bet.autoCashoutMultiplier && liveMultiplierRef.current >= Number(bet.autoCashoutMultiplier));
+          if (autoBet && !cashoutBusyRef.current) void cashOut(autoBet);
+        }
       }
       frame = window.requestAnimationFrame(tick);
     };
@@ -239,7 +257,7 @@ export function AviatorGameOptimized() {
     if (amountCents === null || amountCents <= 0) return null;
     try { return multiplyMoneyByMultiplier(amount, mode === "auto" ? autoMultiplier : "1.00"); } catch { return null; }
   }, [amount, amountCents, autoMultiplier, mode]);
-  const geometry = graphGeometry(snapshot.multiplier, snapshot.phase);
+  const geometry = graphGeometry(displayMultiplier, snapshot.phase);
   const planeX = geometry.endX;
   const planeY = geometry.endY;
 
@@ -327,7 +345,7 @@ export function AviatorGameOptimized() {
                 <div className="mt-5 flex items-center justify-between border-t border-white/5 pt-4"><span className="text-xs text-slate-500">Profit on win</span><span className="font-black text-slate-200">₹{potentialPayout ?? "0.00"}</span></div>
               </>}
 
-              {activeBets.length ? <div className="mt-5 space-y-3"><div className="flex items-center justify-between"><h2 className="text-xs font-black uppercase tracking-wider text-slate-500">Active bets</h2><span className="text-[10px] text-slate-600">{activeBets.length}</span></div>{activeBets.map((bet) => { let payout = bet.stake; try { payout = multiplyMoneyByMultiplier(bet.stake, snapshot.multiplier.toFixed(2)); } catch { /* Keep stake if shared formatter rejects transient data. */ } return <div key={bet.id} className="rounded-2xl border border-white/10 bg-[#101f33] p-3"><div className="flex items-center justify-between"><span className="text-xs text-slate-500">Stake</span><span className="font-black">₹{bet.stake}</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Current payout</span><span className="font-black text-lime-200">₹{payout}</span></div>{bet.autoCashoutMultiplier ? <p className="mt-2 text-[11px] text-slate-500">Auto cashout {bet.autoCashoutMultiplier}x</p> : null}<button type="button" disabled={snapshot.phase !== "RUNNING" || cashoutBusy === bet.id} onClick={() => void cashOut(bet)} className="mt-3 w-full rounded-lg border border-lime-300/20 bg-lime-300/5 py-2.5 text-xs font-black text-lime-200 disabled:opacity-35">{cashoutBusy === bet.id ? "CASHING OUT…" : `CASH OUT ${bet.autoCashoutMultiplier ? "MANUALLY" : ""}`}</button></div>; })}</div> : null}
+              {activeBets.length ? <div className="mt-5 space-y-3"><div className="flex items-center justify-between"><h2 className="text-xs font-black uppercase tracking-wider text-slate-500">Active bets</h2><span className="text-[10px] text-slate-600">{activeBets.length}</span></div>{activeBets.map((bet) => { let payout = bet.stake; try { payout = multiplyMoneyByMultiplier(bet.stake, displayMultiplier.toFixed(2)); } catch { /* Keep stake if shared formatter rejects transient data. */ } return <div key={bet.id} className="rounded-2xl border border-white/10 bg-[#101f33] p-3"><div className="flex items-center justify-between"><span className="text-xs text-slate-500">Stake</span><span className="font-black">₹{bet.stake}</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Current payout</span><span className="font-black text-lime-200">₹{payout}</span></div>{bet.autoCashoutMultiplier ? <p className="mt-2 text-[11px] text-slate-500">Auto cashout {bet.autoCashoutMultiplier}x</p> : null}<button type="button" disabled={snapshot.phase !== "RUNNING" || cashoutBusy === bet.id} onClick={() => void cashOut(bet)} className="mt-3 w-full rounded-lg border border-lime-300/20 bg-lime-300/5 py-2.5 text-xs font-black text-lime-200 disabled:opacity-35">{cashoutBusy === bet.id ? "CASHING OUT…" : `CASH OUT ${bet.autoCashoutMultiplier ? "MANUALLY" : ""}`}</button></div>; })}</div> : null}
             </aside>
 
             <section className="order-1 min-w-0 lg:order-2">
@@ -346,7 +364,7 @@ export function AviatorGameOptimized() {
                   {snapshot.phase === "CRASHED" ? <g><circle cx={planeX} cy={planeY} r="20" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-300/60" /><path d={`M ${planeX - 12} ${planeY - 12} L ${planeX + 12} ${planeY + 12} M ${planeX + 12} ${planeY - 12} L ${planeX - 12} ${planeY + 12}`} stroke="currentColor" strokeWidth="3" className="text-red-300" /></g> : null}
                 </svg>
 
-                <div className="absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 text-center"><p className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">{snapshot.phase === "CRASHED" ? "CRASHED" : snapshot.phase === "SETTLED" ? "SETTLED" : snapshot.phase === "WAITING" ? "NEXT ROUND" : "CURRENT MULTIPLIER"}</p><div className={`mt-2 text-6xl font-black tracking-tight tabular-nums sm:text-8xl ${snapshot.phase === "CRASHED" ? "text-red-300" : "text-white"}`}>{snapshot.multiplier.toFixed(2)}x</div>{snapshot.phase === "WAITING" && snapshot.waitingEndsAt ? <p className="mt-2 text-sm font-bold text-slate-400">Starting in {Math.max(0, (snapshot.waitingEndsAt - now) / 1000).toFixed(1)}s</p> : null}<p className="mt-3 text-[10px] font-mono text-slate-600">Round {snapshot.roundId}</p></div>
+                <div className="absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 text-center"><p className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">{snapshot.phase === "CRASHED" ? "CRASHED" : snapshot.phase === "SETTLED" ? "SETTLED" : snapshot.phase === "WAITING" ? "NEXT ROUND" : "CURRENT MULTIPLIER"}</p><div className={`mt-2 text-6xl font-black tracking-tight tabular-nums sm:text-8xl ${snapshot.phase === "CRASHED" ? "text-red-300" : "text-white"}`}>{displayMultiplier.toFixed(2)}x</div>{snapshot.phase === "WAITING" && snapshot.waitingEndsAt ? <p className="mt-2 text-sm font-bold text-slate-400">Starting in {Math.max(0, (snapshot.waitingEndsAt - now) / 1000).toFixed(1)}s</p> : null}<p className="mt-3 text-[10px] font-mono text-slate-600">Round {snapshot.roundId}</p></div>
               </div>
 
               <div className="grid grid-cols-2 divide-x divide-white/5 border-t border-white/5 bg-[#0b192b] sm:grid-cols-3 sm:divide-x"><div className="p-4"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Wallet</p><p className="mt-1 font-black text-slate-200">{walletBalance !== null ? `₹${walletBalance}` : "—"}</p></div><div className="p-4"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Players</p><p className="mt-1 font-black text-slate-300">—</p><p className="text-[10px] text-slate-600">Not exposed by backend</p></div><div className="col-span-2 p-4 sm:col-span-1"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Controls</p><div className="mt-1 flex flex-wrap gap-3 text-xs font-bold"><a href="#fairness" className="text-sky-300 hover:text-sky-200">Provably Fair</a><a href="#history" className="text-sky-300 hover:text-sky-200">History</a><Link href="/dashboard/wallet" className="text-sky-300 hover:text-sky-200">Wallet</Link></div></div></div>
