@@ -175,7 +175,9 @@ export function AviatorGameOptimized() {
       socket.onmessage = (message) => {
         try {
           const event = JSON.parse(message.data) as ServerEvent;
-          if (event.snapshot) applySnapshot(event.snapshot);
+          // The WebSocket process may run separately from Netlify's database-backed
+          // round engine. Do not let its in-memory snapshot overwrite the authoritative
+          // snapshot returned by /api/games/aviator/round.
           if (["bet:cashout", "bet:lost", "bet:settled"].includes(event.type)) {
             void loadBets(event.roundId); void loadHistory();
           }
@@ -202,9 +204,12 @@ export function AviatorGameOptimized() {
       void loadBets();
     }, 0);
     connect();
+    // Always reconcile against the database-backed round endpoint, even while the
+    // WebSocket is open. On Netlify the socket process can be a separate runtime;
+    // its "Connected" state does not guarantee that it shares the cashout API's round.
     const pollTimer = window.setInterval(() => {
-      if (!document.hidden && (!socket || socket.readyState !== WebSocket.OPEN)) void loadRound();
-    }, 1000);
+      if (!document.hidden) void loadRound();
+    }, 500);
     return () => {
       mounted = false;
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
