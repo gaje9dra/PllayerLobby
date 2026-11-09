@@ -154,11 +154,11 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
       // Keep CRASHED observable long enough for clients to render the crash
       // frame before settling and opening the next betting window.
       if (now - crashedAt < CRASH_DISPLAY_MS) {
-        return { snapshot: toSnapshot(row, now, "CRASHED", crashPoint), lostBetIds: [] as string[] };
+        return { snapshot: toSnapshot(row, now, "CRASHED", crashPoint), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
       }
       const lostBetIds = await settleCrashedRound(tx, row);
       const next = await createRound(tx);
-      return { snapshot: toSnapshot(next, next.serverNow.getTime(), "WAITING", 1), lostBetIds };
+      return { snapshot: toSnapshot(next, next.serverNow.getTime(), "WAITING", 1), lostBetIds, lostBetRoundId: row.id };
     }
 
     if (row.status === "WAITING") {
@@ -205,7 +205,7 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
   });
 
   for (const betId of result.lostBetIds) {
-    emitAviatorBetEvent({ type: "bet:lost", roundId: result.snapshot.roundId, betId, status: "LOST" });
+    if (result.lostBetRoundId) emitAviatorBetEvent({ type: "bet:lost", roundId: result.lostBetRoundId, betId, status: "LOST" });
   }
   return result.snapshot;
 }
