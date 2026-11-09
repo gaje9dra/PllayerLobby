@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getNetlifyAviatorRoundSnapshot } from "@/lib/games/aviator/serverless";
+import { bustNetlifyAviatorRoundNow, getNetlifyAviatorRoundSnapshot } from "@/lib/games/aviator/serverless";
 
 export const dynamic = "force-dynamic";
 
@@ -79,58 +79,35 @@ export async function GET() {
 }
 
 export async function POST() {
-  // Keep authorization outside the operational try/catch so Next.js can
-  // preserve its normal login/access-denied redirect behavior.
   await requireAdmin();
 
-  let roundClaimed = false;
   try {
-    const currentRound = await getNetlifyAviatorRoundSnapshot();
-    if (currentRound.phase !== "RUNNING") {
-      return NextResponse.json({ error: "Bust Now is available only while a round is running." }, { status: 409 });
+    const result = await bustNetlifyAviatorRoundNow();
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.code === "ROUND_NOT_RUNNING"
+            ? "Bust Now is available only while a round is running."
+            : "The round has already ended. Refresh the game before trying again." },
+        { status: 409, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+      );
     }
 
-    // The conditional database update is the single-writer claim. It works
-    // across serverless instances and prevents two admins busting one round.
-    const claim = await prisma.aviatorRound.updateMany({
-      where: { id: currentRound.roundId, status: "RUNNING" },
-      data: {
-        status: "CRASHED",
-        crashedAt: new Date(currentRound.serverTime),
-        crashMultiplier: Math.max(1, currentRound.multiplier),
-      },
-    });
-
-    if (claim.count !== 1) {
-      return NextResponse.json({ error: "The round already ended. Refresh and try the next round." }, { status: 409 });
-    }
-    roundClaimed = true;
-
-    // This authoritative snapshot finalizes the crash, settles active bets,
-    // and opens the next WAITING round before success is reported.
-    await getNetlifyAviatorRoundSnapshot();
-
+    // Do not advance the lifecycle here. The normal round endpoint keeps the
+    // CRASHED phase visible for its display window, then settles and advances.
     return NextResponse.json({
       success: true,
       round: {
-        id: currentRound.roundId,
-        phase: "CRASHED",
-        multiplier: currentRound.multiplier,
+        id: result.snapshot.roundId,
+        phase: result.snapshot.phase,
+        multiplier: result.snapshot.multiplier,
       },
       nextRoundCountdownSeconds: 5,
     }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
   } catch (error) {
     console.error("[admin/casino-control] Failed to bust Aviator round", error);
     return NextResponse.json(
-      {
-        error: roundClaimed
-          ? "The round was marked as crashed, but settlement confirmation failed. Refresh the round status; do not retry the bust."
-          : "The round could not be busted because the server operation failed. Refresh and try again.",
-      },
-      {
-        status: 500,
-        headers: { "Cache-Control": "private, no-store, max-age=0" },
-      },
+      { error: "The round could not be busted. Refresh the game status and try again." },
+      { status: 500, headers: { "Cache-Control": "private, no-store, max-age=0" } },
     );
   }
 }
