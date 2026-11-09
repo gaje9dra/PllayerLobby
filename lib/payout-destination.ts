@@ -19,24 +19,66 @@ function safeStatus(status: PayoutDestinationStatus) { return status; }
 export async function createPayoutDestination(input: PayoutDestinationInput) {
   const user = await requireActiveUser();
   if (input.type !== PayoutDestinationType.UPI && input.type !== PayoutDestinationType.BANK_ACCOUNT) throw new Error("INVALID_DESTINATION_TYPE");
+
   const normalized = validatePayoutDestinationInput(input);
   if (!normalized) throw new Error("INVALID_DESTINATION_DATA");
+
+  // Fail before touching the database if secure storage has not been configured.
+  // The action maps these codes to a clear, non-secret user-facing message.
   const encryptedDestinationData = encryptPayoutData(JSON.stringify(normalized.data));
-  const destination = await prisma.payoutDestination.create({ data: { userId: user.id, type: input.type, status: PayoutDestinationStatus.PENDING_VERIFICATION, displayName: normalized.displayName, maskedDestination: normalized.maskedDestination, encryptedDestinationData } });
-  return { id: destination.id, type: destination.type, status: safeStatus(destination.status), displayName: destination.displayName, maskedDestination: destination.maskedDestination, createdAt: destination.createdAt };
+  const destination = await prisma.payoutDestination.create({
+    data: {
+      userId: user.id,
+      type: input.type,
+      status: PayoutDestinationStatus.PENDING_VERIFICATION,
+      displayName: normalized.displayName,
+      maskedDestination: normalized.maskedDestination,
+      encryptedDestinationData,
+    },
+  });
+
+  return {
+    id: destination.id,
+    type: destination.type,
+    status: safeStatus(destination.status),
+    displayName: destination.displayName,
+    maskedDestination: destination.maskedDestination,
+    createdAt: destination.createdAt,
+  };
 }
 
 export async function getCurrentUserPayoutDestinations() {
   const user = await requireActiveUser();
-  return prisma.payoutDestination.findMany({ where: { userId: user.id }, orderBy: [{ status: "asc" }, { createdAt: "desc" }, { id: "desc" }], select: { id: true, type: true, status: true, displayName: true, maskedDestination: true, createdAt: true, updatedAt: true, verifiedAt: true } });
+  return prisma.payoutDestination.findMany({
+    where: { userId: user.id },
+    orderBy: [{ status: "asc" }, { createdAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      type: true,
+      status: true,
+      displayName: true,
+      maskedDestination: true,
+      createdAt: true,
+      updatedAt: true,
+      verifiedAt: true,
+    },
+  });
 }
 
 export async function disablePayoutDestination(destinationId: string) {
   const user = await requireActiveUser();
-  const destination = await prisma.payoutDestination.findUnique({ where: { id: destinationId }, select: { id: true, userId: true, status: true } });
+  const destination = await prisma.payoutDestination.findUnique({
+    where: { id: destinationId },
+    select: { id: true, userId: true, status: true },
+  });
   if (!destination || destination.userId !== user.id) throw new Error("DESTINATION_NOT_FOUND");
   if (destination.status === PayoutDestinationStatus.DISABLED) return { id: destination.id, status: destination.status };
-  const updated = await prisma.payoutDestination.update({ where: { id: destination.id }, data: { status: PayoutDestinationStatus.DISABLED }, select: { id: true, status: true } });
+
+  const updated = await prisma.payoutDestination.update({
+    where: { id: destination.id },
+    data: { status: PayoutDestinationStatus.DISABLED },
+    select: { id: true, status: true },
+  });
   return updated;
 }
 
@@ -46,24 +88,45 @@ export async function verifyPayoutDestination() {
 }
 
 export async function getOwnedDestinationForWithdrawal(destinationId: string, userId: string) {
-  const destination = await prisma.payoutDestination.findUnique({ where: { id: destinationId }, select: { id: true, userId: true, type: true, status: true, maskedDestination: true, encryptedDestinationData: true } });
+  const destination = await prisma.payoutDestination.findUnique({
+    where: { id: destinationId },
+    select: { id: true, userId: true, type: true, status: true, maskedDestination: true, encryptedDestinationData: true },
+  });
   if (!destination || destination.userId !== userId) throw new Error("DESTINATION_NOT_FOUND");
   if (destination.status === PayoutDestinationStatus.DISABLED) throw new Error("DESTINATION_DISABLED");
+
   let data: StoredPayoutData;
-  try { data = JSON.parse(decryptPayoutData(destination.encryptedDestinationData)) as StoredPayoutData; } catch { throw new Error("DESTINATION_DATA_CORRUPTED"); }
+  try {
+    data = JSON.parse(decryptPayoutData(destination.encryptedDestinationData)) as StoredPayoutData;
+  } catch {
+    throw new Error("DESTINATION_DATA_CORRUPTED");
+  }
   if (data.version !== 1 || data.type !== destination.type) throw new Error("DESTINATION_DATA_CORRUPTED");
-  return { id: destination.id, type: destination.type, status: destination.status, maskedDestination: destination.maskedDestination, data };
+
+  return {
+    id: destination.id,
+    type: destination.type,
+    status: destination.status,
+    maskedDestination: destination.maskedDestination,
+    data,
+  };
 }
 
 export function formatPayoutDestinationError(error: unknown) {
   const code = error instanceof Error ? error.message : "UNKNOWN";
   const messages: Record<string, string> = {
     INVALID_DESTINATION_TYPE: "Select a supported payout destination type.",
-    INVALID_DESTINATION_DATA: "Enter valid payout destination details.",
+    INVALID_DESTINATION_DATA: "Check the details and enter a valid UPI ID or bank account. For bank accounts, use 9–18 digits and a valid 11-character IFSC.",
     DESTINATION_NOT_FOUND: "Payout destination not found.",
     DESTINATION_DISABLED: "This payout destination is disabled.",
     DESTINATION_DATA_CORRUPTED: "This payout destination could not be safely read. Please create a new destination.",
     PAYOUT_DESTINATION_VERIFICATION_UNAVAILABLE: "Verification is not yet available.",
+    PAYOUT_ENCRYPTION_KEY_MISSING: "Payout methods are temporarily unavailable because secure storage is not configured. Please contact support.",
+    PAYOUT_ENCRYPTION_KEY_INVALID: "Payout methods are temporarily unavailable because secure storage is misconfigured. Please contact support.",
+    P2021: "Payout methods are temporarily unavailable because the database is missing a required table. Please contact support.",
+    P2022: "Payout methods are temporarily unavailable because the database schema needs an update. Please contact support.",
   };
-  return messages[code] ?? "The payout destination operation could not be completed.";
+
+  const prismaCode = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : "";
+  return messages[code] ?? messages[prismaCode] ?? "The payout destination could not be saved. Please try again or contact support.";
 }
