@@ -73,7 +73,7 @@ export async function approveWithdrawalRequestWithDestination(withdrawalId: stri
     if (destination.status === PayoutDestinationStatus.DISABLED) throw new Error("DESTINATION_DISABLED");
     if (destination.type !== request.destinationTypeSnapshot || destination.maskedDestination !== request.destinationMaskedSnapshot) throw new Error("DESTINATION_SNAPSHOT_MISMATCH");
     try { const snapshot = JSON.parse(decryptPayoutData(request.encryptedDestinationSnapshot)); validateSnapshot(snapshot, request.destinationTypeSnapshot); } catch { throw new Error("DESTINATION_DATA_CORRUPTED"); }
-    if (destination.status === PayoutDestinationStatus.PENDING_VERIFICATION) await tx.payoutDestination.update({ where: { id: destination.id }, data: { status: PayoutDestinationStatus.VERIFIED, verifiedAt: new Date() } });
+    if (destination.status !== PayoutDestinationStatus.VERIFIED) throw new Error("DESTINATION_NOT_VERIFIED");
     const reservedRows = await tx.$queryRaw<Array<{ amount: string }>>(Prisma.sql`SELECT COALESCE(SUM("amount"), 0)::text AS "amount" FROM "WithdrawalRequest" WHERE "walletId" = ${request.walletId}::uuid AND "status" IN ('PENDING','APPROVED','PAYOUT_INITIATED','PROCESSING') AND "id" <> ${request.id}::uuid`);
     const available = getAvailableWithdrawalBalance(wallet.balance, reservedRows[0]?.amount ?? "0.00");
     if (compareMoney(request.amount.toString(), available) > 0) throw new Error("INSUFFICIENT_AVAILABLE_BALANCE");
