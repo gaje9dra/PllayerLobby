@@ -5,6 +5,34 @@ const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
 
+/**
+ * Accept the two practical secret encodings used by local tooling:
+ * - 64 hexadecimal characters (32 bytes)
+ * - canonical Base64 or Base64URL encoding of exactly 32 bytes
+ *
+ * Never derive, truncate, pad, or silently generate a key here. A stable key
+ * is required to decrypt payout destinations already stored in the database.
+ */
+export function decodePayoutEncryptionKey(raw: string) {
+  const value = raw.trim();
+  let key: Buffer | null = null;
+
+  if (/^[0-9a-fA-F]{64}$/.test(value)) {
+    key = Buffer.from(value, "hex");
+  } else if (/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    const decoded = Buffer.from(value, "base64");
+    if (decoded.length === KEY_LENGTH && decoded.toString("base64") === value) key = decoded;
+  } else if (/^[A-Za-z0-9_-]{43}$/.test(value)) {
+    const decoded = Buffer.from(value, "base64url");
+    if (decoded.length === KEY_LENGTH && decoded.toString("base64url") === value) key = decoded;
+  }
+
+  if (!key || key.length !== KEY_LENGTH) {
+    throw new Error("PAYOUT_ENCRYPTION_KEY_INVALID");
+  }
+  return key;
+}
+
 export function encryptPayoutDataWithKey(plaintext: string, key: Buffer) {
   if (key.length !== KEY_LENGTH) throw new Error("PAYOUT_ENCRYPTION_KEY must decode to exactly 32 bytes.");
   const iv = randomBytes(IV_LENGTH);
