@@ -2,165 +2,49 @@
 
 ## Purpose
 
-Every Phase 10.3 Aviator round has a public commitment that is published before the round starts and a post-settlement reveal that can be independently verified.
+Every Aviator round publishes a cryptographic commitment before play and reveals the server seed after settlement. The documented algorithm is independently reproduced in the browser verifier.
 
-This system is a PlayerLobby-specific algorithm. It does not copy a proprietary Aviator/Spribe algorithm or branding.
+## Inputs and commitment lifecycle
 
-## Inputs
-
-Each round stores:
-
-- `serverSeed` — 32 cryptographically random bytes encoded as lowercase hexadecimal. It is secret until settlement.
-- `serverSeedHash` — `SHA-256(serverSeed)` in lowercase hexadecimal. This is safe to publish before the round.
-- `clientSeed` — the public shared client seed `playerlobby-aviator-v1`. Aviator is a multiplayer shared round, so one public client seed is used for the common crash result rather than allowing one bettor to change the shared outcome.
-- `nonce` — a positive monotonic counter value with a cryptographically random process-start prefix. The counter increments for every newly created round.
-- `algorithmVersion` — currently `v1`.
-
-The browser cannot submit or replace the server seed, nonce, algorithm version, or stored commitment.
-
-## Commitment lifecycle
+Each round stores a cryptographically random 32-byte server seed, its SHA-256 hash, the public shared client seed `playerlobby-aviator-v2`, a unique positive nonce, and algorithm version `v2`. The server seed is encrypted at rest and is never sent before settlement.
 
 ```text
-Generate 32-byte server seed with Node crypto.randomBytes
-        ↓
-SHA-256(server seed)
-        ↓
-Persist encrypted server seed + public commitment
-        ↓
-Publish serverSeedHash/clientSeed/nonce/algorithmVersion
-        ↓
-Run round
-        ↓
-Derive crash multiplier from HMAC-SHA256
-        ↓
-Crash + settle bets
-        ↓
-Reveal decrypted server seed
-        ↓
-Browser verifies commitment + crash calculation
+Generate server seed → publish SHA-256 commitment → run round
+→ derive crash point → settle → reveal seed → browser verifies
 ```
 
-The raw seed is encrypted at rest with AES-256-GCM using a key derived from `AUTH_SECRET`. It is never included in the pre-round API or commitment WebSocket event.
+## Exact v2 outcome distribution
 
-## Exact v1 crash algorithm
-
-The HMAC message is:
+The HMAC-SHA256 input key is the server seed. Separate domain-separated messages are used for band selection and the multiplier point:
 
 ```text
-clientSeed + ":" + nonce
+base = clientSeed + ":" + nonce
+band digest  = HMAC-SHA256(serverSeed, base + ":band")
+point digest = HMAC-SHA256(serverSeed, base + ":point")
 ```
 
-The digest is:
+Each 256-bit digest is converted to an integer. Rejection sampling removes modulo bias before mapping it to an integer range. The band selector maps an unbiased integer from 0 through 999 into these mutually exclusive bands:
 
-```text
-HMAC-SHA256(
-  key = serverSeed,
-  message = clientSeed + ":" + nonce
-)
-```
+| Crash multiplier | Probability | Bucket count |
+|---|---:|---:|
+| 1.01x–2.49x | 80% | 800 / 1,000 |
+| 2.50x–4.99x | 15% | 150 / 1,000 |
+| 5.00x–8.49x | 4% | 40 / 1,000 |
+| 8.50x–19.99x | 0.5% | 5 / 1,000 |
+| 20.00x–39.99x | 0.4% | 4 / 1,000 |
+| 40.00x–119.99x | 0.1% | 1 / 1,000 |
 
-Take the first four bytes of the digest as a big-endian unsigned 32-bit integer `value`:
+A second independent HMAC-derived integer selects a uniformly distributed hundredth within the selected band. The maximum possible displayed crash is 119.99x; the 120.00x boundary is exclusive.
 
-```text
-value = uint32_be(hmacDigest[0..3])
-unit = value / 2^32
-```
-
-Map that value into PlayerLobby's supported crash range using the documented quadratic mapping:
-
-```text
-crash = 1.01 + unit^2 × (50.00 - 1.01)
-crash = round(crash, 2 decimal places)
-```
-
-The result is capped at `50.00x` and has a minimum of `1.01x`.
-
-This exact calculation is implemented by `calculateAviatorCrashMultiplier()` and reproduced independently in the browser verifier. The verifier does not call the game-engine generator.
+These are per-round probabilities. They describe the distribution over repeated independent rounds; they do not promise that every finite sample will contain exactly the stated percentages.
 
 ## Verification
 
-A completed round is valid only when both checks pass:
-
-1. `SHA-256(revealedServerSeed) === serverSeedHash`
-2. The v1 HMAC calculation using `serverSeed`, `clientSeed`, and `nonce` reproduces the stored `crashMultiplier`.
-
-If the algorithm version is unsupported, verification is unavailable rather than falling back to another calculation.
-
-## Public APIs
-
-### Current commitment
-
-```text
-GET /api/games/aviator/fairness/current
-```
-
-Returns only:
-
-```json
-{
-  "roundId": "...",
-  "serverSeedHash": "...",
-  "clientSeed": "playerlobby-aviator-v1",
-  "nonce": "...",
-  "algorithmVersion": "v1"
-}
-```
-
-The `serverSeed` is intentionally absent.
-
-### Completed-round reveal
-
-```text
-GET /api/games/aviator/fairness/:roundId
-```
-
-Only a settled round with fairness metadata can return the reveal. Older rounds without Phase 10.3 metadata return `FAIRNESS_DATA_NOT_FOUND`.
-
-The response contains the revealed seed, commitment inputs, crash multiplier, and a server-side diagnostic. The `/games/aviator` UI additionally performs the same calculation locally in the browser.
-
-## WebSocket events
-
-Before/during a round:
-
-```text
-fairness:commitment
-```
-
-The commitment event contains only public verification data.
-
-After settlement:
-
-```text
-fairness:revealed
-```
-
-The reveal event is emitted only after settlement and contains the seed and completed-round verification inputs.
-
-## Immutability
-
-A database trigger prevents fairness inputs from being changed once a round leaves `WAITING`. Historical fairness data is therefore not silently replaced after the result has been determined. Existing pre-Phase-10.3 rounds remain without invented fairness metadata.
-
-## Test vector
-
-```text
-serverSeed      = test-server-seed-32-bytes
-serverSeedHash  = 5e35d1f2f093c39b78b96fc97a7f760ffede7c16eeda6e10d6bcf972a9178d81
-clientSeed      = playerlobby-aviator-v1
-nonce           = 12345
-algorithm       = v1
-HMAC-SHA256     = d6af29066075434763cdc07324c87bb0552183d2f3f650b8883dcfb78a500e79
-crashMultiplier = 35.46x
-```
-
-This vector is locked into automated tests so a future refactor cannot silently change the v1 calculation.
+A result is valid only if both the SHA-256 commitment and the complete v2 crash calculation match. The browser verifier independently repeats the same rejection sampling, band selection, and point selection. Unsupported versions fail closed; historical v1 rounds remain verifiable using their original v1 verifier only if that verifier is retained.
 
 ## Security boundaries
 
-- Do not log server seeds.
-- Do not include server seeds in pre-round responses.
-- Do not include server seeds in commitment WebSocket events.
-- Do not accept client-provided server seeds, crash multipliers, nonces, or algorithm versions.
-- Do not label a round verified merely because fairness metadata exists; perform both verification checks.
-- Do not fabricate fairness data for rounds created before Phase 10.3.
-
-The system provides cryptographic evidence that the revealed seed matches the pre-round commitment and that the stored result follows the documented v1 calculation. It does not make unsupported claims that every operational component of a game can never be manipulated.
+- Never expose the server seed before settlement.
+- Never accept client-provided server seeds, crash points, nonces, or algorithm versions.
+- Do not silently rewrite historical round results.
+- Admin-triggered busts are separate operator actions and must remain disclosed to players; they are not represented as naturally generated v2 outcomes.
