@@ -139,7 +139,7 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const lockedRound = await tx.$queryRaw<Array<{ id: string; status: string; startedAt: Date | null; serverSeedEncrypted: string | null; clientSeed: string | null; nonce: bigint | null; algorithmVersion: string | null }>>(Prisma.sql`SELECT "id", "status", "startedAt", "serverSeedEncrypted", "clientSeed", "nonce", "algorithmVersion" FROM "AviatorRound" WHERE "id" = ${roundId}::uuid FOR UPDATE`);
+      const lockedRound = await tx.$queryRaw<Array<{ id: string; status: string; startedAt: Date | null; serverNow: Date; serverSeedEncrypted: string | null; clientSeed: string | null; nonce: bigint | null; algorithmVersion: string | null }>>(Prisma.sql`SELECT "id", "status", "startedAt", clock_timestamp() AS "serverNow", "serverSeedEncrypted", "clientSeed", "nonce", "algorithmVersion" FROM "AviatorRound" WHERE "id" = ${roundId}::uuid FOR UPDATE`);
       const round = lockedRound[0];
       if (!round) return { kind: "invalid-round" as const };
       if (round.status !== "RUNNING" || !round.startedAt) return { kind: "late" as const };
@@ -152,7 +152,7 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
 
       // Recalculate at transaction time while holding the round row lock.
       // Never trust the browser multiplier or a snapshot fetched before this lock.
-      const acceptedAt = Date.now();
+      const acceptedAt = round.serverNow.getTime();
       const serverSeed = decryptAviatorServerSeed(round.serverSeedEncrypted);
       const crashMultiplier = calculateAviatorCrashMultiplier({
         serverSeed,
