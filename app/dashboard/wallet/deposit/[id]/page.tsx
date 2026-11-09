@@ -41,7 +41,7 @@ export default async function DepositPage({ params }: { params: Promise<{ id: st
       </dl>
 
       {deposit.status === "PENDING" ? <>
-        <PayUWalletCheckout depositId={deposit.id} hasPhone={Boolean(user.phone)} />
+        <PayUWalletCheckout depositId={deposit.id} />
         <div className="mt-5 flex items-center justify-between border-t border-white/5 pt-5"><p className="text-xs leading-5 text-slate-500">You can cancel before payment completes. Cancellation never creates a debit or wallet credit.</p><form action={cancelDepositAction}><input type="hidden" name="depositId" value={deposit.id} /><Button type="submit" variant="secondary">Cancel</Button></form></div>
       </> : null}
       {deposit.status === "SUCCESS" ? <div className="mt-7 rounded-xl border border-lime-300/15 bg-lime-300/5 p-4 text-sm font-semibold text-lime-200">Payment verified. The wallet balance reflects the single DEPOSIT ledger credit for this reference.</div> : null}
