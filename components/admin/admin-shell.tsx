@@ -37,7 +37,7 @@ const groups = [
 ];
 
 function isActive(pathname: string, href: string) {
-  return href === "/admin" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+  return href === "/admin" || href === "/admin/finance" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function AdminShell({ children, adminEmail, adminRole }: AdminShellProps) {
