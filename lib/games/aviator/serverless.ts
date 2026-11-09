@@ -7,7 +7,7 @@ import { emitAviatorBetEvent } from "./betting-events";
 import type { AviatorRoundSnapshot } from "./types";
 
 const WAITING_MS = 5_000;
-const CRASH_DISPLAY_MS = 1_800;
+const CRASH_DISPLAY_MS = 2_500;
 // A transaction-scoped PostgreSQL advisory lock serializes every round lifecycle
 // mutation across Netlify instances and concurrent API requests.
 const ROUND_LIFECYCLE_LOCK = 4_817_263_901n;
@@ -163,7 +163,7 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
 
     if (row.status === "WAITING") {
       const deadline = waitingEndsAt(row);
-      if (now < deadline) return { snapshot: toSnapshot(row, now, "WAITING", 1), lostBetIds: [] as string[] };
+      if (now < deadline) return { snapshot: toSnapshot(row, now, "WAITING", 1), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
       await tx.aviatorRound.updateMany({
         where: { id: row.id, status: "WAITING" },
         data: { status: "RUNNING", startedAt: new Date(deadline) },
@@ -191,14 +191,14 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
         });
         if (claim.count === 1) {
           const crashedRow = (await getRound(tx, row.id)) ?? row;
-          return { snapshot: toSnapshot(crashedRow, now, "CRASHED", crashPoint), lostBetIds: [] as string[] };
+          return { snapshot: toSnapshot(crashedRow, now, "CRASHED", crashPoint), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
         }
         const latest = await getRound(tx, row.id);
         if (latest?.status === "CRASHED") {
           return { snapshot: toSnapshot(latest, now, Number(latest.crashMultiplier ?? crashPoint)), lostBetIds: [] as string[] };
         }
       }
-      return { snapshot: toSnapshot(row, now, "RUNNING", multiplier), lostBetIds: [] as string[] };
+      return { snapshot: toSnapshot(row, now, "RUNNING", multiplier), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
     }
 
     throw new Error(`AVIATOR_UNEXPECTED_ROUND_STATE:${row.status}`);
