@@ -6,7 +6,7 @@ import { verifyAviatorFairnessInBrowser } from "@/lib/games/aviator/browser-veri
 type Round = { id: string; crashMultiplier: string | number | null };
 type Commitment = { roundId: string; serverSeedHash: string; clientSeed: string; nonce: string; algorithmVersion: string };
 type Reveal = Commitment & { serverSeed: string; crashMultiplier: number };
-type Verification = { valid: boolean; hashValid: boolean; calculationValid: boolean; computedHash: string; hmacDigest: string; calculatedCrashMultiplier: number };
+type Verification = { valid: boolean; hashValid: boolean; calculationValid: boolean; computedHash: string; calculatedCrashMultiplier: number };
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
