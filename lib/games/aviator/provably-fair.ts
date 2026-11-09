@@ -14,7 +14,7 @@ export const AVIATOR_CRASH_BANDS = [
   { label: "40.00x–119.99x", probability: 1, minCents: 4000, maxCentsExclusive: 12000 },
 ] as const;
 
-export type AviatorFairnessAlgorithmVersion = "v1" | "v2";
+export type AviatorFairnessAlgorithmVersion = "v2";
 
 export type AviatorFairnessCommitment = {
   roundId: string;
@@ -73,15 +73,8 @@ export function aviatorCrashBandIndex(bucket: number) {
   throw new Error("INVALID_CRASH_BUCKET");
 }
 
-function calculateV1CrashMultiplier(input: { serverSeed: string; clientSeed: string; nonce: string }) {
-  const digest = hmac(input.serverSeed, `${input.clientSeed}:${input.nonce}`);
-  const value = Number.parseInt(digest.slice(0, 8), 16);
-  const unit = value / 0x1_0000_0000;
-  return Number(Math.min(50, 1.01 + unit * unit * (50 - 1.01)).toFixed(2));
-}
 export function calculateAviatorCrashMultiplier(input: { serverSeed: string; clientSeed: string; nonce: string; algorithmVersion?: string }) {
   const version = input.algorithmVersion ?? AVIATOR_FAIRNESS_ALGORITHM_VERSION;
-  if (version === "v1") return calculateV1CrashMultiplier(input);
   if (version !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
   const base = `${input.clientSeed}:${input.nonce}`;
   const bucket = uniformIntFromHmac({ serverSeed: input.serverSeed, message: `${base}:band`, range: 1000 });
@@ -96,7 +89,7 @@ export function createAviatorFairnessRound(roundId: string): AviatorFairnessSecr
   return { roundId, serverSeed, serverSeedHash: hashAviatorServerSeed(serverSeed), clientSeed: AVIATOR_FAIRNESS_CLIENT_SEED, nonce: nextAviatorNonce(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION };
 }
 export function verifyAviatorFairness(input: { roundId: string; serverSeed: string; serverSeedHash: string; clientSeed: string; nonce: string; algorithmVersion: string; crashMultiplier: number }): AviatorFairnessVerification {
-  if (input.algorithmVersion !== "v1" && input.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification unavailable: unsupported algorithm version." };
+  if (input.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification unavailable: unsupported algorithm version." };
   if (!input.serverSeed || !input.clientSeed || !input.nonce || !input.roundId) return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification failed: invalid fairness inputs." };
   let calculatedCrashMultiplier: number;
   try { calculatedCrashMultiplier = calculateAviatorCrashMultiplier(input); } catch { return { valid: false, hashValid: false, calculationValid: false, calculatedCrashMultiplier: null, message: "Verification failed: crash calculation could not be reproduced." }; }
