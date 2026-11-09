@@ -7,7 +7,7 @@ Payout destinations prepare the platform for future withdrawal processing withou
 - UPI
 - BANK_ACCOUNT
 
-New destinations are `PENDING_VERIFICATION`. No verification provider is connected in this phase, so the application never fakes a `VERIFIED` state. Withdrawal requests may preserve a pending destination snapshot, but admin approval requires the destination to be genuinely `VERIFIED`.
+Users can add their own UPI or bank payout destinations without admin approval. A successfully saved destination is immediately marked `VERIFIED` for platform workflow purposes and can be selected for withdrawal requests. This status means the user supplied the details; it does **not** mean the bank account or UPI ID has been independently verified by a provider. Admin approval applies only to withdrawal requests, not payout-method creation.
 
 ## Stored data
 
@@ -28,7 +28,8 @@ Existing Phase 5.3 withdrawals may have null snapshot fields because they predat
 - User identity and ownership come from the authenticated server session.
 - Destination IDs are checked against the authenticated user.
 - Disabled destinations cannot be used for new requests.
-- Approval requires a verified destination and revalidates ownership and snapshot integrity.
+- Users manage their own payout destinations; adding a destination does not require admin approval.
+- Withdrawal approval revalidates destination ownership and immutable snapshot integrity. It does not change or verify payout destination details.
 - No admin action edits a user's destination fields.
 - No sensitive destination value is logged, put in URLs, or exposed publicly.
 - PIN, OTP, CVV, card data, banking passwords, Aadhaar, PAN and biometric data are not collected.
