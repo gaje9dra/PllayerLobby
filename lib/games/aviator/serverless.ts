@@ -137,7 +137,8 @@ async function settleCrashedRound(tx: Db, row: RoundRow) {
 
 async function withLifecycleLock<T>(work: (tx: Db) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${ROUND_LIFECYCLE_LOCK})`;
+    const lockResult = await tx.$queryRaw<{ locked: boolean }[]>`SELECT pg_advisory_xact_lock(${ROUND_LIFECYCLE_LOCK}) IS NULL AS locked`;
+    if (lockResult.length !== 1) throw new Error("AVIATOR_LIFECYCLE_LOCK_FAILED");
     return work(tx);
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10_000, timeout: 20_000 });
 }
