@@ -1,13 +1,18 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { Prisma } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decryptAviatorServerSeed, encryptAviatorServerSeed } from "./secret";
 import { calculateAviatorCrashMultiplier, createAviatorFairnessRound, AVIATOR_FAIRNESS_ALGORITHM_VERSION } from "./provably-fair";
-import { settleAviatorCrash } from "./settlement";
-import { persistFinalizedAviatorRound } from "./persistence";
+import { emitAviatorBetEvent } from "./betting-events";
 import type { AviatorRoundSnapshot } from "./types";
 
 const WAITING_MS = 5_000;
+const CRASH_DISPLAY_MS = 2_500;
+// A transaction-scoped PostgreSQL advisory lock serializes every round lifecycle
+// mutation across Netlify instances and concurrent API requests.
+const ROUND_LIFECYCLE_LOCK = 4_817_263_901n;
 
+type Db = Prisma.TransactionClient;
 type RoundRow = {
   id: string;
   status: "WAITING" | "RUNNING" | "CRASHED" | "SETTLED";
@@ -24,8 +29,6 @@ type RoundRow = {
 };
 
 function waitingEndsAt(row: RoundRow) {
-  // Use an absolute deadline derived from the database-created timestamp.
-  // The caller supplies database time, so a clock skew cannot create a sliding window.
   return row.createdAt.getTime() + WAITING_MS;
 }
 
@@ -38,23 +41,8 @@ function randomNonce() {
   return (BigInt(Date.now()) * 1_000_000n + (BigInt(`0x${randomBytes(4).toString("hex")}`) % 1_000_000n)).toString();
 }
 
-async function createRound() {
-  const id = randomUUID();
-  const fairness = createAviatorFairnessRound(id);
-  const nonce = randomNonce();
-  const encryptedSeed = encryptAviatorServerSeed(fairness.serverSeed);
-  await prisma.$executeRaw`
-    INSERT INTO "AviatorRound" (
-      "id", "status", "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion"
-    ) VALUES (
-      ${id}::uuid, 'WAITING'::"AviatorRoundStatus", ${encryptedSeed}, ${fairness.serverSeedHash}, ${fairness.clientSeed}, ${BigInt(nonce)}, ${fairness.algorithmVersion}
-    )
-  `;
-  return getRound(id);
-}
-
-async function getRound(id: string) {
-  const rows = await prisma.$queryRaw<RoundRow[]>`
+async function getRound(tx: Db, id: string) {
+  const rows = await tx.$queryRaw<RoundRow[]>`
     SELECT
       "id", "status", "startedAt", "crashedAt", "crashMultiplier", "createdAt",
       "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion",
@@ -66,8 +54,8 @@ async function getRound(id: string) {
   return rows[0] ?? null;
 }
 
-async function getLatestActiveRound() {
-  const rows = await prisma.$queryRaw<RoundRow[]>`
+async function getLatestActiveRound(tx: Db) {
+  const rows = await tx.$queryRaw<RoundRow[]>`
     SELECT
       "id", "status", "startedAt", "crashedAt", "crashMultiplier", "createdAt",
       "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion",
@@ -80,18 +68,21 @@ async function getLatestActiveRound() {
   return rows[0] ?? null;
 }
 
-async function getOrCreateRound() {
-  const existing = await getLatestActiveRound();
-  if (existing) return existing;
-  try {
-    return await createRound();
-  } catch (error) {
-    if (error instanceof Error && /unique|duplicate/i.test(error.message)) {
-      const retry = await getLatestActiveRound();
-      if (retry) return retry;
-    }
-    throw error;
-  }
+async function createRound(tx: Db) {
+  const id = randomUUID();
+  const fairness = createAviatorFairnessRound(id);
+  const encryptedSeed = encryptAviatorServerSeed(fairness.serverSeed);
+  await tx.$executeRaw`
+    INSERT INTO "AviatorRound" (
+      "id", "status", "serverSeedEncrypted", "serverSeedHash", "clientSeed", "nonce", "algorithmVersion"
+    ) VALUES (
+      ${id}::uuid, 'WAITING'::"AviatorRoundStatus", ${encryptedSeed}, ${fairness.serverSeedHash},
+      ${fairness.clientSeed}, ${BigInt(randomNonce())}, ${fairness.algorithmVersion}
+    )
+  `;
+  const row = await getRound(tx, id);
+  if (!row) throw new Error("AVIATOR_ROUND_CREATE_FAILED");
+  return row;
 }
 
 function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["phase"], multiplier: number): AviatorRoundSnapshot {
@@ -104,66 +95,149 @@ function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["pha
     multiplier,
     startedAt: row.startedAt?.getTime() ?? null,
     waitingEndsAt: phase === "WAITING" ? waitingEndsAt(row) : null,
-    fairness: { roundId: row.id, serverSeedHash: row.serverSeedHash, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION },
+    fairness: {
+      roundId: row.id,
+      serverSeedHash: row.serverSeedHash,
+      clientSeed: row.clientSeed,
+      nonce: row.nonce.toString(),
+      algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION,
+    },
   };
 }
 
-async function settleCrashIfNeeded(row: RoundRow, now: number, crashPoint: number) {
-  const snapshot = toSnapshot(row, now, "CRASHED", crashPoint);
-  await settleAviatorCrash(snapshot, crashPoint);
-  await persistFinalizedAviatorRound(snapshot, crashPoint);
-  return snapshot;
+async function settleCrashedRound(tx: Db, row: RoundRow) {
+  const now = row.serverNow;
+  const crashPoint = Number(row.crashMultiplier ?? "1.01");
+  const activeBets = await tx.aviatorBet.findMany({
+    where: { roundId: row.id, status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (activeBets.length) {
+    await tx.aviatorBet.updateMany({
+      where: { roundId: row.id, status: "ACTIVE" },
+      data: { status: "LOST", updatedAt: now },
+    });
+  }
+
+  // One guarded transition settles the round and publishes its fairness reveal.
+  // It is safe to retry: only CRASHED rows can transition and active bets are
+  // changed with a status predicate in this same transaction.
+  const finalized = await tx.aviatorRound.updateMany({
+    where: { id: row.id, status: "CRASHED" },
+    data: {
+      status: "SETTLED",
+      crashedAt: row.crashedAt ?? now,
+      crashMultiplier: crashPoint,
+      fairnessRevealedAt: now,
+    },
+  });
+  if (finalized.count !== 1) throw new Error("AVIATOR_ROUND_SETTLEMENT_CONFLICT");
+  return activeBets.map((bet) => bet.id);
+}
+
+async function withLifecycleLock<T>(work: (tx: Db) => Promise<T>): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${ROUND_LIFECYCLE_LOCK})`;
+    return work(tx);
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10_000, timeout: 20_000 });
 }
 
 export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnapshot> {
-  let row = await getOrCreateRound();
-  let now = row.serverNow.getTime();
+  const result = await withLifecycleLock(async (tx) => {
+    let row = await getLatestActiveRound(tx);
+    if (!row) row = await createRound(tx);
+    let now = row.serverNow.getTime();
 
-  if (row.status === "CRASHED") {
-    // Finalize and settle the crashed round before opening the next one. The
-    // next row is created as WAITING, whose database-created deadline enforces
-    // the full five-second countdown before it can transition to RUNNING.
-    const crashPoint = row.crashMultiplier ? Number(row.crashMultiplier) : 1.01;
-    await settleCrashIfNeeded(row, now, crashPoint);
-
-    const nextRound = await getOrCreateRound();
-    const nextNow = nextRound.serverNow.getTime();
-    if (nextRound.status === "WAITING") {
-      return toSnapshot(nextRound, nextNow, "WAITING", 1);
-    }
-    // Another request may already have advanced the next round; let the normal
-    // state machine report its authoritative phase.
-    return getNetlifyAviatorRoundSnapshot();
-  }
-
-  if (row.status === "WAITING") {
-    const roundWaitingEndsAt = waitingEndsAt(row);
-    if (now < roundWaitingEndsAt) return toSnapshot(row, now, "WAITING", 1);
-    await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "WAITING" }, data: { status: "RUNNING", startedAt: new Date(roundWaitingEndsAt) } });
-    row = (await getRound(row.id)) ?? row;
-    now = row.serverNow.getTime();
-  }
-
-  if (row.status === "RUNNING") {
-    if (!row.serverSeedEncrypted || !row.clientSeed || row.nonce === null || !row.algorithmVersion) throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
-    if (row.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
-    const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);
-    const crashPoint = calculateAviatorCrashMultiplier({ serverSeed, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION });
-    const startedAt = row.startedAt ?? new Date(waitingEndsAt(row));
-    const multiplier = Math.max(1, multiplierAt(startedAt, now));
-
-    if (multiplier >= crashPoint) {
-      const claim = await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "RUNNING" }, data: { status: "CRASHED", crashedAt: new Date(now), crashMultiplier: crashPoint } });
-      if (claim.count === 1) {
-        const crashedRow = (await getRound(row.id)) ?? row;
-        return settleCrashIfNeeded(crashedRow, now, crashPoint);
+    if (row.status === "CRASHED") {
+      const crashPoint = Number(row.crashMultiplier ?? "1.01");
+      const crashedAt = row.crashedAt?.getTime() ?? now;
+      // Keep CRASHED observable long enough for clients to render the crash
+      // frame before settling and opening the next betting window.
+      if (now - crashedAt < CRASH_DISPLAY_MS) {
+        return { snapshot: toSnapshot(row, now, "CRASHED", crashPoint), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
       }
-      const latest = await getRound(row.id);
-      if (latest?.status === "CRASHED") return toSnapshot(latest, now, "CRASHED", crashPoint);
+      const lostBetIds = await settleCrashedRound(tx, row);
+      const next = await createRound(tx);
+      return { snapshot: toSnapshot(next, next.serverNow.getTime(), "WAITING", 1), lostBetIds, lostBetRoundId: row.id };
     }
 
-    return toSnapshot(row, now, "RUNNING", multiplier);
-  }
+    if (row.status === "WAITING") {
+      const deadline = waitingEndsAt(row);
+      if (now < deadline) return { snapshot: toSnapshot(row, now, "WAITING", 1), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
+      await tx.aviatorRound.updateMany({
+        where: { id: row.id, status: "WAITING" },
+        data: { status: "RUNNING", startedAt: new Date(deadline) },
+      });
+      row = (await getRound(tx, row.id)) ?? row;
+      now = row.serverNow.getTime();
+    }
 
-  return getNetlifyAviatorRoundSnapshot();
+    if (row.status === "RUNNING") {
+      if (!row.serverSeedEncrypted || !row.clientSeed || row.nonce === null || !row.algorithmVersion) throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
+      if (row.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
+      const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);
+      const crashPoint = calculateAviatorCrashMultiplier({
+        serverSeed,
+        clientSeed: row.clientSeed,
+        nonce: row.nonce.toString(),
+        algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION,
+      });
+      const startedAt = row.startedAt ?? new Date(waitingEndsAt(row));
+      const multiplier = Math.max(1, multiplierAt(startedAt, now));
+      if (multiplier >= crashPoint) {
+        const claim = await tx.aviatorRound.updateMany({
+          where: { id: row.id, status: "RUNNING" },
+          data: { status: "CRASHED", crashedAt: row.serverNow, crashMultiplier: crashPoint },
+        });
+        if (claim.count === 1) {
+          const crashedRow = (await getRound(tx, row.id)) ?? row;
+          return { snapshot: toSnapshot(crashedRow, now, "CRASHED", crashPoint), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
+        }
+        const latest = await getRound(tx, row.id);
+        if (latest?.status === "CRASHED") {
+          return { snapshot: toSnapshot(latest, now, "CRASHED", Number(latest.crashMultiplier ?? crashPoint)), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
+        }
+      }
+      return { snapshot: toSnapshot(row, now, "RUNNING", multiplier), lostBetIds: [] as string[], lostBetRoundId: null as string | null };
+    }
+
+    throw new Error(`AVIATOR_UNEXPECTED_ROUND_STATE:${row.status}`);
+  });
+
+  for (const betId of result.lostBetIds) {
+    if (result.lostBetRoundId) emitAviatorBetEvent({ type: "bet:lost", roundId: result.lostBetRoundId, betId, status: "LOST" });
+  }
+  return result.snapshot;
+}
+
+/** Admin-triggered bust uses the exact same lifecycle lock and CRASHED state as
+ * automatic crashes. Settlement/next-round creation is left to the normal
+ * lifecycle worker after the crash display window. */
+export async function bustNetlifyAviatorRoundNow() {
+  return withLifecycleLock(async (tx) => {
+    const row = await getLatestActiveRound(tx);
+    if (!row || row.status !== "RUNNING") return { ok: false as const, code: "ROUND_NOT_RUNNING" as const };
+    if (!row.startedAt || !row.serverSeedEncrypted || !row.clientSeed || row.nonce === null || !row.algorithmVersion) {
+      throw new Error("AVIATOR_FAIRNESS_DATA_MISSING");
+    }
+    const now = row.serverNow.getTime();
+    const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);
+    const scheduledCrash = calculateAviatorCrashMultiplier({
+      serverSeed,
+      clientSeed: row.clientSeed,
+      nonce: row.nonce.toString(),
+      algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION,
+    });
+    const liveMultiplier = Math.max(1, multiplierAt(row.startedAt, now));
+    const crashPoint = Math.min(liveMultiplier, scheduledCrash);
+    const claim = await tx.aviatorRound.updateMany({
+      where: { id: row.id, status: "RUNNING" },
+      data: { status: "CRASHED", crashedAt: row.serverNow, crashMultiplier: crashPoint },
+    });
+    if (claim.count !== 1) return { ok: false as const, code: "ROUND_ALREADY_ENDED" as const };
+    return {
+      ok: true as const,
+      snapshot: toSnapshot({ ...row, status: "CRASHED", crashedAt: row.serverNow, crashMultiplier: String(crashPoint) }, now, "CRASHED", crashPoint),
+    };
+  });
 }
