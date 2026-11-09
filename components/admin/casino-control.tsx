@@ -36,9 +36,35 @@ export function CasinoControl() {
     setBusting(true);
     setActionMessage("");
     try {
-      const response = await fetch("/api/admin/casino-control", { method: "POST", cache: "no-store" });
-      const payload = (await response.json()) as { error?: string; success?: boolean; round?: { multiplier: number } };
-      if (!response.ok || !payload.success) throw new Error(payload.error || "Could not bust the round.");
+      const response = await fetch("/api/admin/casino-control", {
+        method: "POST",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const responseText = await response.text();
+      let payload: { error?: string; success?: boolean; round?: { multiplier: number } } | null = null;
+      if (responseText.trim()) {
+        try {
+          payload = JSON.parse(responseText) as { error?: string; success?: boolean; round?: { multiplier: number } };
+        } catch {
+          throw new Error(
+            response.redirected
+              ? "Your admin session expired. Sign in again and retry."
+              : `The server returned an invalid response (HTTP ${response.status}). Please refresh and try again.`,
+          );
+        }
+      }
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            (response.status === 401 || response.status === 403 || response.redirected
+              ? "Admin access required. Sign in again and retry."
+              : `Could not bust the round (HTTP ${response.status}).`),
+        );
+      }
+      if (!payload?.success || !payload.round) {
+        throw new Error("The server did not confirm the round bust. Refresh the round status before retrying.");
+      }
       setActionMessage(`Round busted at ${Number(payload.round?.multiplier ?? 1).toFixed(2)}x. Active bets are being settled.`);
       await refresh();
     } catch (caught) {
