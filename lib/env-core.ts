@@ -10,10 +10,6 @@ const REQUIRED_SERVER_VARS = [
   "PAYU_MERCHANT_KEY",
   "PAYU_MERCHANT_SALT",
   "PAYOUT_ENCRYPTION_KEY",
-  "PAYU_PAYOUT_MERCHANT_ID",
-  "PAYU_PAYOUT_CLIENT_ID",
-  "PAYU_PAYOUT_CLIENT_SECRET",
-  "PAYU_PAYOUT_WEBHOOK_SECRET",
 ] as const;
 
 function value(name: string) {
@@ -46,20 +42,23 @@ export function validateServerEnvironment(options: { requireProduction?: boolean
 
   const payuEnvironment = value("PAYU_ENVIRONMENT").toLowerCase();
   const payoutEnvironment = value("PAYU_PAYOUT_ENVIRONMENT").toUpperCase();
+  const automatedPayoutsEnabled = value("PAYU_PAYOUT_PRODUCTION_ENABLED") === "true";
+  const payoutCredentials = ["PAYU_PAYOUT_MERCHANT_ID", "PAYU_PAYOUT_CLIENT_ID", "PAYU_PAYOUT_CLIENT_SECRET", "PAYU_PAYOUT_WEBHOOK_SECRET"];
   if (!payuEnvironment || !["test", "production"].includes(payuEnvironment)) errors.push("PAYU_ENVIRONMENT must be test or production.");
-  if (!payoutEnvironment || !["TEST", "PRODUCTION"].includes(payoutEnvironment)) errors.push("PAYU_PAYOUT_ENVIRONMENT must be TEST or PRODUCTION.");
+  if (payoutEnvironment && !["TEST", "PRODUCTION"].includes(payoutEnvironment)) errors.push("PAYU_PAYOUT_ENVIRONMENT must be TEST or PRODUCTION when configured.");
+  if (automatedPayoutsEnabled) {
+    if (payoutEnvironment !== "PRODUCTION") errors.push("PAYU_PAYOUT_PRODUCTION_ENABLED=true requires PAYU_PAYOUT_ENVIRONMENT=PRODUCTION.");
+    for (const name of payoutCredentials) if (!value(name)) errors.push(`${name} is required when automated PayU production payouts are enabled.`);
+  }
 
   if (production) {
     if (payuEnvironment !== "production") errors.push("Production requires PAYU_ENVIRONMENT=production.");
-    if (payoutEnvironment !== "PRODUCTION") errors.push("Production requires PAYU_PAYOUT_ENVIRONMENT=PRODUCTION.");
-    if (value("PAYU_PAYOUT_PRODUCTION_ENABLED") !== "true") errors.push("Production requires PAYU_PAYOUT_PRODUCTION_ENABLED=true.");
-    if (value("PAYOUTS_ENABLED") !== "true") errors.push("Production requires PAYOUTS_ENABLED=true.");
     if (value("NEXT_PUBLIC_APP_URL").startsWith("http://")) errors.push("Production NEXT_PUBLIC_APP_URL must use HTTPS.");
     if (value("NEXT_PUBLIC_APP_URL").includes("localhost")) errors.push("Production NEXT_PUBLIC_APP_URL must not use localhost.");
     if (value("APP_ENVIRONMENT") !== "production") errors.push("Production must explicitly set APP_ENVIRONMENT=production.");
   } else {
     if (payuEnvironment === "production") errors.push("Non-production environments must not use PAYU_ENVIRONMENT=production.");
-    if (payoutEnvironment === "PRODUCTION") errors.push("Non-production environments must not use PAYU_PAYOUT_ENVIRONMENT=PRODUCTION.");
+    if (payoutEnvironment === "PRODUCTION" && !automatedPayoutsEnabled) errors.push("Non-production environments must not enable production PayU payout credentials.");
   }
 
   if (errors.length) throw new Error(`Environment configuration invalid:\n${errors.map((error) => `- ${error}`).join("\n")}`);
