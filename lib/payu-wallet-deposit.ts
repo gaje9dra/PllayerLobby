@@ -9,7 +9,6 @@ import { prisma } from "@/lib/prisma";
 import { normalizePaymentAmount } from "@/lib/payment-verification-rules";
 import { isValidUuid } from "@/lib/wallet-rules";
 
-const PHONE_PATTERN = /^[6-9][0-9]{9}$/;
 const DEPOSIT_REFERENCE_PATTERN = /^DEP-[A-Z0-9]{12}$/;
 
 export type WalletDepositPaymentResult =
@@ -60,13 +59,9 @@ export async function createPayUWalletDepositPayment(depositId: string, phoneInp
     return invalid("Payment is unavailable because the public app URL is invalid.");
   }
 
-  const storedPhone = user.phone?.replace(/\s+/g, "") ?? "";
-  const suppliedPhone = phoneInput.replace(/\s+/g, "");
-  const phone = storedPhone || suppliedPhone;
-  if (!PHONE_PATTERN.test(phone)) return invalid("A valid 10-digit Indian mobile number is required for PayU checkout.");
-  if (!storedPhone) {
-    await prisma.user.update({ where: { id: user.id }, data: { phone } });
-  }
+  // Mobile number is optional in the PlayerLobby flow. Reuse a number already
+  // on the user's profile when available; never prompt for or silently invent one.
+  const phone = user.phone?.replace(/\s+/g, "") || phoneInput.replace(/\s+/g, "");
 
   return prisma.walletDeposit.findFirst({ where: { id: depositId, userId: user.id }, select: { id: true, walletId: true, amount: true, currency: true, status: true, reference: true } }).then((deposit) => {
     if (!deposit) return invalid("Deposit not found.");
