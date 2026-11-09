@@ -24,7 +24,7 @@ type RoundRow = {
   algorithmVersion: string | null;
 };
 
-function waitingEndsAt(row: RoundRow, now: number) {
+function waitingEndsAt(row: RoundRow) {
   // Use an absolute deadline derived from the database-created timestamp.
   // The caller supplies database time, so a clock skew cannot create a sliding window.
   return row.createdAt.getTime() + WAITING_MS;
@@ -104,7 +104,7 @@ function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["pha
     serverTime: now,
     multiplier,
     startedAt: row.startedAt?.getTime() ?? null,
-    waitingEndsAt: phase === "WAITING" ? waitingEndsAt(row, now) : null,
+    waitingEndsAt: phase === "WAITING" ? waitingEndsAt(row) : null,
     fairness: { roundId: row.id, serverSeedHash: row.serverSeedHash, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION },
   };
 }
@@ -130,7 +130,7 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
   }
 
   if (row.status === "WAITING") {
-    const roundWaitingEndsAt = waitingEndsAt(row, now);
+    const roundWaitingEndsAt = waitingEndsAt(row);
     if (now < roundWaitingEndsAt) return toSnapshot(row, now, "WAITING", 1);
     await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "WAITING" }, data: { status: "RUNNING", startedAt: new Date(roundWaitingEndsAt) } });
     row = (await getRound(row.id)) ?? row;
@@ -142,7 +142,7 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
     if (row.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
     const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);
     const crashPoint = calculateAviatorCrashMultiplier({ serverSeed, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION });
-    const startedAt = row.startedAt ?? new Date(waitingEndsAt(row, now));
+    const startedAt = row.startedAt ?? new Date(waitingEndsAt(row));
     const multiplier = Math.max(1, multiplierAt(startedAt, now));
 
     if (multiplier >= crashPoint) {
