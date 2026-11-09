@@ -66,6 +66,20 @@ export function AviatorProvablyFairPanel() {
   return (
     <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.035] p-6">
       <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-lime-300">Transparency</p><h2 className="mt-2 text-xl font-bold text-white">Provably Fair</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">The server commits to a secret seed by publishing its SHA-256 hash before the round. After settlement, the seed is revealed and the browser independently reproduces the HMAC-SHA256 crash calculation.</p></div></div>
+      <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+        <h3 className="text-sm font-bold text-white">Published crash probabilities · Algorithm v2</h3>
+        <p className="mt-1 text-xs leading-5 text-slate-400">Each round independently selects one multiplier band using the committed server seed. Percentages are per-round probabilities, not guaranteed quotas over a small number of rounds.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            ["1.01x–2.49x", "80%"],
+            ["2.50x–4.99x", "15%"],
+            ["5.00x–8.49x", "4%"],
+            ["8.50x–19.99x", "0.5%"],
+            ["20.00x–39.99x", "0.4%"],
+            ["40.00x–119.99x", "0.1%"],
+          ].map(([range, probability]) => <div key={range} className="flex items-center justify-between rounded-lg border border-white/5 px-3 py-2"><span className="text-xs text-slate-300">{range}</span><span className="font-mono text-xs font-bold text-lime-300">{probability}</span></div>)}
+        </div>
+      </div>
       {loading ? <p className="mt-6 text-sm text-slate-500">Loading fairness data…</p> : <>
         {commitment ? <div className="mt-6 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/10 bg-slate-950/50 p-3 sm:col-span-2"><div className="flex items-center justify-between gap-3"><span className="text-xs font-bold uppercase tracking-wider text-slate-500">Current Server Seed Hash</span><CopyButton value={commitment.serverSeedHash} /></div><p className="mt-2 break-all font-mono text-xs text-slate-300">{commitment.serverSeedHash}</p></div><div className="rounded-xl border border-white/10 bg-slate-950/50 p-3"><span className="text-xs font-bold uppercase tracking-wider text-slate-500">Client Seed</span><p className="mt-2 break-all font-mono text-xs text-slate-300">{commitment.clientSeed}</p></div><div className="rounded-xl border border-white/10 bg-slate-950/50 p-3"><span className="text-xs font-bold uppercase tracking-wider text-slate-500">Nonce / Algorithm</span><p className="mt-2 font-mono text-xs text-slate-300">{commitment.nonce} / {commitment.algorithmVersion}</p></div><div className="rounded-xl border border-white/10 bg-slate-950/50 p-3 sm:col-span-2"><span className="text-xs font-bold uppercase tracking-wider text-slate-500">Server Seed</span><p className="mt-2 text-xs text-slate-500">Hidden until the round is completed and settled.</p></div></div> : <p className="mt-6 text-sm text-slate-500">Current-round fairness commitment is unavailable.</p>}
 
