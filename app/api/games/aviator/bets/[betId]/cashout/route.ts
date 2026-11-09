@@ -12,9 +12,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ bet
   const { betId } = await params;
   const body = await request.json().catch(() => null);
   const roundId = body && typeof body.roundId === "string" ? body.roundId : "";
-  const result = await cashoutNetlifyAviatorBetForUser(user, betId, roundId);
+  const requestedMultiplier = body?.requestedMultiplier;
+  const result = await cashoutNetlifyAviatorBetForUser(user, betId, roundId, requestedMultiplier);
   if (!result.ok) {
-    const status = result.code === "RATE_LIMITED" ? 429 : result.code === "BET_NOT_FOUND" ? 404 : result.code === "BET_ALREADY_SETTLED" || result.code === "CASHOUT_TOO_LATE" || result.code === "ROUND_ALREADY_CRASHED" ? 409 : 400;
+    const status = result.code === "RATE_LIMITED" ? 429 : result.code === "BET_NOT_FOUND" ? 404 : result.code === "BET_ALREADY_SETTLED" || result.code === "CASHOUT_TOO_LATE" || result.code === "CASHOUT_MULTIPLIER_NOT_REACHED" || result.code === "ROUND_ALREADY_CRASHED" ? 409 : 400;
     return noStore({ error: result.code, message: result.message }, status);
   }
   return noStore(result);
