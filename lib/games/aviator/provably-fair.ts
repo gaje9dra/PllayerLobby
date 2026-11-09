@@ -14,12 +14,14 @@ export const AVIATOR_CRASH_BANDS = [
   { label: "40.00x–119.99x", probability: 1, minCents: 4000, maxCentsExclusive: 12000 },
 ] as const;
 
+export type AviatorFairnessAlgorithmVersion = "v1" | "v2";
+
 export type AviatorFairnessCommitment = {
   roundId: string;
   serverSeedHash: string;
   clientSeed: string;
   nonce: string;
-  algorithmVersion: typeof AVIATOR_FAIRNESS_ALGORITHM_VERSION;
+  algorithmVersion: AviatorFairnessAlgorithmVersion;
 };
 export type AviatorFairnessSecret = AviatorFairnessCommitment & { serverSeed: string };
 export type AviatorFairnessVerification = {
