@@ -7,7 +7,6 @@ import { persistFinalizedAviatorRound } from "./persistence";
 import type { AviatorRoundSnapshot } from "./types";
 
 const WAITING_MS = 5_000;
-const SETTLED_MS = 1_000;
 
 type RoundRow = {
   id: string;
