@@ -23,6 +23,13 @@ type RoundRow = {
   algorithmVersion: string | null;
 };
 
+function waitingEndsAt(row: RoundRow, now: number) {
+  // Database timestamps can be ahead of the application clock after a timezone or
+  // clock-configuration change. Never let a future createdAt extend the betting
+  // window beyond the configured five seconds from the server's current time.
+  return Math.min(row.createdAt.getTime(), now) + WAITING_MS;
+}
+
 function multiplierAt(startedAt: Date, now: number) {
   const elapsed = Math.max(0, now - startedAt.getTime()) / 1000;
   return Number(Math.exp(elapsed * 0.12).toFixed(2));
@@ -95,7 +102,7 @@ function toSnapshot(row: RoundRow, now: number, phase: AviatorRoundSnapshot["pha
     serverTime: now,
     multiplier,
     startedAt: row.startedAt?.getTime() ?? null,
-    waitingEndsAt: phase === "WAITING" ? row.createdAt.getTime() + WAITING_MS : null,
+    waitingEndsAt: phase === "WAITING" ? waitingEndsAt(row, now) : null,
     fairness: { roundId: row.id, serverSeedHash: row.serverSeedHash, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION },
   };
 }
@@ -121,9 +128,9 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
   }
 
   if (row.status === "WAITING") {
-    const waitingEndsAt = row.createdAt.getTime() + WAITING_MS;
-    if (now < waitingEndsAt) return toSnapshot(row, now, "WAITING", 1);
-    await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "WAITING" }, data: { status: "RUNNING", startedAt: new Date(waitingEndsAt) } });
+    const roundWaitingEndsAt = waitingEndsAt(row, now);
+    if (now < roundWaitingEndsAt) return toSnapshot(row, now, "WAITING", 1);
+    await prisma.aviatorRound.updateMany({ where: { id: row.id, status: "WAITING" }, data: { status: "RUNNING", startedAt: new Date(roundWaitingEndsAt) } });
     row = (await getRound(row.id)) ?? row;
   }
 
@@ -132,7 +139,7 @@ export async function getNetlifyAviatorRoundSnapshot(): Promise<AviatorRoundSnap
     if (row.algorithmVersion !== AVIATOR_FAIRNESS_ALGORITHM_VERSION) throw new Error("UNSUPPORTED_ALGORITHM_VERSION");
     const serverSeed = decryptAviatorServerSeed(row.serverSeedEncrypted);
     const crashPoint = calculateAviatorCrashMultiplier({ serverSeed, clientSeed: row.clientSeed, nonce: row.nonce.toString(), algorithmVersion: AVIATOR_FAIRNESS_ALGORITHM_VERSION });
-    const startedAt = row.startedAt ?? new Date(row.createdAt.getTime() + WAITING_MS);
+    const startedAt = row.startedAt ?? new Date(waitingEndsAt(row, now));
     const multiplier = Math.max(1, multiplierAt(startedAt, now));
 
     if (multiplier >= crashPoint) {
