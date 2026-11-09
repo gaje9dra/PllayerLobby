@@ -122,7 +122,7 @@ export function formatPayoutDestinationError(error: unknown) {
     DESTINATION_DATA_CORRUPTED: "This payout destination could not be safely read. Please create a new destination.",
     PAYOUT_DESTINATION_VERIFICATION_UNAVAILABLE: "Verification is not yet available.",
     PAYOUT_ENCRYPTION_KEY_MISSING: "Payout methods are temporarily unavailable because secure storage is not configured. Please contact support.",
-    PAYOUT_ENCRYPTION_KEY_INVALID: "Payout methods are temporarily unavailable because secure storage is misconfigured. Please contact support.",
+    PAYOUT_ENCRYPTION_KEY_INVALID: "Payout storage key is invalid. Configure PAYOUT_ENCRYPTION_KEY as a 64-character hexadecimal key or Base64/Base64URL encoding of exactly 32 random bytes, then restart the server.",
     P2021: "Payout methods are temporarily unavailable because the database is missing a required table. Please contact support.",
     P2022: "Payout methods are temporarily unavailable because the database schema needs an update. Please contact support.",
   };
