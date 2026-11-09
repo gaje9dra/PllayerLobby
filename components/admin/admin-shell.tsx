@@ -19,6 +19,7 @@ const groups = [
     label: "Platform",
     items: [
       { label: "Games", href: "/admin/games", icon: "◈" },
+      { label: "Casino control", href: "/admin/casino-control", icon: "◎" },
       { label: "Tournaments", href: "/admin/tournaments", icon: "♜" },
     ],
   },
