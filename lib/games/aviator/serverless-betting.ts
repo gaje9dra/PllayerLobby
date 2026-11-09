@@ -158,8 +158,9 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
       const acceptedMultiplier = Number(Math.exp(elapsedSeconds * 0.12).toFixed(2));
       if (acceptedMultiplier >= crashMultiplier) {
         await tx.aviatorRound.update({ where: { id: roundId }, data: { status: "CRASHED", crashedAt: new Date(acceptedAt), crashMultiplier } });
+        const activeBets = await tx.aviatorBet.findMany({ where: { roundId, status: "ACTIVE" }, select: { id: true } });
         await tx.aviatorBet.updateMany({ where: { roundId, status: "ACTIVE" }, data: { status: "LOST", updatedAt: new Date(acceptedAt) } });
-        return { kind: "late" as const, crashed: true };
+        return { kind: "late" as const, crashed: true, lostBetIds: activeBets.map((item) => item.id) };
       }
       const payout = multiplyMoneyByMultiplier(bet.stake.toString(), acceptedMultiplier.toFixed(2));
       const updated = await tx.aviatorBet.updateMany({ where: { id: betId, status: "ACTIVE" }, data: { status: "CASHED_OUT", cashedOutAt: new Date(acceptedAt), cashoutMultiplier: acceptedMultiplier, payout } });
@@ -174,6 +175,9 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
       const payout = result.payout.toString();
       emitAviatorBetEvent({ type: "bet:cashout", roundId, betId, multiplier: result.multiplier, payout, status: "CASHED_OUT" });
       return { ok: true, betId, roundId, multiplier: result.multiplier, payout, status: "CASHED_OUT" };
+    }
+    if (result.kind === "late" && result.crashed) {
+      for (const lostBetId of result.lostBetIds) emitAviatorBetEvent({ type: "bet:lost", roundId, betId: lostBetId, status: "LOST" });
     }
     if (result.kind === "settled") return { ok: false, code: SERVERLESS_AVIATOR_CODES.BET_ALREADY_SETTLED, message: message(SERVERLESS_AVIATOR_CODES.BET_ALREADY_SETTLED) };
     if (result.kind === "late") return { ok: false, code: SERVERLESS_AVIATOR_CODES.CASHOUT_TOO_LATE, message: message(SERVERLESS_AVIATOR_CODES.CASHOUT_TOO_LATE) };
