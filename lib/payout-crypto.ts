@@ -1,18 +1,11 @@
 import "server-only";
 
-import { decryptPayoutDataWithKey, encryptPayoutDataWithKey } from "@/lib/payout-crypto-core";
-
-const KEY_LENGTH = 32;
+import { decryptPayoutDataWithKey, decodePayoutEncryptionKey, encryptPayoutDataWithKey } from "@/lib/payout-crypto-core";
 
 function getKey() {
-  const raw = process.env.PAYOUT_ENCRYPTION_KEY?.trim();
-  if (!raw) throw new Error("PAYOUT_ENCRYPTION_KEY_MISSING");
-
-  const key = Buffer.from(raw, "base64");
-  if (key.length !== KEY_LENGTH || key.toString("base64") !== raw) {
-    throw new Error("PAYOUT_ENCRYPTION_KEY_INVALID");
-  }
-  return key;
+  const raw = process.env.PAYOUT_ENCRYPTION_KEY;
+  if (!raw?.trim()) throw new Error("PAYOUT_ENCRYPTION_KEY_MISSING");
+  return decodePayoutEncryptionKey(raw);
 }
 
 export function encryptPayoutData(plaintext: string) {
