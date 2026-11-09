@@ -17,6 +17,12 @@ export async function GET() {
     orderBy: { _sum: { stake: "desc" } },
   });
 
+  const activeSummary = await prisma.aviatorBet.aggregate({
+    where: { roundId: round.roundId, status: "ACTIVE" },
+    _count: { _all: true },
+    _sum: { stake: true },
+  });
+
   const users = await prisma.user.findMany({
     where: { id: { in: grouped.map((item) => item.userId) } },
     select: { id: true, name: true, email: true },
@@ -46,8 +52,8 @@ export async function GET() {
       bets: grouped.reduce((sum, item) => sum + item._count._all, 0),
       totalStake: totalStake.toFixed(2),
       totalPayout: totalPayout.toFixed(2),
-      activeBets: bets.filter((bet) => bet.status === "ACTIVE").length,
-      activeStake: bets.filter((bet) => bet.status === "ACTIVE").reduce((sum, bet) => sum + Number(bet.stake), 0).toFixed(2),
+      activeBets: activeSummary._count._all,
+      activeStake: Number(activeSummary._sum.stake ?? 0).toFixed(2),
     },
     users: grouped.map((item) => {
       const user = userById.get(item.userId);
