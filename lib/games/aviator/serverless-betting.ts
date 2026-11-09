@@ -176,7 +176,7 @@ export async function cashoutNetlifyAviatorBetForUser(user: Pick<CurrentUser, "i
       emitAviatorBetEvent({ type: "bet:cashout", roundId, betId, multiplier: result.multiplier, payout, status: "CASHED_OUT" });
       return { ok: true, betId, roundId, multiplier: result.multiplier, payout, status: "CASHED_OUT" };
     }
-    if (result.kind === "late" && result.crashed) {
+    if (result.kind === "late" && "crashed" in result && result.crashed) {
       for (const lostBetId of result.lostBetIds) emitAviatorBetEvent({ type: "bet:lost", roundId, betId: lostBetId, status: "LOST" });
     }
     if (result.kind === "settled") return { ok: false, code: SERVERLESS_AVIATOR_CODES.BET_ALREADY_SETTLED, message: message(SERVERLESS_AVIATOR_CODES.BET_ALREADY_SETTLED) };
