@@ -6,16 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { subtractMoney, compareMoney } from "@/lib/wallet-rules";
 import { assertPayoutTransition } from "@/lib/payout-state";
-
-const MAX_REFERENCE_LENGTH = 128;
-
-function normalizeReference(value: string) {
-  const reference = value.trim();
-  if (reference.length < 4 || reference.length > MAX_REFERENCE_LENGTH || !/^[A-Za-z0-9][A-Za-z0-9 ._:/-]*$/.test(reference)) {
-    throw new Error("INVALID_MANUAL_PAYMENT_REFERENCE");
-  }
-  return reference;
-}
+import { validateManualPaymentReference } from "@/lib/manual-withdrawal-rules";
 
 function newManualReference() {
   return `MANUAL-${crypto.randomBytes(12).toString("hex")}`.slice(0, 40);
@@ -27,7 +18,7 @@ function newManualReference() {
  */
 export async function markWithdrawalManuallyPaid(withdrawalId: string, referenceInput: string) {
   const admin = await requireAdmin();
-  const manualReference = normalizeReference(referenceInput);
+  const manualReference = validateManualPaymentReference(referenceInput);
 
   return prisma.$transaction(async (tx) => {
     const request = await tx.withdrawalRequest.findUnique({
