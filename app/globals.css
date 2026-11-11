@@ -140,3 +140,86 @@ main.aviator-phase106 a {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Immediate, round-scoped crash choreography. The authoritative CRASHED
+   snapshot triggers this sequence as soon as it reaches the client; there is
+   no extra animation-start delay or artificial pause in the game state. */
+@keyframes aviator-plane-crash-dive {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    filter: drop-shadow(0 0 8px rgba(248, 113, 113, .85));
+  }
+  28% {
+    opacity: 1;
+    transform: translate(8px, 10px) rotate(24deg) scale(.92);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(42px, 76px) rotate(72deg) scale(.28);
+    filter: drop-shadow(0 0 0 rgba(248, 113, 113, 0));
+  }
+}
+
+@keyframes aviator-crash-particles {
+  0% { opacity: 0; transform: scale(.35); }
+  18% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+
+@keyframes aviator-crash-flash {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes aviator-crash-result {
+  0% { opacity: .35; transform: scale(.94); }
+  35% { opacity: 1; transform: scale(1.035); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.aviator-stage.aviator-crash-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: radial-gradient(ellipse at var(--crash-x, 50%) 45%, rgba(248, 113, 113, .22), transparent 48%);
+  animation: aviator-crash-flash 520ms ease-out both;
+}
+
+.aviator-stage.aviator-crash-active .aviator-plane {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: aviator-plane-crash-dive 760ms cubic-bezier(.2,.72,.25,1) both;
+  will-change: transform, opacity, filter;
+}
+
+.aviator-stage.aviator-crash-active .aviator-crash-burst {
+  fill: none;
+  stroke: rgba(252, 165, 165, .95);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: aviator-crash-particles 620ms cubic-bezier(.15,.7,.25,1) both;
+}
+
+.aviator-stage.aviator-crash-active .tabular-nums {
+  color: rgb(252 165 165);
+  animation: aviator-crash-result 420ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aviator-stage.aviator-crash-active::after,
+  .aviator-stage.aviator-crash-active .aviator-plane,
+  .aviator-stage.aviator-crash-active .aviator-crash-burst,
+  .aviator-stage.aviator-crash-active .tabular-nums {
+    animation: none !important;
+  }
+  .aviator-stage.aviator-crash-active .aviator-plane {
+    opacity: 0;
+  }
+}
