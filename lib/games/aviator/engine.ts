@@ -145,16 +145,17 @@ export class AviatorGameEngine {
           // the authoritative game state on the crashed screen.
           this.transition("CRASHED");
           const crashedSnapshot = this.getSnapshot();
-          this.scheduleNextRound();
 
-          // Persistence is best-effort and must not block the game loop. Explicitly
-          // handle async failures so they cannot become unhandled rejections.
+          // Establish the persistence barrier before scheduling the next-round timer.
+          // Otherwise a very short timer can observe the previous null value and
+          // advance the engine before this round has been committed.
           this.crashPersistence = this.onCrash
             ? Promise.resolve().then(() => this.onCrash!(crashedSnapshot, this.crashPoint)).then(() => true).catch((error) => {
                 console.error("[aviator] crash persistence failed; keeping the round crashed until it can be recovered", error);
                 return false;
               })
             : Promise.resolve(true);
+          this.scheduleNextRound();
           return;
         }
       }
