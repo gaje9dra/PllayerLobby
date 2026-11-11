@@ -407,9 +407,11 @@ export function AviatorGameOptimized() {
                   <defs><linearGradient id="aviatorFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopOpacity=".32" /><stop offset="1" stopOpacity="0" /></linearGradient></defs>
                   <path d={`${geometry.path} L ${geometry.endX.toFixed(1)} 320 L 25 320 Z`} fill="url(#aviatorFill)" />
                   <path d={geometry.path} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" className={snapshot.phase === "CRASHED" ? "text-red-300" : "text-sky-300"} />
-                  <g className="aviator-plane" transform={`translate(${planeX - 16},${planeY - 16}) rotate(-18 16 16)`}>
-                    <g className={snapshot.phase === "CRASHED" ? "text-red-300" : "text-white"}>
-                    <path d="M2 18 30 14 20 9 13 2 10 3 13 11 2 15Z" fill="currentColor" />
+                  <g transform={`translate(${planeX - 16},${planeY - 16}) rotate(-18 16 16)`}>
+                    <g className="aviator-plane">
+                      <g className={snapshot.phase === "CRASHED" ? "text-red-300" : "text-white"}>
+                        <path d="M2 18 30 14 20 9 13 2 10 3 13 11 2 15Z" fill="currentColor" />
+                      </g>
                     </g>
                   </g>
                   {crashAnimationRoundId === snapshot.roundId ? <g className="aviator-crash-burst" transform={`translate(${planeX},${planeY})`} aria-hidden="true"><circle r="7" /><circle cx="-18" cy="-13" r="3" /><circle cx="19" cy="-10" r="3" /><circle cx="15" cy="17" r="2.5" /><circle cx="-15" cy="17" r="2.5" /><path d="M-28 -24l8 5M28 -22l-8 6M27 25l-8 -6M-27 25l8 -6" /></g> : null}
