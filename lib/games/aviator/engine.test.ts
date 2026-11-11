@@ -75,3 +75,37 @@ test("crash callback receives the authoritative final multiplier", async () => {
   assert.equal(received.crashPoint, 1.01);
   assert.equal(received.roundId.length > 0, true);
 });
+
+
+test("next round waits until the crashed round is persisted", async () => {
+  let resolvePersistence!: () => void;
+  let resolveCrashStarted!: () => void;
+  const persistence = new Promise<void>((resolve) => { resolvePersistence = resolve; });
+  const crashStarted = new Promise<void>((resolve) => { resolveCrashStarted = resolve; });
+  const engine = new AviatorGameEngine({
+    crashPointGenerator: { generate: () => 1.01 },
+    timings: fastTimings,
+    onCrash: async () => {
+      resolveCrashStarted();
+      return persistence;
+    },
+  });
+  const crashedRoundId = engine.getSnapshot().roundId;
+
+  engine.start();
+  await Promise.race([
+    crashStarted,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for crash")), 500)),
+  ]);
+  // Wait beyond the settled timer. The engine must remain on this crashed round
+  // while the persistence promise is deliberately unresolved.
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(engine.getSnapshot().phase, "CRASHED");
+  assert.equal(engine.getSnapshot().roundId, crashedRoundId);
+
+  resolvePersistence();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.notEqual(engine.getSnapshot().roundId, crashedRoundId);
+  assert.ok(["WAITING", "RUNNING"].includes(engine.getSnapshot().phase));
+  engine.stop();
+});
