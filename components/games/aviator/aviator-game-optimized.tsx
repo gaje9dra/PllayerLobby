@@ -188,15 +188,12 @@ export function AviatorGameOptimized() {
       if (roundChanged || phaseChanged) {
         void loadBets(next.roundId);
       }
-      // The backend exposes CRASHED for 2.5 seconds before committing SETTLED.
-      // Refresh only after it advances to a new round, which proves settlement
-      // completed; refreshing on CRASHED returns the previous round's history.
-      if (next.phase === "CRASHED" && phaseChanged) {
-        // Refresh on this round's crash and wait for its own committed history
-        // row. This removes the visible one-round lag without showing guesses.
-        void loadHistory(next.roundId);
-      } else if (roundChanged && previousRoundId !== "loading") {
-        // Fallback for a tab that was backgrounded and missed the CRASHED poll.
+      // The Netlify serverless lifecycle commits a round only when it
+      // transitions CRASHED -> SETTLED. A history request during CRASHED cannot
+      // advance that lifecycle, so it can only return stale history. The new
+      // round snapshot is returned only after settlement commits in the same
+      // database transaction; refresh the exact previous round at that point.
+      if (roundChanged && previousRoundId !== "loading") {
         void loadHistory(previousRoundId);
       }
     };
