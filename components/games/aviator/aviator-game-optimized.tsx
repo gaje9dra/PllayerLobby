@@ -96,24 +96,39 @@ export function AviatorGameOptimized() {
     } catch { /* Preserve last known private state during transient failures. */ }
   }, []);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(async (requiredRoundId?: string) => {
     const requestVersion = ++historyRequestVersion.current;
     try {
-      const [betsResponse, roundsResponse] = await Promise.all([
-        fetch("/api/games/aviator/bets/history?page=1", { cache: "no-store" }),
-        fetch("/api/games/aviator/history", { cache: "no-store" }),
-      ]);
-      const [betsData, roundsData] = await Promise.all([
-        betsResponse.ok ? betsResponse.json() : Promise.resolve(null),
-        roundsResponse.ok ? roundsResponse.json() : Promise.resolve(null),
-      ]);
-      // A slower response from an earlier phase must never replace newer history.
+      let completedRounds: RoundHistoryItem[] = [];
+      let foundRequiredRound = !requiredRoundId;
+
+      // The CRASHED snapshot is published immediately, while the financial
+      // settlement and round-history write finish asynchronously. Poll only
+      // for this round's persisted result instead of waiting for another round.
+      const attempts = requiredRoundId ? 24 : 1;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const roundsResponse = await fetch("/api/games/aviator/history", { cache: "no-store" });
+        if (roundsResponse.ok) {
+          const roundsData = await roundsResponse.json();
+          if (Array.isArray(roundsData)) completedRounds = roundsData as RoundHistoryItem[];
+        }
+        if (requestVersion !== historyRequestVersion.current) return;
+        foundRequiredRound = !requiredRoundId || completedRounds.some((round) => round.id === requiredRoundId);
+        if (foundRequiredRound || attempt === attempts - 1) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 125));
+      }
+
+      const betsResponse = await fetch("/api/games/aviator/bets/history?page=1", { cache: "no-store" });
+      const betsData = betsResponse.ok ? await betsResponse.json() : null;
       if (requestVersion !== historyRequestVersion.current) return;
       if (betsData) setHistory((betsData.items ?? []) as Bet[]);
-      if (Array.isArray(roundsData)) {
-        const completedRounds = roundsData as RoundHistoryItem[];
+      if (completedRounds.length) {
         setRoundHistory(completedRounds);
-        setSelectedFairnessRoundId(completedRounds[0]?.id ?? "");
+        setSelectedFairnessRoundId((current) =>
+          current && completedRounds.some((round) => round.id === current)
+            ? current
+            : completedRounds[0]?.id ?? "",
+        );
       }
     } catch { /* History is supplementary. */ }
   }, []);
@@ -176,7 +191,14 @@ export function AviatorGameOptimized() {
       // The backend exposes CRASHED for 2.5 seconds before committing SETTLED.
       // Refresh only after it advances to a new round, which proves settlement
       // completed; refreshing on CRASHED returns the previous round's history.
-      if (roundChanged && previousRoundId !== "loading") void loadHistory();
+      if (next.phase === "CRASHED" && phaseChanged) {
+        // Refresh on this round's crash and wait for its own committed history
+        // row. This removes the visible one-round lag without showing guesses.
+        void loadHistory(next.roundId);
+      } else if (roundChanged && previousRoundId !== "loading") {
+        // Fallback for a tab that was backgrounded and missed the CRASHED poll.
+        void loadHistory(previousRoundId);
+      }
     };
 
     const scheduleNextPoll = (delay: number) => {
