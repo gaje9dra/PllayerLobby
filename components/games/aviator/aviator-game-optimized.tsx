@@ -69,6 +69,8 @@ export function AviatorGameOptimized() {
   const [now, setNow] = useState(0);
   const [serverClockOffset, setServerClockOffset] = useState(0);
   const [displayMultiplier, setDisplayMultiplier] = useState(1);
+  const [crashAnimationRoundId, setCrashAnimationRoundId] = useState<string | null>(null);
+  const crashAnimationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(initialSnapshot);
   const liveMultiplierRef = useRef(1);
@@ -155,6 +157,11 @@ export function AviatorGameOptimized() {
       const previousRoundId = lastRoundId;
       const roundChanged = next.roundId !== previousRoundId;
       const phaseChanged = next.phase !== lastPhase;
+      if (next.phase === "CRASHED" && lastPhase !== "CRASHED") {
+        if (crashAnimationTimer.current) clearTimeout(crashAnimationTimer.current);
+        setCrashAnimationRoundId(next.roundId);
+        crashAnimationTimer.current = setTimeout(() => setCrashAnimationRoundId(null), 1050);
+      }
       lastRoundId = next.roundId;
       lastPhase = next.phase;
       snapshotRef.current = next;
@@ -242,6 +249,7 @@ export function AviatorGameOptimized() {
       window.clearTimeout(initialRefreshTimer);
       if (pollTimer !== null) window.clearTimeout(pollTimer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (crashAnimationTimer.current) clearTimeout(crashAnimationTimer.current);
     };
   }, [loadBets, loadHistory]);
 
@@ -390,7 +398,7 @@ export function AviatorGameOptimized() {
             </aside>
 
             <section className="order-1 min-w-0 lg:order-2">
-              <div className="relative min-h-[430px] overflow-hidden bg-[radial-gradient(circle_at_50%_35%,rgba(23,71,118,0.35),transparent_58%),linear-gradient(180deg,#0b2036_0%,#081522_100%)] sm:min-h-[540px]">
+              <div className={`aviator-stage relative min-h-[430px] overflow-hidden bg-[radial-gradient(circle_at_50%_35%,rgba(23,71,118,0.35),transparent_58%),linear-gradient(180deg,#0b2036_0%,#081522_100%)] sm:min-h-[540px] ${crashAnimationRoundId === snapshot.roundId ? "aviator-crash-active" : ""}`}>
                 <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(111,160,202,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(111,160,202,.08)_1px,transparent_1px)] [background-size:56px_56px]" aria-hidden="true" />
                 <div className="absolute left-4 top-4 z-10 flex items-center gap-2"><span className={`rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider ${snapshot.phase === "CRASHED" ? "border-red-300/30 bg-red-400/10 text-red-200" : "border-white/10 bg-black/20 text-slate-300"}`}>{statusLabel}</span><span className="text-[10px] text-slate-500">{statusCopy}</span></div>
                 <div className="absolute right-4 top-4 z-10 flex gap-2"><a href="#fairness" className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-[10px] font-bold text-slate-400 hover:text-white">Fairness</a><a href="#history" className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-[10px] font-bold text-slate-400 hover:text-white">History</a></div>
@@ -399,9 +407,14 @@ export function AviatorGameOptimized() {
                   <defs><linearGradient id="aviatorFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopOpacity=".32" /><stop offset="1" stopOpacity="0" /></linearGradient></defs>
                   <path d={`${geometry.path} L ${geometry.endX.toFixed(1)} 320 L 25 320 Z`} fill="url(#aviatorFill)" />
                   <path d={geometry.path} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" className={snapshot.phase === "CRASHED" ? "text-red-300" : "text-sky-300"} />
-                  <g transform={`translate(${planeX - 16},${planeY - 16}) rotate(-18 16 16)`} className={snapshot.phase === "CRASHED" ? "text-red-300" : "text-white"}>
-                    <path d="M2 18 30 14 20 9 13 2 10 3 13 11 2 15Z" fill="currentColor" />
+                  <g transform={`translate(${planeX - 16},${planeY - 16}) rotate(-18 16 16)`}>
+                    <g className="aviator-plane">
+                      <g className={snapshot.phase === "CRASHED" ? "text-red-300" : "text-white"}>
+                        <path d="M2 18 30 14 20 9 13 2 10 3 13 11 2 15Z" fill="currentColor" />
+                      </g>
+                    </g>
                   </g>
+                  {crashAnimationRoundId === snapshot.roundId ? <g className="aviator-crash-burst" transform={`translate(${planeX},${planeY})`} aria-hidden="true"><circle r="7" /><circle cx="-18" cy="-13" r="3" /><circle cx="19" cy="-10" r="3" /><circle cx="15" cy="17" r="2.5" /><circle cx="-15" cy="17" r="2.5" /><path d="M-28 -24l8 5M28 -22l-8 6M27 25l-8 -6M-27 25l8 -6" /></g> : null}
                   {snapshot.phase === "CRASHED" ? <g><circle cx={planeX} cy={planeY} r="20" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-300/60" /><path d={`M ${planeX - 12} ${planeY - 12} L ${planeX + 12} ${planeY + 12} M ${planeX + 12} ${planeY - 12} L ${planeX - 12} ${planeY + 12}`} stroke="currentColor" strokeWidth="3" className="text-red-300" /></g> : null}
                 </svg>
 
